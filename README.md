@@ -35,6 +35,13 @@ The project currently provides:
   - structured alert generation with dedupe
   - top-picks snapshot generation
   - monitoring artifact export (CSV/JSON)
+- Phase 5 decision/pick layer:
+  - regime-aware filtering and penalties
+  - conviction scoring with explicit weighted components
+  - trade plan generation from scanner opportunities
+  - ranking + shortlist selection caps
+  - final intraday/swing/positional pick outputs
+  - decision artifact export (CSV/JSON)
 
 ## Current Architecture
 
@@ -86,6 +93,17 @@ The project currently provides:
 - `market_monitor.py`
 - `exporter.py`
 
+### 7. Decision Layer (`src/decision/`)
+
+- `models.py`, `config.py`
+- `regime_filter.py`
+- `conviction_engine.py`
+- `trade_plan_builder.py`
+- `portfolio_candidate_selector.py`
+- `ranking_engine.py`
+- `pick_engine.py`
+- `exporter.py`
+
 ## Phase-by-Phase Status
 
 ### Phase 1 (Complete)
@@ -111,6 +129,14 @@ The project currently provides:
 - Watchlists + repeated-scan scheduling primitives
 - Regime detection, relative strength, alerts, and top-picks snapshots
 - Monitoring CSV/JSON export bundle for future UI/automation
+
+### Phase 5 (Complete)
+
+- Decision/pick engine on top of scanner + monitoring outputs
+- Rule-based regime filtering and transparent rejection reasons
+- Conviction scoring + deterministic ranking
+- Portfolio-style shortlist selection by horizon/sector/duplicates
+- Export-ready final pick outputs for future UI/execution integration
 
 ### Future Scope (Not Yet Implemented)
 
@@ -256,6 +282,28 @@ print(result.exports)
 
 Monitoring outputs are written under `output/monitoring*` paths configured in `MonitoringExportConfig`.
 
+### Decision pick engine (example)
+
+```python
+from src.decision import DecisionConfig, PickEngine
+from src.monitoring import MarketMonitor, MonitoringConfig
+
+# Phase 4 monitoring result (or use ScanResult directly)
+monitor_result = MarketMonitor(config=MonitoringConfig()).run(export=False)
+
+decision_cfg = DecisionConfig()
+pick_result = PickEngine(decision_config=decision_cfg).run(
+    monitoring_result=monitor_result
+)
+
+print("Intraday:", [p.symbol for p in pick_result.top_intraday])
+print("Swing:", [p.symbol for p in pick_result.top_swing])
+print("Positional:", [p.symbol for p in pick_result.top_positional])
+print("Rejected:", len(pick_result.rejected_opportunities))
+```
+
+Decision outputs are written under `output/decision*` paths configured in `DecisionExportConfig`.
+
 ## Provider Configuration
 
 Provider settings are stored in:
@@ -290,6 +338,24 @@ Typical opportunity fields include:
   - `score_liquidity`
   - `score_freshness`
 - `metadata` (detailed diagnostics)
+
+## Decision Output Shape
+
+Typical decision pick fields include:
+
+- `symbol`, `timeframe`, `strategy_name`, `horizon`
+- `entry_price`, `stop_loss`, `target_price`, `risk_reward`
+- `conviction_score`
+- `priority_rank`, `horizon_rank`
+- `scanner_score`, `regime_compatibility`, `relative_strength_score`
+- `conviction_breakdown` (component scores)
+- `reasons`, `metadata`
+
+Rejected opportunities include:
+
+- original setup identifiers (`symbol/timeframe/strategy`)
+- rejection reasons (explicit codes)
+- explanatory notes
 
 ## Testing
 
