@@ -80,7 +80,6 @@ def availability_cards(availability: Dict[str, bool]) -> None:
     for col, (phase, available) in zip(cols, availability.items()):
         with col:
             status = "Available" if available else "No data"
-            icon = ":" if available else ":"
             st.metric(
                 label=phase.replace("_", " ").title(),
                 value=status,

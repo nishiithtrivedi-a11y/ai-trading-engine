@@ -77,7 +77,6 @@ def main():
         avail = get_data_availability(output_dir)
         for phase, available in avail.items():
             label = phase.replace("_", " ").title()
-            status = "Available" if available else "Missing"
             st.text(f"{'[OK]' if available else '[  ]'} {label}")
 
     # Render selected page

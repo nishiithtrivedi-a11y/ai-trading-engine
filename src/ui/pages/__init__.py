@@ -1,4 +1,4 @@
-from src.ui.pages import (
+from . import (
     overview,
     backtests,
     optimization,
