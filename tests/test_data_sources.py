@@ -28,6 +28,23 @@ class TestZerodhaDataSource:
         with pytest.raises(NotImplementedError):
             source.fetch_live("RELIANCE")
 
+    def test_list_instruments_raises_not_implemented(self):
+        source = ZerodhaDataSource("key", "secret", "token")
+        with pytest.raises(NotImplementedError):
+            source.list_instruments()
+
+    def test_health_check_missing_package(self):
+        source = ZerodhaDataSource("key", "secret", "token")
+        result = source.health_check()
+        assert result["provider"] == "zerodha"
+        # kiteconnect is not installed in test env
+        assert result["status"] == "error"
+
+    def test_health_check_missing_credentials(self):
+        source = ZerodhaDataSource("", "", "")
+        result = source.health_check()
+        assert result["status"] == "error"
+
 
 class TestUpstoxDataSource:
 
@@ -51,3 +68,19 @@ class TestUpstoxDataSource:
         source = UpstoxDataSource("key", "secret", "token")
         with pytest.raises(NotImplementedError):
             source.fetch_live("NIFTY50")
+
+    def test_list_instruments_raises_not_implemented(self):
+        source = UpstoxDataSource("key", "secret", "token")
+        with pytest.raises(NotImplementedError):
+            source.list_instruments()
+
+    def test_health_check_missing_package(self):
+        source = UpstoxDataSource("key", "secret", "token")
+        result = source.health_check()
+        assert result["provider"] == "upstox"
+        assert result["status"] == "error"
+
+    def test_health_check_missing_credentials(self):
+        source = UpstoxDataSource("", "", "")
+        result = source.health_check()
+        assert result["status"] == "error"
