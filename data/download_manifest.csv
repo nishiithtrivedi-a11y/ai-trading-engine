@@ -1,0 +1,6 @@
+symbol,interval,file_path
+RELIANCE.NS,1d,data\RELIANCE_1D.csv
+TCS.NS,1d,data\TCS_1D.csv
+INFY.NS,1d,data\INFY_1D.csv
+HDFCBANK.NS,1d,data\HDFCBANK_1D.csv
+ICICIBANK.NS,1d,data\ICICIBANK_1D.csv
