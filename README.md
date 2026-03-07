@@ -42,6 +42,18 @@ The project currently provides:
   - ranking + shortlist selection caps
   - final intraday/swing/positional pick outputs
   - decision artifact export (CSV/JSON)
+- Phase 6 market intelligence layer:
+  - market breadth metrics and state classification
+  - sector rotation scoring and leader/laggard classification
+  - volume intelligence signals and snapshots
+  - volatility regime detection
+  - unified market state assessment + export
+- Phase 7 strategy research lab:
+  - strategy candidate generation from templates/parameter grids
+  - parameter surface analysis for stable/unstable regions
+  - robustness analysis (walk-forward, Monte Carlo, perturbations)
+  - strategy clustering and weighted research scoring
+  - strategy discovery orchestration + export
 
 ## Current Architecture
 
@@ -104,6 +116,28 @@ The project currently provides:
 - `pick_engine.py`
 - `exporter.py`
 
+### 8. Market Intelligence Layer (`src/market_intelligence/`)
+
+- `models.py`, `config.py`
+- `market_breadth.py`
+- `sector_rotation.py`
+- `volume_intelligence.py`
+- `volatility_regime.py`
+- `institutional_flow.py` (graceful placeholder)
+- `market_state_engine.py`
+- `exporter.py`
+
+### 9. Strategy Research Lab (`src/research_lab/`)
+
+- `models.py`, `config.py`
+- `strategy_generator.py`
+- `parameter_surface.py`
+- `robustness_analyzer.py`
+- `strategy_cluster.py`
+- `strategy_score_engine.py`
+- `strategy_discovery_engine.py`
+- `exporter.py`
+
 ## Phase-by-Phase Status
 
 ### Phase 1 (Complete)
@@ -138,11 +172,26 @@ The project currently provides:
 - Portfolio-style shortlist selection by horizon/sector/duplicates
 - Export-ready final pick outputs for future UI/execution integration
 
+### Phase 6 (Complete)
+
+- Additive market intelligence layer for explainable macro/context signals
+- Breadth, sector rotation, volume intelligence, and volatility regime components
+- Unified market-state assessment with confidence scoring and risk environment
+- CSV/JSON export bundle for future automation/UI consumption
+
+### Phase 7 (Complete)
+
+- Additive strategy research lab for discovery and robustness ranking
+- Candidate generation + parameter surface + robustness analysis
+- Strategy clustering + weighted score engine + orchestrated discovery workflow
+- CSV/JSON export artifacts for strategy research pipelines
+
 ### Future Scope (Not Yet Implemented)
 
 - Live broker execution
 - Advanced order routing/risk controls for production deployment
-- UI/dashboard expansion for scanner workflows
+- UI/dashboard expansion over scanner/monitoring/decision/intelligence outputs
+- Automated scheduling/orchestration services for continuous research runs
 
 ## Installation
 
@@ -304,6 +353,69 @@ print("Rejected:", len(pick_result.rejected_opportunities))
 
 Decision outputs are written under `output/decision*` paths configured in `DecisionExportConfig`.
 
+### Market intelligence engine (example)
+
+```python
+from src.market_intelligence import (
+    MarketIntelligenceConfig,
+    MarketIntelligenceExporter,
+    MarketStateEngine,
+)
+
+cfg = MarketIntelligenceConfig(
+    provider_name="csv",
+    data_dir="data",
+)
+
+symbols = ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS"]
+sector_map = {
+    "IT": ["TCS.NS", "INFY.NS"],
+    "BANKING": ["HDFCBANK.NS", "ICICIBANK.NS"],
+    "ENERGY": ["RELIANCE.NS"],
+}
+
+engine = MarketStateEngine()
+result = engine.run(
+    symbols=symbols,
+    sector_symbol_map=sector_map,
+    config=cfg,
+    benchmark_symbol="NIFTY50.NS",
+)
+exports = MarketIntelligenceExporter().export_all(result, cfg.export)
+print(result.market_state.to_dict())
+print({k: str(v) for k, v in exports.items()})
+```
+
+Market intelligence outputs are written under `output/market_intelligence*` paths configured in `MarketIntelligenceExportConfig`.
+
+### Strategy research lab (example)
+
+```python
+from src.core.data_handler import DataHandler
+from src.research_lab import StrategyDiscoveryConfig, StrategyDiscoveryEngine
+from src.utils.config import BacktestConfig
+
+handler = DataHandler.from_csv("data/RELIANCE_1D.csv")
+
+base_cfg = BacktestConfig(
+    data_source="csv",
+    data_file="data/RELIANCE_1D.csv",
+)
+
+discovery_cfg = StrategyDiscoveryConfig(top_n=10)
+result = StrategyDiscoveryEngine().run(
+    base_config=base_cfg,
+    data_handler=handler,
+    config=discovery_cfg,
+    export=True,
+)
+
+print(len(result.strategy_scores))
+print(result.exports)
+```
+
+Research lab outputs are written under `output/research_lab*` paths configured in `ResearchLabExportConfig`.
+
 ## Provider Configuration
 
 Provider settings are stored in:
@@ -369,6 +481,18 @@ Run scanner tests only:
 
 ```bash
 python -m pytest tests/test_scanner_* -q
+```
+
+Run market intelligence tests:
+
+```bash
+python -m pytest tests/test_market_* tests/test_sector_rotation.py tests/test_volume_intelligence.py tests/test_volatility_regime.py -q
+```
+
+Run strategy research lab tests:
+
+```bash
+python -m pytest tests/test_strategy_* tests/test_parameter_surface.py tests/test_robustness_analyzer.py -q
 ```
 
 ## Git Workflow for AI Tools
