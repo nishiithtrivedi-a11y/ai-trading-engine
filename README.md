@@ -28,6 +28,13 @@ The project currently provides:
   - setup generation (entry/stop/target)
   - opportunity classification and scoring
   - CSV/JSON export
+- Phase 4 market monitoring layer:
+  - watchlist management (config/CSV/JSON/universe-backed)
+  - market regime detection (explicit threshold logic)
+  - relative/sector strength analysis
+  - structured alert generation with dedupe
+  - top-picks snapshot generation
+  - monitoring artifact export (CSV/JSON)
 
 ## Current Architecture
 
@@ -67,6 +74,18 @@ The project currently provides:
 - `classifier.py`, `scorer.py`
 - `engine.py`, `exporter.py`
 
+### 6. Monitoring Layer (`src/monitoring/`)
+
+- `models.py`, `config.py`
+- `watchlist_manager.py`
+- `regime_detector.py`
+- `sector_strength.py`
+- `alert_engine.py`
+- `snapshot_engine.py`
+- `scheduler.py` (optional local schedule abstraction)
+- `market_monitor.py`
+- `exporter.py`
+
 ## Phase-by-Phase Status
 
 ### Phase 1 (Complete)
@@ -85,6 +104,13 @@ The project currently provides:
 - Stock scanning and signal research engine on top of existing architecture
 - Multi-timeframe scanning and opportunity ranking
 - Setup generation (entry/stop/target), classification, exports
+
+### Phase 4 (Complete)
+
+- Market monitoring and analysis orchestration layer
+- Watchlists + repeated-scan scheduling primitives
+- Regime detection, relative strength, alerts, and top-picks snapshots
+- Monitoring CSV/JSON export bundle for future UI/automation
 
 ### Future Scope (Not Yet Implemented)
 
@@ -173,6 +199,62 @@ print(result.to_dataframe(top_n=10))
 ```
 
 Scanner output files are written under `output/scanner*` paths configured in `ExportConfig`.
+
+### Monitoring engine (example)
+
+```python
+from src.monitoring import (
+    AlertEngineConfig,
+    MarketMonitor,
+    MonitoringConfig,
+    RegimeDetectorConfig,
+    RelativeStrengthConfig,
+    SnapshotConfig,
+    WatchlistDefinition,
+)
+from src.scanners import ScannerConfig, SetupMode, StrategyScanSpec
+from src.strategies.rsi_reversion import RSIReversionStrategy
+from src.strategies.sma_crossover import SMACrossoverStrategy
+
+scanner_cfg = ScannerConfig(
+    provider_name="csv",
+    data_dir="data",
+    timeframes=["1D"],
+    setup_mode=SetupMode.ATR_R_MULTIPLE,
+    strategy_specs=[
+        StrategyScanSpec(
+            strategy_class=RSIReversionStrategy,
+            params={"rsi_period": 14, "oversold": 30, "overbought": 70},
+            timeframes=["1D"],
+        ),
+        StrategyScanSpec(
+            strategy_class=SMACrossoverStrategy,
+            params={"fast_period": 10, "slow_period": 30},
+            timeframes=["1D"],
+        ),
+    ],
+)
+
+monitor_cfg = MonitoringConfig(
+    scanner_config=scanner_cfg,
+    watchlists=[
+        WatchlistDefinition(
+            name="focus",
+            symbols=["RELIANCE.NS", "TCS.NS", "INFY.NS"],
+        )
+    ],
+    regime=RegimeDetectorConfig(benchmark_symbol="NIFTY50.NS", timeframe="1D"),
+    relative_strength=RelativeStrengthConfig(benchmark_symbol="NIFTY50.NS", timeframe="1D"),
+    alerts=AlertEngineConfig(min_opportunity_score=65.0),
+    snapshot=SnapshotConfig(top_n=10, min_score=60.0),
+)
+
+result = MarketMonitor(config=monitor_cfg).run(export=True, watchlist_names=["focus"])
+print(result.snapshot.to_dict() if result.snapshot else {})
+print(result.exports)
+```
+
+Monitoring outputs are written under `output/monitoring*` paths configured in `MonitoringExportConfig`.
 
 ## Provider Configuration
 
