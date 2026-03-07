@@ -1,0 +1,22 @@
+realtime:
+  enabled: false
+  mode: off
+  provider_name: csv
+  poll_interval_seconds: 60
+  only_during_market_hours: true
+  market_timezone: Asia/Kolkata
+  market_open_time: "09:15"
+  market_close_time: "15:30"
+  enable_polling: true
+  enable_alert_dispatch: true
+  enable_scheduler: true
+  enable_event_bus: true
+  enable_live_provider: false
+  persist_snapshots: true
+  persist_alerts: true
+  snapshot_persistence_enabled: true
+  max_cycles_per_run: 5
+  dry_run: false
+  output_dir: output/realtime
+  symbols: []
+  timeframes: ["1D"]

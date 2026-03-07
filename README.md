@@ -54,6 +54,12 @@ The project currently provides:
   - robustness analysis (walk-forward, Monte Carlo, perturbations)
   - strategy clustering and weighted research scoring
   - strategy discovery orchestration + export
+- Phase 8 realtime market engine:
+  - explicit config-driven ON/OFF runtime switch
+  - finite-cycle simulated/polling run modes
+  - market-hours gating with safe dry-run override
+  - repeated monitoring/decision refresh snapshots
+  - realtime status/history/alerts/snapshot export
 
 ## Current Architecture
 
@@ -138,6 +144,18 @@ The project currently provides:
 - `strategy_discovery_engine.py`
 - `exporter.py`
 
+### 10. Realtime Layer (`src/realtime/`)
+
+- `models.py`, `config.py`
+- `market_clock.py`
+- `data_poller.py`
+- `state_store.py`
+- `event_bus.py`
+- `alert_dispatcher.py`
+- `snapshot_refresher.py`
+- `realtime_engine.py`
+- `exporter.py`
+
 ## Phase-by-Phase Status
 
 ### Phase 1 (Complete)
@@ -185,6 +203,15 @@ The project currently provides:
 - Candidate generation + parameter surface + robustness analysis
 - Strategy clustering + weighted score engine + orchestrated discovery workflow
 - CSV/JSON export artifacts for strategy research pipelines
+
+### Phase 8 (Complete)
+
+- Additive realtime observer engine for repeated, safe, non-executing cycles
+- Explicit config ON/OFF switch (`realtime.enabled`) with default OFF behavior
+- Supported realtime modes: `off`, `simulated`, `polling`
+- Market-hours gating with dry-run support and bounded cycles (`max_cycles_per_run`)
+- Realtime cycle orchestration of poll -> monitoring refresh -> decision refresh
+- Realtime export artifacts for future UI/automation (`realtime_status`, history, snapshot, alerts, manifest)
 
 ### Future Scope (Not Yet Implemented)
 
@@ -416,6 +443,97 @@ print(result.exports)
 
 Research lab outputs are written under `output/research_lab*` paths configured in `ResearchLabExportConfig`.
 
+### Realtime engine (example)
+
+The realtime engine is safe by default: `enabled=false` + `mode=off` means no realtime loop runs.
+
+```python
+from src.decision import DecisionConfig
+from src.monitoring import MonitoringConfig
+from src.realtime import RealTimeEngine, RealTimeEngineConfig, RealtimeConfig, RealTimeMode
+from src.scanners import ScannerConfig, StrategyScanSpec, SetupMode
+from src.strategies.rsi_reversion import RSIReversionStrategy
+from src.strategies.sma_crossover import SMACrossoverStrategy
+
+scanner_cfg = ScannerConfig(
+    provider_name="csv",
+    data_dir="data",
+    universe_name="custom",
+    custom_universe_file="data/universe/custom_universe.csv",
+    timeframes=["1D"],
+    setup_mode=SetupMode.ATR_R_MULTIPLE,
+    strategy_specs=[
+        StrategyScanSpec(
+            strategy_class=RSIReversionStrategy,
+            params={"rsi_period": 14, "oversold": 30, "overbought": 70},
+            timeframes=["1D"],
+        ),
+        StrategyScanSpec(
+            strategy_class=SMACrossoverStrategy,
+            params={"fast_period": 10, "slow_period": 30},
+            timeframes=["1D"],
+        ),
+    ],
+)
+
+monitor_cfg = MonitoringConfig(scanner_config=scanner_cfg)
+decision_cfg = DecisionConfig()
+
+rt_cfg = RealTimeEngineConfig(
+    realtime=RealtimeConfig(
+        enabled=True,
+        mode=RealTimeMode.SIMULATED,
+        provider_name="csv",
+        symbols=["RELIANCE.NS", "TCS.NS", "INFY.NS"],
+        timeframes=["1D"],
+        max_cycles_per_run=3,
+        only_during_market_hours=False,
+        enable_polling=True,
+        enable_event_bus=True,
+        enable_alert_dispatch=True,
+        persist_snapshots=True,
+        persist_alerts=True,
+        output_dir="output/realtime",
+    ),
+    monitoring=monitor_cfg,
+    decision=decision_cfg,
+)
+
+engine = RealTimeEngine(config=rt_cfg)
+result = engine.run(export=True)
+print(result.to_dict()["summary"])
+print(result.exports)
+```
+
+Realtime outputs are written under `output/realtime*`.
+
+### Realtime Switches and Modes
+
+Default config file:
+
+- `config/realtime.yaml`
+
+Core switches:
+
+- `realtime.enabled`: global ON/OFF
+- `realtime.mode`: `off`, `simulated`, `polling`
+- `realtime.enable_polling`
+- `realtime.enable_alert_dispatch`
+- `realtime.enable_scheduler`
+- `realtime.enable_event_bus`
+- `realtime.enable_live_provider`
+- `realtime.persist_snapshots`
+- `realtime.persist_alerts`
+- `realtime.max_cycles_per_run`
+- `realtime.only_during_market_hours`
+- `realtime.dry_run`
+
+Behavior:
+
+- When `enabled=false` (or `mode=off`): no realtime cycle runs, no polling starts.
+- When enabled + `simulated`: finite local cycles run against CSV/historical snapshots.
+- When enabled + `polling`: provider live polling is attempted; unsupported live fetch gracefully falls back to snapshot polling.
+
 ## Provider Configuration
 
 Provider settings are stored in:
@@ -493,6 +611,12 @@ Run strategy research lab tests:
 
 ```bash
 python -m pytest tests/test_strategy_* tests/test_parameter_surface.py tests/test_robustness_analyzer.py -q
+```
+
+Run realtime tests:
+
+```bash
+python -m pytest tests/test_realtime_* tests/test_market_clock.py tests/test_data_poller.py tests/test_state_store.py tests/test_event_bus.py tests/test_alert_dispatcher.py tests/test_snapshot_refresher.py -q
 ```
 
 ## Git Workflow for AI Tools
