@@ -28,6 +28,11 @@ The project currently provides:
   - setup generation (entry/stop/target)
   - opportunity classification and scoring
   - CSV/JSON export
+- Phase 10 Streamlit dashboard:
+  - local research and monitoring control room
+  - read-oriented (no trade execution)
+  - visualizes outputs from all phases
+  - graceful empty states when data is missing
 - Phase 4 market monitoring layer:
   - watchlist management (config/CSV/JSON/universe-backed)
   - market regime detection (explicit threshold logic)
@@ -146,6 +151,7 @@ The project currently provides:
 
 ### 10. Realtime Layer (`src/realtime/`)
 
+
 - `models.py`, `config.py`
 - `market_clock.py`
 - `data_poller.py`
@@ -155,6 +161,13 @@ The project currently provides:
 - `snapshot_refresher.py`
 - `realtime_engine.py`
 - `exporter.py`
+
+### 11. Dashboard Layer (`src/ui/`)
+
+- `app.py`: Streamlit application entry point with sidebar navigation
+- `pages/`: Page modules (overview, backtests, optimization, walk-forward, monte_carlo, scanner, monitoring, decision_engine, realtime)
+- `components/`: Reusable UI components (metrics_cards, tables, charts, filters)
+- `utils/`: Loader, formatter, and state management utilities
 
 ## Phase-by-Phase Status
 
@@ -213,11 +226,19 @@ The project currently provides:
 - Realtime cycle orchestration of poll -> monitoring refresh -> decision refresh
 - Realtime export artifacts for future UI/automation (`realtime_status`, history, snapshot, alerts, manifest)
 
+### Phase 10 (Complete)
+
+- Streamlit-based local research and monitoring dashboard
+- Read-oriented UI over all phase outputs (no trade execution)
+- Pages: Overview, Backtests, Optimization, Walk-Forward, Monte Carlo, Scanner, Monitoring, Decision Engine, Realtime
+- Modular architecture: components, pages, utility layers
+- Graceful empty-state handling for missing data
+- Reusable loader/formatter/state utilities with test coverage
+
 ### Future Scope (Not Yet Implemented)
 
 - Live broker execution
 - Advanced order routing/risk controls for production deployment
-- UI/dashboard expansion over scanner/monitoring/decision/intelligence outputs
 - Automated scheduling/orchestration services for continuous research runs
 
 ## Installation
@@ -227,6 +248,25 @@ pip install -r requirements.txt
 ```
 
 ## How to Run
+
+### Streamlit Dashboard (Phase 10)
+
+```bash
+streamlit run src/ui/app.py
+```
+
+The dashboard is read-oriented and does not execute trades. It visualizes outputs from all earlier phases. Pages show graceful empty states when data is not yet available.
+
+Dashboard pages:
+- **Overview**: Platform status, market state, decision summary, data availability
+- **Backtests**: Equity curves, drawdowns, trade logs, performance metrics
+- **Optimization**: Strategy ranking tables, parameter analysis
+- **Walk-Forward**: Per-window train/test metrics, out-of-sample summaries
+- **Monte Carlo**: Percentile analysis, probability of profit, simulation config
+- **Scanner**: Ranked opportunities, score breakdown, classification distribution
+- **Monitoring**: Market regime, top picks, alerts, relative strength
+- **Decision Engine**: Intraday/swing/positional picks, rejected opportunities
+- **Realtime**: Engine status, cycle history, snapshots, alerts
 
 ### Main backtest demo
 
