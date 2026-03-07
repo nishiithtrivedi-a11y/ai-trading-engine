@@ -1,197 +1,245 @@
-# AI Trading Backtesting Engine
+# AI Trading Engine
 
-A modular, production-quality backtesting framework for trading strategies, built from scratch in Python.
+A Python research platform for algorithmic trading strategy development on historical market data.
 
-## Project Structure
+This repository is focused on **research and backtesting workflows**. It is not a live execution system.
 
-```
-AI Trading/
-├── src/
-│   ├── core/
-│   │   ├── backtest_engine.py   # Main simulation loop
-│   │   ├── broker.py            # Order routing, sizing, risk exits
-│   │   ├── data_handler.py      # OHLCV data loading and access
-│   │   ├── execution.py         # Fill simulation (slippage, fees)
-│   │   ├── metrics.py           # Performance metric computation
-│   │   ├── order.py             # Order domain objects
-│   │   ├── portfolio.py         # Cash, positions, equity tracking
-│   │   ├── position.py          # Position and Trade objects
-│   │   └── reporting.py         # Terminal output, plots, CSV/JSON export
-│   ├── strategies/
-│   │   ├── base_strategy.py     # Abstract strategy interface
-│   │   ├── sma_crossover.py     # SMA crossover strategy
-│   │   ├── rsi_reversion.py     # RSI mean reversion strategy
-│   │   └── breakout.py          # Donchian breakout strategy
-│   └── utils/
-│       ├── config.py            # Pydantic configuration models
-│       ├── logger.py            # Logging setup
-│       └── validators.py        # OHLCV data validation
-├── tests/                       # Unit tests (62 tests)
-├── data/                        # Market data CSV files
-├── output/                      # Reports, plots, trade logs
-├── main.py                      # Entry point — runs all strategies
-├── generate_sample_data.py      # Synthetic data generator
-└── requirements.txt
-```
+## Project Overview
 
-## Setup
+The project currently provides:
+
+- Core backtesting engine (bar-by-bar simulation)
+- Strategy framework with reusable indicators/helpers
+- Research tooling:
+  - optimizer (grid search)
+  - walk-forward testing
+  - Monte Carlo robustness analysis
+  - multi-asset portfolio aggregation
+  - strategy template generation/ranking
+- Provider/config layer:
+  - configurable provider factory
+  - CSV / Indian CSV support
+  - Zerodha / Upstox integration-ready stubs
+  - symbol normalization/mapping
+  - NSE universe utilities
+- Phase 3 scanner layer:
+  - universe scanning across symbols/timeframes/strategies
+  - latest-state signal evaluation
+  - setup generation (entry/stop/target)
+  - opportunity classification and scoring
+  - CSV/JSON export
+
+## Current Architecture
+
+### 1. Core Backtesting Layer (`src/core/`)
+
+- `backtest_engine.py`: simulation loop and signal handling
+- `broker.py`, `execution.py`: order lifecycle and fills
+- `portfolio.py`, `position.py`, `order.py`: portfolio/trade domain
+- `data_handler.py`: validated OHLCV access
+- `metrics.py`, `reporting.py`: performance metrics and outputs
+
+### 2. Strategy Layer (`src/strategies/`)
+
+- `base_strategy.py`: strategy contract and indicator helpers
+- `sma_crossover.py`, `rsi_reversion.py`, `breakout.py`
+
+### 3. Research Layer (`src/research/`)
+
+- `optimizer.py`
+- `walk_forward.py`
+- `monte_carlo.py`
+- `multi_asset_backtester.py`
+- `strategy_generator.py`
+
+### 4. Provider/Config Layer (`src/data/`, `config/`)
+
+- `provider_config.py`, `provider_factory.py`
+- `base.py`, `sources.py`, `indian_data_loader.py`
+- `symbol_mapping.py`, `nse_universe.py`
+- `config/data_providers.yaml`
+
+### 5. Scanner Layer (`src/scanners/`)
+
+- `models.py`, `config.py`
+- `universe_resolver.py`, `data_gateway.py`
+- `signal_runner.py`, `setup_engine.py`
+- `classifier.py`, `scorer.py`
+- `engine.py`, `exporter.py`
+
+## Phase-by-Phase Status
+
+### Phase 1 (Complete)
+
+- Base backtesting engine and strategy execution loop
+- Core metrics/reporting and data validation
+
+### Phase 2 (Complete)
+
+- Optimizer, walk-forward, Monte Carlo, multi-asset aggregation
+- Strategy generation/ranking
+- Provider config/factory and symbol mapping
+
+### Phase 3 (Complete)
+
+- Stock scanning and signal research engine on top of existing architecture
+- Multi-timeframe scanning and opportunity ranking
+- Setup generation (entry/stop/target), classification, exports
+
+### Future Scope (Not Yet Implemented)
+
+- Live broker execution
+- Advanced order routing/risk controls for production deployment
+- UI/dashboard expansion for scanner workflows
+
+## Installation
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
+```
 
-# Generate sample data
-python generate_sample_data.py
+## How to Run
 
-# Run backtests
+### Main backtest demo
+
+```bash
 python main.py
-
-# Run tests
-python -m pytest tests/ -v
 ```
 
-## How It Works
+### Optimizer
 
-The engine runs a bar-by-bar simulation loop:
-
-1. **Load data** — CSV with timestamp, open, high, low, close, volume
-2. **Initialize strategy** — pass configuration parameters
-3. **For each bar:**
-   - Check risk exits (stop-loss, take-profit, trailing stop)
-   - Execute pending orders from previous bar (next-bar-open execution)
-   - Strategy generates signal based only on data up to current bar
-   - Submit new orders based on signal
-   - Record portfolio state
-4. **After last bar** — close open positions (configurable), compute metrics, generate report
-
-## How to Add a New Strategy
-
-Create a new file in `src/strategies/`:
-
-```python
-from src.strategies.base_strategy import BaseStrategy, Signal
-
-class MyStrategy(BaseStrategy):
-
-    @property
-    def name(self) -> str:
-        return "MyStrategy"
-
-    def on_bar(self, data, current_bar, bar_index) -> Signal:
-        # data: all bars up to current (no lookahead)
-        # current_bar: current OHLCV as pd.Series
-        # bar_index: 0-based position
-
-        # Use built-in helpers:
-        sma = self.sma(data["close"], period=20)
-        rsi = self.rsi(data["close"], period=14)
-
-        # Return Signal.BUY, Signal.SELL, Signal.EXIT, or Signal.HOLD
-        return Signal.HOLD
+```bash
+python optimize_sma.py
 ```
 
-Then use it in your runner:
+### Multi-asset research
+
+```bash
+python run_multi_asset_backtest.py
+```
+
+### Walk-forward
+
+```bash
+python run_rsi_walkforward.py
+```
+
+### Monte Carlo
+
+```bash
+python run_rsi_monte_carlo.py
+```
+
+### Strategy ranking
+
+```bash
+python run_strategy_ranking.py data/RELIANCE_1D.csv 10
+```
+
+### Scanner engine (example)
+
+No dedicated top-level scanner runner script is required; scanner is run via `StockScannerEngine`.
 
 ```python
-from src.core.backtest_engine import BacktestEngine
-from src.core.data_handler import DataHandler
-from src.utils.config import BacktestConfig
-from src.strategies.my_strategy import MyStrategy
-
-config = BacktestConfig(
-    initial_capital=100_000,
-    strategy_params={"my_param": 42},
+from src.scanners import (
+    ScannerConfig, StrategyScanSpec, StockScannerEngine, SetupMode
 )
-engine = BacktestEngine(config, MyStrategy())
-engine.run(DataHandler.from_csv("data/sample_data.csv"))
-engine.generate_report()
-```
+from src.strategies.rsi_reversion import RSIReversionStrategy
+from src.strategies.sma_crossover import SMACrossoverStrategy
 
-## CSV Data Format
-
-```csv
-timestamp,open,high,low,close,volume
-2020-01-01,100.0,102.5,99.5,101.0,1000000
-2020-01-02,101.0,103.0,100.0,102.5,1200000
-```
-
-The engine auto-detects common timestamp column names (timestamp, datetime, date) and handles multiple datetime formats.
-
-## Configuration
-
-All settings are validated via Pydantic:
-
-```python
-BacktestConfig(
-    initial_capital=100_000,      # Starting cash
-    fee_rate=0.001,               # 0.1% per trade
-    slippage_rate=0.0005,         # 0.05% slippage
-    position_sizing="percent_of_equity",
-    position_size_pct=0.95,       # Use 95% of equity per trade
-    risk=RiskConfig(
-        stop_loss_pct=0.05,       # 5% stop loss
-        take_profit_pct=0.10,     # 10% take profit
-        trailing_stop_pct=0.03,   # 3% trailing stop
-        max_drawdown_kill_pct=0.25,  # Stop trading at 25% drawdown
-    ),
-    execution_mode="next_bar_open",  # or "same_bar_close"
-    close_positions_at_end=True,
-    trading_days_per_year=252,
-    risk_free_rate=0.0,
+cfg = ScannerConfig(
+    universe_name="custom",
+    custom_universe_file="data/universe/custom_universe.csv",
+    provider_name="csv",
+    data_dir="data",
+    timeframes=["1D"],
+    setup_mode=SetupMode.ATR_R_MULTIPLE,
+    strategy_specs=[
+        StrategyScanSpec(
+            strategy_class=RSIReversionStrategy,
+            params={"rsi_period": 14, "oversold": 30, "overbought": 70},
+            timeframes=["1D"],
+        ),
+        StrategyScanSpec(
+            strategy_class=SMACrossoverStrategy,
+            params={"fast_period": 10, "slow_period": 30},
+            timeframes=["1D"],
+        ),
+    ],
 )
+
+result = StockScannerEngine(scanner_config=cfg).run(export=True)
+print(result.to_dataframe(top_n=10))
 ```
 
-## Metrics Computed
+Scanner output files are written under `output/scanner*` paths configured in `ExportConfig`.
 
-| Metric | Description |
-|--------|-------------|
-| Total Return | Absolute and percentage |
-| Annualized Return / CAGR | Configurable trading days |
-| Sharpe Ratio | Annualized, excess returns |
-| Sortino Ratio | Downside-only volatility |
-| Max Drawdown | Absolute and percentage |
-| Win Rate | Winners / total trades |
-| Profit Factor | Gross profit / gross loss |
-| Expectancy | Average PnL per trade |
-| Exposure | % of bars with open position |
-| Buy-and-Hold benchmark | Automatic comparison |
+## Provider Configuration
 
-## Anti-Bias Design
+Provider settings are stored in:
 
-- **Lookahead bias**: Signals on bar t execute at bar t+1 open. Strategies only see `data[:current+1]`.
-- **Gap risk**: Stop-losses fill at the open price when it gaps through the stop level.
-- **Transaction costs**: Fees and slippage are always applied — no frictionless backtests.
-- **Trailing stops**: Ratchet up only, never down.
-- **Data validation**: Rejects duplicate timestamps, negative prices, high < low violations.
+- `config/data_providers.yaml`
 
-## Outputs
+Supported providers:
 
-- Terminal summary report with strategy vs buy-and-hold comparison
-- Equity curve plot (PNG)
-- Drawdown plot (PNG)
-- Trade log (CSV) with entry/exit timestamps, prices, PnL, fees, bars held, exit reason
-- Metrics summary (JSON)
+- `csv`
+- `indian_csv`
+- `zerodha` (integration-ready placeholder for historical/live)
+- `upstox` (integration-ready placeholder for historical/live)
 
-## Limitations
+Notes:
 
-- Long-only (short-selling architecture is stubbed but not implemented)
-- Single-asset per backtest
-- Single active position at a time
-- No partial fills (placeholder architecture only)
-- Slippage is a fixed percentage, not volume-based
-- No order book simulation
-- Synthetic sample data — use real market data for meaningful results
+- CSV scanning/backtesting is fully supported.
+- Zerodha/Upstox classes include explicit interfaces and health checks, but historical/live API integrations remain placeholder where not implemented.
+- Credentials can be supplied via config and/or environment variables (see provider config module).
 
-## Version 2 Roadmap
+## Scanner Output Shape
 
-- Multi-asset portfolio backtesting
-- Short selling support
-- Parameter sweep / grid search optimization
-- Walk-forward analysis
-- Monte Carlo resampling for robustness testing
-- Volume-based slippage model
-- Partial fill simulation
-- Benchmark comparison against custom indices
-- Paper trading adapter (broker API bridge)
-- Live trading integration hooks
-- Web dashboard for results visualization
+Typical opportunity fields include:
+
+- `symbol`, `timeframe`, `strategy_name`, `timestamp`, `signal`
+- `entry_price`, `stop_loss`, `target_price`
+- `classification` (intraday/swing/positional)
+- `score`
+- flattened score components:
+  - `score_signal`
+  - `score_rr`
+  - `score_trend`
+  - `score_liquidity`
+  - `score_freshness`
+- `metadata` (detailed diagnostics)
+
+## Testing
+
+Run all tests:
+
+```bash
+python -m pytest tests -q
+```
+
+Run scanner tests only:
+
+```bash
+python -m pytest tests/test_scanner_* -q
+```
+
+## Git Workflow for AI Tools
+
+See [AI_AGENT_WORKFLOW.md](AI_AGENT_WORKFLOW.md).
+
+Key rules:
+
+- Claude branch prefix: `claude/`
+- Codex branch prefix: `codex/`
+- Claude commit prefix: `claude:`
+- Codex commit prefix: `codex:`
+- Never push directly to `main`
+- Use PRs for all integration
+
+## Safety / Scope Note
+
+This repository is a **research platform**.
+
+- It is not financial advice.
+- It does not guarantee profitability.
+- Live trading/execution is future scope and should be implemented with additional production-grade safeguards.
