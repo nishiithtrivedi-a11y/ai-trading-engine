@@ -1,0 +1,37 @@
+# Data Provider Configuration
+# ----------------------------
+# Configure market data sources for the backtesting engine.
+# Credentials can also be set via environment variables (see comments).
+#
+# Supported providers: csv, indian_csv, zerodha, upstox
+
+# Active provider — which source the engine uses by default
+default_provider: csv
+
+providers:
+  csv:
+    enabled: true
+    data_dir: "data/"
+
+  indian_csv:
+    enabled: true
+    data_dir: "data/"
+    timezone: "Asia/Kolkata"
+
+  zerodha:
+    enabled: false
+    # Credentials — set via env vars or fill in below
+    # Env vars: ZERODHA_API_KEY, ZERODHA_API_SECRET, ZERODHA_ACCESS_TOKEN
+    api_key: ""
+    api_secret: ""
+    access_token: ""
+    base_url: "https://api.kite.trade"
+
+  upstox:
+    enabled: false
+    # Credentials — set via env vars or fill in below
+    # Env vars: UPSTOX_API_KEY, UPSTOX_API_SECRET, UPSTOX_ACCESS_TOKEN
+    api_key: ""
+    api_secret: ""
+    access_token: ""
+    base_url: "https://api.upstox.com/v2"

@@ -1,15 +1,14 @@
 """
-Placeholder data source implementations for Indian broker APIs.
+Broker API data source implementations for Indian markets.
 
-These are stubs that define the interface for future integration
-with Zerodha (KiteConnect) and Upstox APIs. They raise
-NotImplementedError when load() is called.
+Zerodha (KiteConnect) and Upstox stubs with proper interface scaffolding.
+All API methods raise NotImplementedError until real integration is added.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import List
 
 import pandas as pd
 
@@ -20,7 +19,7 @@ logger = setup_logger("data_sources")
 
 
 class ZerodhaDataSource(BaseDataSource):
-    """Placeholder for Zerodha KiteConnect data integration.
+    """Zerodha KiteConnect data source.
 
     Requires the `kiteconnect` package and valid API credentials.
     See: https://kite.trade/docs/connect/v3/
@@ -42,11 +41,6 @@ class ZerodhaDataSource(BaseDataSource):
         self.access_token = access_token
 
     def load(self) -> pd.DataFrame:
-        """Not implemented — requires kiteconnect package.
-
-        Raises:
-            NotImplementedError: Always.
-        """
         raise NotImplementedError(
             "Zerodha integration requires the 'kiteconnect' package. "
             "Install with: pip install kiteconnect. "
@@ -60,37 +54,55 @@ class ZerodhaDataSource(BaseDataSource):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
-        """Fetch historical OHLCV data from Zerodha.
-
-        Placeholder for future implementation.
-
-        Args:
-            symbol: Trading symbol (e.g., "RELIANCE", "NIFTY 50").
-            timeframe: Bar timeframe.
-            start: Start datetime.
-            end: End datetime.
-
-        Raises:
-            NotImplementedError: Always.
-        """
-        raise NotImplementedError("Zerodha historical data fetch not yet implemented")
+        raise NotImplementedError(
+            "Zerodha fetch_historical not yet implemented. "
+            "Requires kiteconnect: kite.historical_data(instrument_token, from_date, to_date, interval)"
+        )
 
     def fetch_live(self, symbol: str) -> pd.Series:
-        """Fetch live tick data from Zerodha.
+        """Fetch live tick data from Zerodha (placeholder)."""
+        raise NotImplementedError(
+            "Zerodha fetch_live not yet implemented. "
+            "Requires kiteconnect WebSocket: KiteTicker"
+        )
 
-        Placeholder for future implementation.
+    def list_instruments(self) -> List[str]:
+        raise NotImplementedError(
+            "Zerodha list_instruments not yet implemented. "
+            "Requires kiteconnect: kite.instruments('NSE')"
+        )
 
-        Args:
-            symbol: Trading symbol.
+    def health_check(self) -> dict:
+        """Check Zerodha API connectivity."""
+        try:
+            import kiteconnect  # noqa: F401
+            has_package = True
+        except ImportError:
+            has_package = False
 
-        Raises:
-            NotImplementedError: Always.
-        """
-        raise NotImplementedError("Zerodha live data fetch not yet implemented")
+        creds_ok = bool(self.api_key and self.api_secret and self.access_token)
+
+        if not has_package:
+            return {
+                "status": "error",
+                "provider": "zerodha",
+                "message": "kiteconnect package not installed",
+            }
+        if not creds_ok:
+            return {
+                "status": "error",
+                "provider": "zerodha",
+                "message": "Missing API credentials",
+            }
+        return {
+            "status": "ok",
+            "provider": "zerodha",
+            "message": "Credentials configured (connection not tested)",
+        }
 
 
 class UpstoxDataSource(BaseDataSource):
-    """Placeholder for Upstox API data integration.
+    """Upstox API data source.
 
     Requires the `upstox-python-sdk` package and valid API credentials.
     See: https://upstox.com/developer/api-documentation/
@@ -112,11 +124,6 @@ class UpstoxDataSource(BaseDataSource):
         self.access_token = access_token
 
     def load(self) -> pd.DataFrame:
-        """Not implemented — requires upstox-python-sdk package.
-
-        Raises:
-            NotImplementedError: Always.
-        """
         raise NotImplementedError(
             "Upstox integration requires the 'upstox-python-sdk' package. "
             "Install with: pip install upstox-python-sdk. "
@@ -130,30 +137,48 @@ class UpstoxDataSource(BaseDataSource):
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
-        """Fetch historical OHLCV data from Upstox.
-
-        Placeholder for future implementation.
-
-        Args:
-            symbol: Trading symbol (e.g., "RELIANCE", "NIFTY50").
-            timeframe: Bar timeframe.
-            start: Start datetime.
-            end: End datetime.
-
-        Raises:
-            NotImplementedError: Always.
-        """
-        raise NotImplementedError("Upstox historical data fetch not yet implemented")
+        raise NotImplementedError(
+            "Upstox fetch_historical not yet implemented. "
+            "Requires upstox-python-sdk: HistoryApi.get_historical_candle_data()"
+        )
 
     def fetch_live(self, symbol: str) -> pd.Series:
-        """Fetch live tick data from Upstox.
+        """Fetch live tick data from Upstox (placeholder)."""
+        raise NotImplementedError(
+            "Upstox fetch_live not yet implemented. "
+            "Requires upstox-python-sdk WebSocket: MarketDataStreamer"
+        )
 
-        Placeholder for future implementation.
+    def list_instruments(self) -> List[str]:
+        raise NotImplementedError(
+            "Upstox list_instruments not yet implemented. "
+            "Requires upstox-python-sdk: InstrumentApi"
+        )
 
-        Args:
-            symbol: Trading symbol.
+    def health_check(self) -> dict:
+        """Check Upstox API connectivity."""
+        try:
+            import upstox_client  # noqa: F401
+            has_package = True
+        except ImportError:
+            has_package = False
 
-        Raises:
-            NotImplementedError: Always.
-        """
-        raise NotImplementedError("Upstox live data fetch not yet implemented")
+        creds_ok = bool(self.api_key and self.api_secret and self.access_token)
+
+        if not has_package:
+            return {
+                "status": "error",
+                "provider": "upstox",
+                "message": "upstox-python-sdk package not installed",
+            }
+        if not creds_ok:
+            return {
+                "status": "error",
+                "provider": "upstox",
+                "message": "Missing API credentials",
+            }
+        return {
+            "status": "ok",
+            "provider": "upstox",
+            "message": "Credentials configured (connection not tested)",
+        }

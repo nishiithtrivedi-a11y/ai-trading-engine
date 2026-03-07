@@ -8,7 +8,9 @@ along with the Timeframe enum for bar interval classification.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from enum import Enum
+from typing import List, Optional
 
 import pandas as pd
 
@@ -29,6 +31,10 @@ class BaseDataSource(ABC):
     - DatetimeIndex named "timestamp"
     - Columns: open, high, low, close, volume (lowercase)
     - Sorted chronologically
+
+    Subclasses must implement load(). The other methods (fetch_historical,
+    list_instruments, health_check) have default implementations that raise
+    NotImplementedError — override them in API-backed sources.
     """
 
     @abstractmethod
@@ -43,3 +49,59 @@ class BaseDataSource(ABC):
             NotImplementedError: If the source is a placeholder stub.
         """
         ...
+
+    def fetch_historical(
+        self,
+        symbol: str,
+        timeframe: Timeframe,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        """Fetch historical OHLCV data for a symbol.
+
+        Override in API-backed sources (Zerodha, Upstox, etc.).
+
+        Args:
+            symbol: Trading symbol (e.g. "RELIANCE").
+            timeframe: Bar timeframe.
+            start: Start datetime.
+            end: End datetime.
+
+        Returns:
+            DataFrame with DatetimeIndex and OHLCV columns.
+
+        Raises:
+            NotImplementedError: If the source doesn't support this.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support fetch_historical"
+        )
+
+    def list_instruments(self) -> List[str]:
+        """List available instruments/symbols from this source.
+
+        Override in API-backed sources.
+
+        Returns:
+            List of symbol strings.
+
+        Raises:
+            NotImplementedError: If the source doesn't support this.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support list_instruments"
+        )
+
+    def health_check(self) -> dict:
+        """Check connectivity and readiness of the data source.
+
+        Override in API-backed sources.
+
+        Returns:
+            Dict with at least {"status": "ok"|"error", "provider": "..."}.
+        """
+        return {
+            "status": "ok",
+            "provider": self.__class__.__name__,
+            "message": "No health check implemented; assuming OK.",
+        }
