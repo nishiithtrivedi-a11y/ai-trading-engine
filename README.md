@@ -30,9 +30,11 @@ The project currently provides:
   - CSV/JSON export
 - Phase 10 Streamlit dashboard:
   - local research and monitoring control room
-  - read-oriented (no trade execution)
+  - read-oriented data views (no trade execution)
   - visualizes outputs from all phases
   - graceful empty states when data is missing
+  - Control Center page: run engines via buttons (scanner, monitoring, decision, market intelligence, research lab, realtime cycle, full pipeline)
+  - safe, bounded engine invocations (CSV provider, single-cycle realtime, no broker calls)
 - Phase 4 market monitoring layer:
   - watchlist management (config/CSV/JSON/universe-backed)
   - market regime detection (explicit threshold logic)
@@ -165,9 +167,9 @@ The project currently provides:
 ### 11. Dashboard Layer (`src/ui/`)
 
 - `app.py`: Streamlit application entry point with sidebar navigation
-- `pages/`: Page modules (overview, backtests, optimization, walk-forward, monte_carlo, scanner, monitoring, decision_engine, realtime)
-- `components/`: Reusable UI components (metrics_cards, tables, charts, filters)
-- `utils/`: Loader, formatter, and state management utilities
+- `pages/`: Page modules (overview, control_center, backtests, optimization, walk-forward, monte_carlo, scanner, monitoring, decision_engine, realtime)
+- `components/`: Reusable UI components (metrics_cards, tables, charts, filters, action_panels, status_panels)
+- `utils/`: Loader, formatter, state management, and engine runner utilities
 
 ## Phase-by-Phase Status
 
@@ -230,10 +232,14 @@ The project currently provides:
 
 - Streamlit-based local research and monitoring dashboard
 - Read-oriented UI over all phase outputs (no trade execution)
-- Pages: Overview, Backtests, Optimization, Walk-Forward, Monte Carlo, Scanner, Monitoring, Decision Engine, Realtime
+- Pages: Overview, Control Center, Backtests, Optimization, Walk-Forward, Monte Carlo, Scanner, Monitoring, Decision Engine, Realtime
+- Control Center: button-driven engine execution (scanner, monitoring, decision, market intelligence, research lab, realtime cycle)
+- Full research pipeline button (MI -> Scanner -> Monitoring -> Decision) with stage-by-stage progress
+- Engine runner wrappers with structured RunResult outcomes and graceful error handling
+- Session-level run history and per-engine last-run tracking
 - Modular architecture: components, pages, utility layers
 - Graceful empty-state handling for missing data
-- Reusable loader/formatter/state utilities with test coverage
+- Reusable loader/formatter/state/runner utilities with test coverage
 
 ### Future Scope (Not Yet Implemented)
 
@@ -255,10 +261,11 @@ pip install -r requirements.txt
 streamlit run src/ui/app.py
 ```
 
-The dashboard is read-oriented and does not execute trades. It visualizes outputs from all earlier phases. Pages show graceful empty states when data is not yet available.
+The dashboard does not execute trades or place orders. It visualizes outputs from all earlier phases and provides a Control Center for running research engines via buttons. Pages show graceful empty states when data is not yet available.
 
 Dashboard pages:
 - **Overview**: Platform status, market state, decision summary, data availability
+- **Control Center**: Run engines via buttons, full pipeline execution, run history, config summary
 - **Backtests**: Equity curves, drawdowns, trade logs, performance metrics
 - **Optimization**: Strategy ranking tables, parameter analysis
 - **Walk-Forward**: Per-window train/test metrics, out-of-sample summaries
@@ -267,6 +274,27 @@ Dashboard pages:
 - **Monitoring**: Market regime, top picks, alerts, relative strength
 - **Decision Engine**: Intraday/swing/positional picks, rejected opportunities
 - **Realtime**: Engine status, cycle history, snapshots, alerts
+
+### Using the Control Center
+
+The Control Center page lets you run engines directly from the dashboard:
+
+1. Open the dashboard: `streamlit run src/ui/app.py`
+2. Select **Control Center** from the sidebar
+3. Click **Run Full Pipeline** to run Market Intelligence, Scanner, Monitoring, and Decision Engine in sequence
+4. Or run individual engines using the dedicated buttons
+5. View run history and output status at the bottom of the page
+
+Available buttons:
+- **Run Scanner** -- scans the NIFTY 50 universe with RSI + SMA strategies
+- **Run Monitoring** -- market regime, alerts, relative strength
+- **Run Decision Engine** -- runs monitoring + pick engine (intraday/swing/positional)
+- **Run Market Intelligence** -- breadth, sector rotation, volume, volatility regime
+- **Run Research Lab** -- strategy discovery and robustness scoring
+- **Run One Realtime Cycle** -- single simulated cycle (safe, bounded)
+- **Run Full Pipeline** -- MI > Scanner > Monitoring > Decision in sequence
+
+All actions are **research-only**: they use the CSV data provider, never place trades, and realtime is limited to single simulated cycles.
 
 ### Main backtest demo
 
@@ -651,6 +679,12 @@ Run strategy research lab tests:
 
 ```bash
 python -m pytest tests/test_strategy_* tests/test_parameter_surface.py tests/test_robustness_analyzer.py -q
+```
+
+Run UI and runner tests:
+
+```bash
+python -m pytest tests/test_ui_* -q
 ```
 
 Run realtime tests:

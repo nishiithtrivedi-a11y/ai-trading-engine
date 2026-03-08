@@ -8,6 +8,7 @@ from . import (
     monitoring,
     decision_engine,
     realtime,
+    control_center,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "monitoring",
     "decision_engine",
     "realtime",
+    "control_center",
 ]
