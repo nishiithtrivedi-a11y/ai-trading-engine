@@ -7,7 +7,8 @@ tightly coupling page modules to st.session_state internals.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -18,6 +19,8 @@ KEY_OUTPUT_DIR = "output_dir"
 KEY_SELECTED_BACKTEST = "selected_backtest"
 KEY_SELECTED_HORIZON = "selected_horizon"
 KEY_LAST_REFRESH = "last_refresh"
+KEY_RUN_HISTORY = "run_history"
+KEY_LAST_RUN_RESULTS = "last_run_results"
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +89,35 @@ class AppState:
     def set_selected_horizon(self, horizon: str) -> None:
         """Set the currently selected decision horizon."""
         self.set(KEY_SELECTED_HORIZON, horizon)
+
+    # ----- Run history (for Control Center) -----
+
+    def get_run_history(self) -> List[Dict[str, Any]]:
+        """Get the full run history list."""
+        return self.get(KEY_RUN_HISTORY, [])
+
+    def add_run_result(self, result_dict: Dict[str, Any]) -> None:
+        """Append a run result to the history."""
+        history: List[Dict[str, Any]] = self.get_run_history()
+        entry = dict(result_dict)
+        entry.setdefault("timestamp", datetime.now().isoformat())
+        history.append(entry)
+        self.set(KEY_RUN_HISTORY, history)
+
+        # Also update last-run-per-engine map
+        last_runs: Dict[str, Dict[str, Any]] = self.get(KEY_LAST_RUN_RESULTS, {})
+        engine_name = entry.get("engine_name", "unknown")
+        last_runs[engine_name] = entry
+        self.set(KEY_LAST_RUN_RESULTS, last_runs)
+
+    def get_last_run(self, engine_name: str) -> Optional[Dict[str, Any]]:
+        """Get the most recent result for a specific engine."""
+        last_runs: Dict[str, Dict[str, Any]] = self.get(KEY_LAST_RUN_RESULTS, {})
+        return last_runs.get(engine_name)
+
+    def get_all_last_runs(self) -> Dict[str, Dict[str, Any]]:
+        """Get the last result for every engine."""
+        return self.get(KEY_LAST_RUN_RESULTS, {})
 
 
 def get_app_state() -> AppState:

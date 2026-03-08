@@ -20,6 +20,7 @@ from src.ui.utils.state import get_app_state
 # Import pages
 from src.ui.pages import (
     overview,
+    control_center,
     backtests,
     optimization,
     walk_forward,
@@ -36,6 +37,7 @@ from src.ui.pages import (
 
 PAGES = {
     "Overview": overview,
+    "Control Center": control_center,
     "Backtests": backtests,
     "Optimization": optimization,
     "Walk-Forward": walk_forward,
