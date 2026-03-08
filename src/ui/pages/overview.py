@@ -10,7 +10,6 @@ from src.ui.utils.loaders import (
     get_data_availability,
     list_backtest_runs,
     load_monitoring_regime,
-    load_monitoring_snapshot,
     load_decision_summary,
     load_realtime_status,
     load_market_state,
@@ -75,15 +74,19 @@ def render(output_dir: str) -> None:
     if decision_data:
         st.subheader("Latest Decision Summary")
         summary = decision_data.get("summary", decision_data)
+        total_selected = summary.get("selected_total", summary.get("total_selected", "N/A"))
+        intraday = summary.get("intraday_total", summary.get("intraday_count", "N/A"))
+        swing = summary.get("swing_total", summary.get("swing_count", "N/A"))
+        positional = summary.get("positional_total", summary.get("positional_count", "N/A"))
         dc1, dc2, dc3, dc4 = st.columns(4)
         with dc1:
-            st.metric("Total Picks", summary.get("total_selected", "N/A"))
+            st.metric("Total Picks", total_selected)
         with dc2:
-            st.metric("Intraday", summary.get("intraday_count", "N/A"))
+            st.metric("Intraday", intraday)
         with dc3:
-            st.metric("Swing", summary.get("swing_count", "N/A"))
+            st.metric("Swing", swing)
         with dc4:
-            st.metric("Positional", summary.get("positional_count", "N/A"))
+            st.metric("Positional", positional)
     else:
         st.info("No decision engine output available. Run the decision engine to see picks.")
 
@@ -97,3 +100,9 @@ def render(output_dir: str) -> None:
             st.success(f"{label} - data available")
         else:
             st.warning(f"{label} - no data yet")
+
+
+if __name__ == "__main__":
+    from src.ui.utils.state import get_app_state
+
+    render(get_app_state().get_output_dir())

@@ -538,9 +538,9 @@ def get_realtime_config_status() -> Dict[str, Any]:
 def get_provider_status() -> Dict[str, Any]:
     """Return current provider configuration status."""
     try:
-        from src.data.provider_config import DataProvidersConfig
+        from src.data.provider_config import load_provider_config
 
-        config = DataProvidersConfig()
+        config = load_provider_config()
         default = config.default_provider
         providers = {}
         for name, entry in config.providers.items():

@@ -88,11 +88,20 @@ def find_file_in_dirs(
 ) -> Optional[Path]:
     """Search for a file across multiple output subdirectories.
 
-    Checks the latest directory for each prefix, returns first match.
+    Checks directories by recency for each prefix and returns first match.
+    This avoids false empty states when the latest run is partial.
     """
+    root = _resolve_output_dir(output_dir)
+    if not root.exists():
+        return None
+
     for prefix in prefixes:
-        d = find_latest_dir(prefix, output_dir)
-        if d:
+        dirs = sorted(
+            [d for d in root.iterdir() if d.is_dir() and d.name.startswith(prefix)],
+            key=lambda d: d.stat().st_mtime,
+            reverse=True,
+        )
+        for d in dirs:
             candidate = d / filename
             if candidate.exists():
                 return candidate

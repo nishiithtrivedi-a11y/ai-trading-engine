@@ -94,3 +94,9 @@ def render(output_dir: str) -> None:
     if config_data:
         st.divider()
         key_value_table(config_data, title="Simulation Configuration")
+
+
+if __name__ == "__main__":
+    from src.ui.utils.state import get_app_state
+
+    render(get_app_state().get_output_dir())

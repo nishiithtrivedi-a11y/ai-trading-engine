@@ -61,3 +61,9 @@ def render(output_dir: str) -> None:
         trade_log_table(trades_df)
     else:
         st.info(trades_err or "No trade log available.")
+
+
+if __name__ == "__main__":
+    from src.ui.utils.state import get_app_state
+
+    render(get_app_state().get_output_dir())

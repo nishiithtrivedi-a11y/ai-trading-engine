@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.data.provider_config import DataProvidersConfig, ProviderEntry
 from src.ui.utils.runners import (
     RunResult,
     _default_monitoring_config,
@@ -329,9 +330,25 @@ class TestConfigStatus:
         assert "default_provider" in status
         assert "providers" in status
 
+    def test_provider_status_reads_loaded_provider_config(self):
+        mock_cfg = DataProvidersConfig(
+            default_provider="indian_csv",
+            providers={
+                "indian_csv": ProviderEntry(enabled=True, data_dir="data"),
+                "csv": ProviderEntry(enabled=False, data_dir="data"),
+            },
+        )
+        with patch(
+            "src.data.provider_config.load_provider_config",
+            return_value=mock_cfg,
+        ):
+            status = get_provider_status()
+            assert status["default_provider"] == "indian_csv"
+            assert status["providers"]["indian_csv"]["enabled"] is True
+
     def test_provider_status_handles_error(self):
         with patch(
-            "src.data.provider_config.DataProvidersConfig",
+            "src.data.provider_config.load_provider_config",
             side_effect=Exception("test"),
         ):
             status = get_provider_status()

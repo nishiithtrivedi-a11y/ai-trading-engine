@@ -263,6 +263,10 @@ streamlit run src/ui/app.py
 
 The dashboard does not execute trades or place orders. It visualizes outputs from all earlier phases and provides a Control Center for running research engines via buttons. Pages show graceful empty states when data is not yet available.
 
+Navigation note:
+- The dashboard uses custom navigation inside `src/ui/app.py`.
+- Streamlit automatic multipage sidebar discovery is intentionally disabled via `.streamlit/config.toml` to avoid dual-navigation conflicts.
+
 Dashboard pages:
 - **Overview**: Platform status, market state, decision summary, data availability
 - **Control Center**: Run engines via buttons, full pipeline execution, run history, config summary

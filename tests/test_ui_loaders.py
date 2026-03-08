@@ -107,6 +107,23 @@ class TestDirectoryDiscovery:
         assert result is not None
         assert result.name == "opportunities.csv"
 
+    def test_find_file_in_dirs_falls_back_when_latest_missing_file(self, tmp_path):
+        older = tmp_path / "scanner_old"
+        older.mkdir()
+        (older / "opportunities.csv").write_text("symbol,score\nRELIANCE,80\n")
+
+        latest = tmp_path / "scanner_new"
+        latest.mkdir()
+        # Newer dir intentionally missing opportunities.csv
+        (latest / "other.csv").write_text("a,b\n1,2\n")
+
+        # Touch latest so it is definitely newer
+        (latest / "marker").write_text("new")
+
+        result = find_file_in_dirs("opportunities.csv", ["scanner"], str(tmp_path))
+        assert result is not None
+        assert result.parent.name == "scanner_old"
+
 
 class TestPhaseLoaders:
 

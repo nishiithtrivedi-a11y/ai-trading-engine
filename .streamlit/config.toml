@@ -1,0 +1,5 @@
+[client]
+# The dashboard uses explicit custom navigation in src/ui/app.py.
+# Disable Streamlit's automatic multipage sidebar to avoid dual-routing
+# behavior and blank-page confusion from reserved `pages/` discovery.
+showSidebarNavigation = false

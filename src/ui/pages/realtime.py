@@ -102,3 +102,9 @@ def render(output_dir: str) -> None:
         alerts_table(alerts_df, title="Realtime Alerts")
     else:
         st.info("No realtime alerts available.")
+
+
+if __name__ == "__main__":
+    from src.ui.utils.state import get_app_state
+
+    render(get_app_state().get_output_dir())

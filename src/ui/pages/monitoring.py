@@ -89,3 +89,9 @@ def render(output_dir: str) -> None:
     if snap_data:
         st.divider()
         st.caption(f"Snapshot generated at: {fmt_timestamp(snap_data.get('generated_at'))}")
+
+
+if __name__ == "__main__":
+    from src.ui.utils.state import get_app_state
+
+    render(get_app_state().get_output_dir())

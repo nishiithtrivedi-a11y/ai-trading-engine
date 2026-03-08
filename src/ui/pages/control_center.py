@@ -153,3 +153,9 @@ def render(output_dir: str) -> None:
     # ----- Run history -----
     st.subheader("Run History (This Session)")
     run_history_panel(state.get_all_last_runs())
+
+
+if __name__ == "__main__":
+    from src.ui.utils.state import get_app_state
+
+    render(get_app_state().get_output_dir())

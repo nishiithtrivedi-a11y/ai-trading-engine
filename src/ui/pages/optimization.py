@@ -74,3 +74,9 @@ def render(output_dir: str) -> None:
             use_container_width=True,
             hide_index=True,
         )
+
+
+if __name__ == "__main__":
+    from src.ui.utils.state import get_app_state
+
+    render(get_app_state().get_output_dir())

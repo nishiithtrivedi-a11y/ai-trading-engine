@@ -73,3 +73,9 @@ def render(output_dir: str) -> None:
         st.subheader("Classification Distribution")
         dist = df["classification"].value_counts()
         st.bar_chart(dist)
+
+
+if __name__ == "__main__":
+    from src.ui.utils.state import get_app_state
+
+    render(get_app_state().get_output_dir())

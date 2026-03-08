@@ -36,6 +36,7 @@ Thumbs.db
 
 # Project outputs (generated, not source)
 output/
+__nonexistent__/
 
 # Claude internal
 .claude/

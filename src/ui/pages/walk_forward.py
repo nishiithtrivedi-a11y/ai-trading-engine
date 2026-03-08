@@ -80,3 +80,9 @@ def render(output_dir: str) -> None:
             st.bar_chart(df[sharpe_col].dropna())
     else:
         st.info(err or "No per-window walk-forward results found.")
+
+
+if __name__ == "__main__":
+    from src.ui.utils.state import get_app_state
+
+    render(get_app_state().get_output_dir())

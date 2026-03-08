@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-from src.ui.utils.loaders import get_data_availability, list_backtest_runs
+from src.ui.utils.loaders import get_data_availability
 from src.ui.utils.state import get_app_state
 
 # Import pages
@@ -81,9 +81,18 @@ def main():
             label = phase.replace("_", " ").title()
             st.text(f"{'[OK]' if available else '[  ]'} {label}")
 
-    # Render selected page
+    # Render selected page with explicit UI-level error handling so the app
+    # does not silently blank on page exceptions.
     page_module = PAGES[page_name]
-    page_module.render(state.get_output_dir())
+    try:
+        render_fn = getattr(page_module, "render", None)
+        if not callable(render_fn):
+            st.error(f"Selected page '{page_name}' is missing a callable render() function.")
+            return
+        render_fn(state.get_output_dir())
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Failed to render page '{page_name}': {exc}")
+        st.exception(exc)
 
 
 if __name__ == "__main__":

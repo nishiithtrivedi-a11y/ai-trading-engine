@@ -23,17 +23,22 @@ def render(output_dir: str) -> None:
     if summary:
         st.subheader("Decision Summary")
         s = summary.get("summary", summary)
+        total_selected = s.get("selected_total", s.get("total_selected", "N/A"))
+        intraday = s.get("intraday_total", s.get("intraday_count", "N/A"))
+        swing = s.get("swing_total", s.get("swing_count", "N/A"))
+        positional = s.get("positional_total", s.get("positional_count", "N/A"))
+        rejected = s.get("rejected_total", s.get("rejected_count", "N/A"))
         cols = st.columns(5)
         with cols[0]:
-            st.metric("Total Selected", s.get("total_selected", "N/A"))
+            st.metric("Total Selected", total_selected)
         with cols[1]:
-            st.metric("Intraday", s.get("intraday_count", "N/A"))
+            st.metric("Intraday", intraday)
         with cols[2]:
-            st.metric("Swing", s.get("swing_count", "N/A"))
+            st.metric("Swing", swing)
         with cols[3]:
-            st.metric("Positional", s.get("positional_count", "N/A"))
+            st.metric("Positional", positional)
         with cols[4]:
-            st.metric("Rejected", s.get("rejected_count", "N/A"))
+            st.metric("Rejected", rejected)
 
         st.caption(f"Generated at: {fmt_timestamp(summary.get('generated_at'))}")
         st.divider()
@@ -78,3 +83,9 @@ def render(output_dir: str) -> None:
             data_table(df, max_rows=50)
         else:
             st.info(err or "No rejected opportunities found.")
+
+
+if __name__ == "__main__":
+    from src.ui.utils.state import get_app_state
+
+    render(get_app_state().get_output_dir())
