@@ -78,7 +78,7 @@ def main() -> None:
     print(hdr)
     print("-" * 100)
 
-    for i, r in enumerate(result.ranked, 1):
+    for i, r in enumerate(result.ranked_strategies, 1):
         m = r.metrics
         params = ", ".join(f"{k}={v}" for k, v in r.params.items())
         sharpe = m.get("sharpe_ratio", float("nan"))
