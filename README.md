@@ -67,6 +67,11 @@ The project currently provides:
   - market-hours gating with safe dry-run override
   - repeated monitoring/decision refresh snapshots
   - realtime status/history/alerts/snapshot export
+- Paper-trading engine:
+  - safe paper-only session runner on fresh provider data
+  - hypothetical paper orders, fills, positions, and PnL tracking
+  - reuse of regime policy, risk manager, and execution cost/fill models
+  - CSV/JSON/Markdown session artifacts
 
 ## Current Architecture
 
@@ -164,7 +169,13 @@ The project currently provides:
 - `realtime_engine.py`
 - `exporter.py`
 
-### 11. Dashboard Layer (`src/ui/`)
+### 11. Paper Trading Layer (`src/paper_trading/`)
+
+- `models.py`, `state_store.py`
+- `paper_engine.py`
+- `scripts/run_paper_trading.py`
+
+### 12. Dashboard Layer (`src/ui/`)
 
 - `app.py`: Streamlit application entry point with sidebar navigation
 - `pages/`: Page modules (overview, control_center, backtests, optimization, walk-forward, monte_carlo, scanner, monitoring, decision_engine, realtime)
@@ -240,6 +251,13 @@ The project currently provides:
 - Modular architecture: components, pages, utility layers
 - Graceful empty-state handling for missing data
 - Reusable loader/formatter/state/runner utilities with test coverage
+
+### Paper Trading Layer (Complete)
+
+- Additive paper-only trading workflow on top of provider/strategy/regime/risk/execution modules
+- Safe opt-in CLI (`scripts/run_paper_trading.py`) with no live broker routing
+- Tracks paper orders, fills, positions, realized/unrealized PnL, and session journal
+- Exports `paper_orders.csv`, `paper_positions.csv`, `paper_pnl.csv`, `paper_session_summary.md`, and `paper_state.json`
 
 ### Future Scope (Not Yet Implemented)
 
@@ -575,6 +593,39 @@ print(result.exports)
 
 Realtime outputs are written under `output/realtime*`.
 
+### Paper trading engine (example)
+
+Safe default: nothing runs unless `--paper-trading` is passed.
+
+```bash
+python scripts/run_paper_trading.py \
+  --paper-trading \
+  --provider indian_csv \
+  --symbols RELIANCE.NS TCS.NS INFY.NS HDFCBANK.NS ICICIBANK.NS \
+  --interval day \
+  --paper-output-dir output/paper_trading_run \
+  --paper-max-orders 10
+```
+
+Optional regime-aware selection:
+
+```bash
+python scripts/run_paper_trading.py \
+  --paper-trading \
+  --provider indian_csv \
+  --symbols RELIANCE.NS TCS.NS INFY.NS \
+  --regime-policy-json research/regime_policy.json
+```
+
+Artifacts written under `output/paper_trading*` include:
+
+- `paper_orders.csv`
+- `paper_positions.csv`
+- `paper_pnl.csv`
+- `paper_journal.csv`
+- `paper_session_summary.md`
+- `paper_state.json`
+
 ### Realtime Switches and Modes
 
 Default config file:
@@ -693,6 +744,12 @@ Run realtime tests:
 python -m pytest tests/test_realtime_* tests/test_market_clock.py tests/test_data_poller.py tests/test_state_store.py tests/test_event_bus.py tests/test_alert_dispatcher.py tests/test_snapshot_refresher.py -q
 ```
 
+Run paper-trading tests:
+
+```bash
+python -m pytest tests/test_paper_engine.py -q
+```
+
 ## Git Workflow for AI Tools
 
 See [AI_AGENT_WORKFLOW.md](AI_AGENT_WORKFLOW.md).
@@ -712,4 +769,5 @@ This repository is a **research platform**.
 
 - It is not financial advice.
 - It does not guarantee profitability.
+- Paper trading is simulated only and does not place live broker orders.
 - Live trading/execution is future scope and should be implemented with additional production-grade safeguards.
