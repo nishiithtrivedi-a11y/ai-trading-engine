@@ -167,6 +167,42 @@ def parse_args() -> argparse.Namespace:
             "is active. Ignored when --build-regime-policy is absent."
         ),
     )
+    p.add_argument(
+        "--walk-forward-regime", action="store_true",
+        help=(
+            "Run regime policy walk-forward validation after the main backtest "
+            "loop.  For each rolling window the policy is built from train-window "
+            "data only (no lookahead) and then evaluated on the held-out test "
+            "window.  Generates research/regime_walk_forward.md. "
+            "Automatically enables --regime-analysis. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
+    p.add_argument(
+        "--train-days", type=int, default=180, metavar="N",
+        help=(
+            "Number of bars in each walk-forward training window "
+            "(default: 180, approximately 6 months of daily bars). "
+            "Only used when --walk-forward-regime is active."
+        ),
+    )
+    p.add_argument(
+        "--test-days", type=int, default=90, metavar="N",
+        help=(
+            "Number of bars in each walk-forward test window "
+            "(default: 90, approximately 3 months of daily bars). "
+            "Only used when --walk-forward-regime is active."
+        ),
+    )
+    p.add_argument(
+        "--step-days", type=int, default=45, metavar="N",
+        help=(
+            "Number of bars to advance the window start between walk-forward "
+            "iterations (default: 45).  A value equal to --test-days gives "
+            "non-overlapping test windows. "
+            "Only used when --walk-forward-regime is active."
+        ),
+    )
     return p.parse_args()
 
 
@@ -804,6 +840,11 @@ def main() -> None:
     info(f"Regime filter: {getattr(args, 'regime_filter', False)}")
     info(f"Regime anlys : {getattr(args, 'regime_analysis', False)}")
     info(f"Regime policy: {getattr(args, 'build_regime_policy', False)}")
+    info(f"Walk-forward : {getattr(args, 'walk_forward_regime', False)}")
+    if getattr(args, "walk_forward_regime", False):
+        info(f"  train-days : {args.train_days}")
+        info(f"  test-days  : {args.test_days}")
+        info(f"  step-days  : {args.step_days}")
     info(f"Output dir   : {output_dir.resolve()}")
 
     # -----------------------------------------------------------------------
@@ -956,6 +997,22 @@ def main() -> None:
     )
 
     # -----------------------------------------------------------------------
+    # Walk-forward regime validation flag (auto-enables --regime-analysis)
+    # When active: run rolling train/test walk-forward policy validation
+    # after the backtest loop.  Symbol DataFrames are cached during the loop.
+    # -----------------------------------------------------------------------
+    walk_forward_active = getattr(args, "walk_forward_regime", False)
+    if walk_forward_active and not regime_analysis_active:
+        warn(
+            "--walk-forward-regime requires --regime-analysis; "
+            "enabling --regime-analysis automatically."
+        )
+        regime_analysis_active = True
+
+    # Cache pre-fetched DataFrames for walk-forward (populated in loop below)
+    symbols_df_cache: dict[str, Any] = {}
+
+    # -----------------------------------------------------------------------
     # Main research loop
     # -----------------------------------------------------------------------
     section("RUNNING BACKTESTS")
@@ -976,6 +1033,10 @@ def main() -> None:
             continue
 
         info(f"    Data: {len(df)} bars  ({df.index[0]} -> {df.index[-1]})")
+
+        # Cache DataFrame for walk-forward validation (when active)
+        if walk_forward_active:
+            symbols_df_cache[symbol] = df
 
         # -------------------------------------------------------------------
         # Per-symbol regime label for result row tagging
@@ -1173,6 +1234,100 @@ def main() -> None:
 
     elif build_regime_policy_active and not all_rows:
         warn("--build-regime-policy enabled but no results produced; skipping policy build")
+
+    # -----------------------------------------------------------------------
+    # Regime policy walk-forward validation (optional --walk-forward-regime)
+    # Requires: symbols_df_cache populated during the loop above.
+    # Policy is built only from train-window data (no lookahead guaranteed).
+    # -----------------------------------------------------------------------
+    if walk_forward_active and symbols_df_cache:
+        section("REGIME POLICY WALK-FORWARD VALIDATION")
+        from src.research.regime_walk_forward import (
+            run_regime_policy_walk_forward as _run_wf,
+            summarize_walk_forward_results as _summarize_wf,
+            generate_walk_forward_report   as _gen_wf_report,
+        )
+
+        wf_train_days = args.train_days
+        wf_test_days  = args.test_days
+        wf_step_days  = args.step_days
+        min_required  = wf_train_days + wf_test_days
+
+        info(f"Walk-forward parameters: train={wf_train_days}, test={wf_test_days}, step={wf_step_days}")
+        info(f"Symbols with cached data: {len(symbols_df_cache)}")
+
+        # Warn if any symbol has insufficient bars
+        insufficient = [
+            sym for sym, df in symbols_df_cache.items()
+            if len(df) < min_required
+        ]
+        if insufficient:
+            warn(
+                f"{len(insufficient)} symbol(s) have fewer than {min_required} bars "
+                f"and may yield no windows: {insufficient[:5]}"
+                + (" ..." if len(insufficient) > 5 else "")
+            )
+
+        wf_report_path = Path("research") / "regime_walk_forward.md"
+        wf_meta: dict = {
+            "interval":       args.interval,
+            "days":           args.days,
+            "symbols_tested": len(symbols_df_cache),
+            "strategies":     ", ".join(args.strategies),
+            "train_days":     wf_train_days,
+            "test_days":      wf_test_days,
+            "step_days":      wf_step_days,
+        }
+
+        try:
+            wf_records = _run_wf(
+                symbols_data=symbols_df_cache,
+                strategies=registry,
+                train_days=wf_train_days,
+                test_days=wf_test_days,
+                step_days=wf_step_days,
+                base_config=base_config,
+            )
+
+            if wf_records:
+                wf_summary = _summarize_wf(wf_records)
+                hit_rate   = wf_summary.get("policy_hit_rate")
+                hit_str    = f"{hit_rate*100:.1f}%" if hit_rate is not None else "N/A"
+                ok(f"Walk-forward records    : {len(wf_records)}")
+                ok(f"Windows completed       : {wf_summary.get('total_windows', 0)}")
+                ok(f"Policy hit rate         : {hit_str}")
+                info(f"  Correct calls        : {wf_summary.get('correct_calls', 0)} / {wf_summary.get('total_records', 0)}")
+                info(f"  Should-trade         : {wf_summary.get('should_trade_records', 0)}")
+                info(f"  No-trade decisions   : {wf_summary.get('no_trade_records', 0)}")
+                by_regime_wf = wf_summary.get("by_regime", {})
+                if by_regime_wf:
+                    info("  Hit rate by regime:")
+                    for rl, d in sorted(by_regime_wf.items()):
+                        hr = d.get("hit_rate")
+                        hr_s = f"{hr*100:.1f}%" if hr is not None else "N/A"
+                        info(f"    {rl:<22} {d['correct']}/{d['total']} ({hr_s})")
+
+                _gen_wf_report(wf_records, output_path=wf_report_path, metadata=wf_meta)
+                ok(f"Walk-forward report     : {wf_report_path.resolve()}")
+            else:
+                warn(
+                    "Walk-forward produced no records. "
+                    f"Ensure each symbol has >= {min_required} bars "
+                    f"(train_days={wf_train_days} + test_days={wf_test_days}). "
+                    f"Current --days={args.days}."
+                )
+
+        except Exception as exc:
+            warn(f"Walk-forward validation failed: {exc}")
+            if getattr(args, "verbose", False):
+                import traceback as _tb
+                _tb.print_exc()
+
+    elif walk_forward_active and not symbols_df_cache:
+        warn(
+            "--walk-forward-regime enabled but no symbol data was cached "
+            "(all symbols may have failed data fetch); skipping walk-forward"
+        )
 
     # -----------------------------------------------------------------------
     # Export reports

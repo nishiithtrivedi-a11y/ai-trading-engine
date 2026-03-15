@@ -15,6 +15,12 @@ from .regime_analysis import (
     rank_strategies_by_regime,
     generate_regime_report,
 )
+from .regime_walk_forward import (
+    build_walk_forward_windows,
+    run_regime_policy_walk_forward,
+    summarize_walk_forward_results,
+    generate_walk_forward_report,
+)
 
 __all__ = [
     "OptimizationResult",
@@ -38,4 +44,8 @@ __all__ = [
     "analyze_by_regime",
     "rank_strategies_by_regime",
     "generate_regime_report",
+    "build_walk_forward_windows",
+    "run_regime_policy_walk_forward",
+    "summarize_walk_forward_results",
+    "generate_walk_forward_report",
 ]
