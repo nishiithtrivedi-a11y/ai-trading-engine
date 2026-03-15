@@ -67,6 +67,12 @@ The project currently provides:
   - market-hours gating with safe dry-run override
   - repeated monitoring/decision refresh snapshots
   - realtime status/history/alerts/snapshot export
+- Phase 9 live market data / signal pipeline:
+  - fresh/latest-bar signal pipeline with safe single-run default
+  - watchlist/universe loading + session-state artifacts
+  - relative-strength + regime snapshot + regime-policy selection
+  - risk pre-check integration and paper-handoff CSV export
+  - no live order placement
 - Paper-trading engine:
   - safe paper-only session runner on fresh provider data
   - hypothetical paper orders, fills, positions, and PnL tracking
@@ -175,7 +181,13 @@ The project currently provides:
 - `paper_engine.py`
 - `scripts/run_paper_trading.py`
 
-### 12. Dashboard Layer (`src/ui/`)
+### 12. Live Signal Layer (`src/live/`)
+
+- `models.py`, `watchlist_manager.py`
+- `market_session.py`, `signals_pipeline.py`
+- `scripts/run_live_signal_pipeline.py`
+
+### 13. Dashboard Layer (`src/ui/`)
 
 - `app.py`: Streamlit application entry point with sidebar navigation
 - `pages/`: Page modules (overview, control_center, backtests, optimization, walk-forward, monte_carlo, scanner, monitoring, decision_engine, realtime)
@@ -238,6 +250,14 @@ The project currently provides:
 - Market-hours gating with dry-run support and bounded cycles (`max_cycles_per_run`)
 - Realtime cycle orchestration of poll -> monitoring refresh -> decision refresh
 - Realtime export artifacts for future UI/automation (`realtime_status`, history, snapshot, alerts, manifest)
+
+### Phase 9 (Complete)
+
+- Additive live-safe signal pipeline over fresh/latest data snapshots
+- Watchlist/universe loading with session artifacts (`signals`, `watchlist`, `regime_snapshot`, `session_state`, `session_summary`)
+- Relative-strength ranking + regime snapshots + optional regime-policy strategy selection
+- Optional paper handoff export (`paper_handoff_signals.csv`)
+- Explicit safety boundary: signal generation only, no broker execution
 
 ### Phase 10 (Complete)
 
@@ -626,6 +646,42 @@ Artifacts written under `output/paper_trading*` include:
 - `paper_session_summary.md`
 - `paper_state.json`
 
+### Live signal pipeline (example)
+
+Safe default: nothing runs unless `--live-signals` is passed.
+
+```bash
+python scripts/run_live_signal_pipeline.py \
+  --live-signals \
+  --provider indian_csv \
+  --symbols RELIANCE.NS TCS.NS INFY.NS \
+  --interval day \
+  --run-once \
+  --output-dir output/live_signals_smoke
+```
+
+With optional paper handoff:
+
+```bash
+python scripts/run_live_signal_pipeline.py \
+  --live-signals \
+  --provider indian_csv \
+  --symbols RELIANCE.NS TCS.NS INFY.NS HDFCBANK.NS ICICIBANK.NS \
+  --interval day \
+  --run-once \
+  --paper-handoff \
+  --output-dir output/live_signals_nifty5
+```
+
+Artifacts written under `output/live_signals*` include:
+
+- `signals.csv`
+- `watchlist.csv`
+- `regime_snapshot.csv`
+- `session_summary.md`
+- `session_state.json`
+- `paper_handoff_signals.csv` (when `--paper-handoff` is enabled)
+
 ### Realtime Switches and Modes
 
 Default config file:
@@ -750,6 +806,12 @@ Run paper-trading tests:
 python -m pytest tests/test_paper_engine.py -q
 ```
 
+Run live-signal pipeline tests:
+
+```bash
+python -m pytest tests/test_live_signal_pipeline.py tests/test_execution_interface_placeholder.py -q
+```
+
 ## Git Workflow for AI Tools
 
 See [AI_AGENT_WORKFLOW.md](AI_AGENT_WORKFLOW.md).
@@ -770,4 +832,5 @@ This repository is a **research platform**.
 - It is not financial advice.
 - It does not guarantee profitability.
 - Paper trading is simulated only and does not place live broker orders.
+- Live signal pipeline outputs are signal artifacts only and do not place live broker orders.
 - Live trading/execution is future scope and should be implemented with additional production-grade safeguards.
