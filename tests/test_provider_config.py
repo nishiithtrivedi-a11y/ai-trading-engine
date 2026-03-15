@@ -156,7 +156,17 @@ providers:
         config_file = tmp_path / "providers.yaml"
         config_file.write_text(yaml_content)
 
-        config = load_provider_config(str(config_file))
+        # Isolate from any real credentials present in the shell environment:
+        # load_provider_config() always calls _apply_env_overrides(), which
+        # would override "yaml_key" with a real token if one is set in env.
+        env_clear = {
+            "ZERODHA_API_KEY": "",
+            "ZERODHA_API_SECRET": "",
+            "ZERODHA_ACCESS_TOKEN": "",
+        }
+        with mock.patch.dict(os.environ, env_clear):
+            config = load_provider_config(str(config_file))
+
         assert config.default_provider == "indian_csv"
         assert config.is_provider_enabled("csv") is True
         assert config.is_provider_enabled("zerodha") is False
