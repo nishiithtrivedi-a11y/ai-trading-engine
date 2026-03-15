@@ -49,3 +49,9 @@ credentials.json
 
 # Cached data (instrument lists, etc.)
 data/cache/
+
+# Artifact / junk directories (created by tooling accidents)
+__nonexistent__/
+
+# Windows "New Text Document" and similar editor junk
+New Text Document.txt
