@@ -203,6 +203,25 @@ def parse_args() -> argparse.Namespace:
             "Only used when --walk-forward-regime is active."
         ),
     )
+    # ---- Phase 4: Portfolio-Level Backtest ----
+    p.add_argument(
+        "--portfolio-backtest", action="store_true",
+        help=(
+            "Run a portfolio-level backtest after the main research loop. "
+            "Allocates total capital equally across up to --max-positions symbols, "
+            "selects strategy per symbol (via regime policy if available), and "
+            "generates research/portfolio_backtest.md. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
+    p.add_argument(
+        "--max-positions", type=int, default=10, metavar="N",
+        help=(
+            "Maximum concurrent portfolio positions (default: 10). "
+            "Limits the number of symbols active in --portfolio-backtest. "
+            "Capital is allocated as initial_capital / max_positions per symbol."
+        ),
+    )
     return p.parse_args()
 
 
@@ -845,6 +864,9 @@ def main() -> None:
         info(f"  train-days : {args.train_days}")
         info(f"  test-days  : {args.test_days}")
         info(f"  step-days  : {args.step_days}")
+    info(f"Portfolio bt : {getattr(args, 'portfolio_backtest', False)}")
+    if getattr(args, "portfolio_backtest", False):
+        info(f"  max-pos    : {args.max_positions}")
     info(f"Output dir   : {output_dir.resolve()}")
 
     # -----------------------------------------------------------------------
@@ -1327,6 +1349,106 @@ def main() -> None:
         warn(
             "--walk-forward-regime enabled but no symbol data was cached "
             "(all symbols may have failed data fetch); skipping walk-forward"
+        )
+
+    # -----------------------------------------------------------------------
+    # Portfolio-level backtest (optional --portfolio-backtest flag)
+    # Uses the cached symbol DataFrames (populated in loop above).
+    # Requires at least one successful backtest result row.
+    # -----------------------------------------------------------------------
+    portfolio_backtest_active = getattr(args, "portfolio_backtest", False)
+
+    # Ensure symbols_df_cache is populated (reuse walk-forward cache if active,
+    # otherwise re-build it from symbols that produced successful results).
+    if portfolio_backtest_active and not symbols_df_cache and all_rows:
+        info("Building symbol data cache for portfolio backtest (re-fetching)...")
+        for row in all_rows:
+            sym = row.get("symbol")
+            if sym and sym not in symbols_df_cache:
+                df_sym = fetch_symbol_df(
+                    sym, z_source, timeframe, start_dt, end_dt, fallback_dfs
+                )
+                if df_sym is not None and not df_sym.empty:
+                    symbols_df_cache[sym] = df_sym
+
+    if portfolio_backtest_active and symbols_df_cache:
+        section("PORTFOLIO-LEVEL BACKTEST")
+        from src.core.data_handler import DataHandler as _DataHandler
+        from src.research.portfolio_backtester import (
+            PortfolioBacktester as _PBacktester,
+            generate_portfolio_report as _gen_portfolio_report,
+        )
+
+        # Optionally load the regime policy built earlier in this run.
+        _portfolio_policy = None
+        if build_regime_policy_active and policy_output_path.exists():
+            try:
+                from src.decision.regime_policy import RegimePolicy as _RegimePolicy
+                _portfolio_policy = _RegimePolicy.load_json(policy_output_path)
+                info("Regime policy loaded for portfolio strategy selection")
+            except Exception as _exc:
+                warn(f"Could not load regime policy for portfolio backtest: {_exc}")
+
+        # Build symbol -> DataHandler mapping from cache
+        _sym_to_dh = {
+            sym: _DataHandler(df_cached)
+            for sym, df_cached in symbols_df_cache.items()
+        }
+
+        _max_pos = getattr(args, "max_positions", 10)
+        _portfolio_output = str(output_dir / "portfolio")
+        _pb = _PBacktester(
+            base_config=base_config,
+            strategy_registry=registry,
+            symbol_to_data=_sym_to_dh,
+            max_positions=_max_pos,
+            regime_policy=_portfolio_policy,
+            output_dir=_portfolio_output,
+        )
+
+        info(
+            f"Running portfolio backtest: {len(_sym_to_dh)} symbols, "
+            f"max_positions={_max_pos}, "
+            f"regime_policy={'Yes' if _portfolio_policy else 'No'}"
+        )
+
+        try:
+            _pb_result = _pb.run()
+
+            ok(f"Portfolio return    : {_pb_result.portfolio_return_pct * 100:.2f}%")
+            ok(f"Portfolio Sharpe    : {_pb_result.sharpe_ratio:.4f}")
+            ok(f"Portfolio MaxDD     : {_pb_result.max_drawdown_pct * 100:.2f}%")
+            ok(f"Portfolio turnover  : {_pb_result.turnover:.2f}x")
+            info(f"  Active symbols   : {_pb_result.num_symbols_active}")
+            info(f"  Total trades     : {_pb_result.num_trades}")
+            info(f"  Win rate         : {_pb_result.win_rate * 100:.1f}%")
+
+            _pb_report_path = Path("research") / "portfolio_backtest.md"
+            _pb_meta: dict = {
+                "interval":      args.interval,
+                "days":          args.days,
+                "symbols_tested": len(_sym_to_dh),
+                "strategies":    ", ".join(args.strategies),
+                "max_positions": _max_pos,
+                "regime_policy_used": bool(_portfolio_policy),
+            }
+            _gen_portfolio_report(
+                _pb_result,
+                output_path=_pb_report_path,
+                metadata=_pb_meta,
+            )
+            ok(f"Portfolio report    : {_pb_report_path.resolve()}")
+            ok(f"Portfolio CSVs      : {_portfolio_output}/")
+
+        except Exception as exc:
+            warn(f"Portfolio backtest failed: {exc}")
+            if getattr(args, "verbose", False):
+                traceback.print_exc()
+
+    elif portfolio_backtest_active and not symbols_df_cache:
+        warn(
+            "--portfolio-backtest enabled but no symbol data was cached; "
+            "ensure at least one symbol fetched data successfully."
         )
 
     # -----------------------------------------------------------------------

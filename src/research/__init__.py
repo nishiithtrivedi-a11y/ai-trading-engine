@@ -21,6 +21,13 @@ from .regime_walk_forward import (
     summarize_walk_forward_results,
     generate_walk_forward_report,
 )
+from .portfolio_backtester import (
+    PortfolioPosition,
+    PortfolioTradeRecord,
+    PortfolioBacktestResult,
+    PortfolioBacktester,
+    generate_portfolio_report,
+)
 
 __all__ = [
     "OptimizationResult",
@@ -48,4 +55,9 @@ __all__ = [
     "run_regime_policy_walk_forward",
     "summarize_walk_forward_results",
     "generate_walk_forward_report",
+    "PortfolioPosition",
+    "PortfolioTradeRecord",
+    "PortfolioBacktestResult",
+    "PortfolioBacktester",
+    "generate_portfolio_report",
 ]
