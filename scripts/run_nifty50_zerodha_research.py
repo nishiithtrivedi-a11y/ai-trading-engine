@@ -250,6 +250,46 @@ def parse_args() -> argparse.Namespace:
             "Capital is allocated as initial_capital / max_positions per symbol."
         ),
     )
+    # ---- Phase 6: Risk Engine ----
+    p.add_argument(
+        "--enable-risk-management", action="store_true",
+        help=(
+            "Enable portfolio-level risk guardrails after the main backtest. "
+            "Runs validate_portfolio_risk() against the portfolio equity curve "
+            "and generates research/risk_engine_validation.md. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
+    p.add_argument(
+        "--max-risk-per-trade", type=float, default=0.01, metavar="F",
+        help=(
+            "Maximum fraction of portfolio equity to risk per trade (default: 0.01 = 1%%). "
+            "Only used when --enable-risk-management is active."
+        ),
+    )
+    p.add_argument(
+        "--max-portfolio-exposure", type=float, default=0.20, metavar="F",
+        help=(
+            "Maximum fraction of portfolio equity deployed simultaneously "
+            "(default: 0.20 = 20%%). "
+            "Only used when --enable-risk-management is active."
+        ),
+    )
+    p.add_argument(
+        "--max-drawdown", type=float, default=0.15, metavar="F",
+        help=(
+            "Portfolio drawdown kill-switch threshold (default: 0.15 = 15%%). "
+            "New entries are blocked when drawdown exceeds this level. "
+            "Only used when --enable-risk-management is active."
+        ),
+    )
+    p.add_argument(
+        "--max-concurrent-positions", type=int, default=10, metavar="N",
+        help=(
+            "Hard cap on simultaneous open positions (default: 10). "
+            "Only used when --enable-risk-management is active."
+        ),
+    )
     return p.parse_args()
 
 
@@ -900,6 +940,12 @@ def main() -> None:
     info(f"Portfolio bt : {getattr(args, 'portfolio_backtest', False)}")
     if getattr(args, "portfolio_backtest", False):
         info(f"  max-pos    : {args.max_positions}")
+    info(f"Risk mgmt    : {getattr(args, 'enable_risk_management', False)}")
+    if getattr(args, "enable_risk_management", False):
+        info(f"  max-risk   : {args.max_risk_per_trade:.2%}")
+        info(f"  max-exp    : {args.max_portfolio_exposure:.2%}")
+        info(f"  max-dd     : {args.max_drawdown:.2%}")
+        info(f"  max-pos    : {args.max_concurrent_positions}")
     info(f"Output dir   : {output_dir.resolve()}")
 
     # -----------------------------------------------------------------------
@@ -1564,6 +1610,91 @@ def main() -> None:
             "--portfolio-backtest enabled but no symbol data was cached; "
             "ensure at least one symbol fetched data successfully."
         )
+
+    # -----------------------------------------------------------------------
+    # Risk engine validation (optional --enable-risk-management flag)
+    # Runs post-hoc risk checks against the portfolio equity curve (when
+    # --portfolio-backtest was also active) or against an empty curve.
+    # Generates research/risk_engine_validation.md.
+    # -----------------------------------------------------------------------
+    risk_mgmt_active = getattr(args, "enable_risk_management", False)
+    if risk_mgmt_active:
+        section("RISK ENGINE VALIDATION")
+        from src.risk.risk_engine import (
+            PortfolioRiskConfig as _RiskCfg,
+            validate_portfolio_risk as _validate_risk,
+            generate_risk_report as _gen_risk_report,
+        )
+
+        _risk_config = _RiskCfg(
+            max_risk_per_trade_pct=getattr(args, "max_risk_per_trade", 0.01),
+            max_portfolio_exposure_pct=getattr(args, "max_portfolio_exposure", 0.20),
+            max_drawdown_pct=getattr(args, "max_drawdown", 0.15),
+            max_concurrent_positions=getattr(args, "max_concurrent_positions", 10),
+        )
+
+        info(
+            f"Risk config  : max_risk={_risk_config.max_risk_per_trade_pct:.2%}  "
+            f"max_exposure={_risk_config.max_portfolio_exposure_pct:.2%}  "
+            f"max_dd={_risk_config.max_drawdown_pct:.2%}  "
+            f"max_pos={_risk_config.max_concurrent_positions}"
+        )
+
+        # Use portfolio equity curve from this run if available
+        _risk_equity_curve = None
+        _pb_res = locals().get("_pb_result")
+        if _pb_res is not None:
+            try:
+                if not _pb_res.portfolio_equity_curve.empty:
+                    _risk_equity_curve = _pb_res.portfolio_equity_curve
+                    info(
+                        f"Equity curve : {len(_risk_equity_curve)} bars "
+                        f"(from portfolio backtest)"
+                    )
+            except Exception:
+                pass
+
+        if _risk_equity_curve is None:
+            info(
+                "No portfolio equity curve available; "
+                "risk checks will use an empty curve.  "
+                "Run with --portfolio-backtest to validate against real equity."
+            )
+
+        try:
+            _risk_violations = _validate_risk(
+                _risk_equity_curve if _risk_equity_curve is not None else pd.DataFrame(),
+                _risk_config,
+            )
+
+            if not _risk_violations:
+                ok("Validation   : PASS - no violations detected")
+            else:
+                warn(f"Validation   : {len(_risk_violations)} violation(s) detected")
+                for _v in _risk_violations:
+                    warn(f"  -> {_v}")
+
+            _risk_report_path = Path("research") / "risk_engine_validation.md"
+            _risk_meta: dict = {
+                "interval":           args.interval,
+                "days":               args.days,
+                "symbols_tested":     len(symbols),
+                "strategies":         ", ".join(args.strategies),
+                "portfolio_backtest": portfolio_backtest_active,
+            }
+            _gen_risk_report(
+                _risk_config,
+                _risk_violations,
+                equity_curve=_risk_equity_curve,
+                output_path=_risk_report_path,
+                metadata=_risk_meta,
+            )
+            ok(f"Risk report  : {_risk_report_path.resolve()}")
+
+        except Exception as exc:
+            warn(f"Risk engine validation failed: {exc}")
+            if getattr(args, "verbose", False):
+                traceback.print_exc()
 
     # -----------------------------------------------------------------------
     # Export reports
