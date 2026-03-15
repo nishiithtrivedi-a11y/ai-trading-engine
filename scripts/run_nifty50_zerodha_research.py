@@ -149,6 +149,24 @@ def parse_args() -> argparse.Namespace:
             "Disabled by default; zero behaviour change when absent."
         ),
     )
+    p.add_argument(
+        "--build-regime-policy", action="store_true",
+        help=(
+            "Build a deterministic regime-driven strategy selection policy from "
+            "the regime analysis results. Requires --regime-analysis. "
+            "Generates research/regime_policy.json and research/regime_policy.md. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
+    p.add_argument(
+        "--policy-output", type=str, default=None,
+        metavar="PATH",
+        help=(
+            "Custom output path for the regime policy JSON artifact. "
+            "Defaults to research/regime_policy.json when --build-regime-policy "
+            "is active. Ignored when --build-regime-policy is absent."
+        ),
+    )
     return p.parse_args()
 
 
@@ -785,6 +803,7 @@ def main() -> None:
     info(f"Regime detect: {getattr(args, 'include_regime', False)}")
     info(f"Regime filter: {getattr(args, 'regime_filter', False)}")
     info(f"Regime anlys : {getattr(args, 'regime_analysis', False)}")
+    info(f"Regime policy: {getattr(args, 'build_regime_policy', False)}")
     info(f"Output dir   : {output_dir.resolve()}")
 
     # -----------------------------------------------------------------------
@@ -917,6 +936,24 @@ def main() -> None:
             "Regime analysis enabled: regime_label will be detected per-symbol "
             "from each symbol's own OHLCV data (end-of-period snapshot)."
         )
+
+    # -----------------------------------------------------------------------
+    # Regime policy build flag (requires --regime-analysis)
+    # When active: build a deterministic strategy selection policy from the
+    # aggregated regime analysis results after the backtest loop.
+    # -----------------------------------------------------------------------
+    build_regime_policy_active = getattr(args, "build_regime_policy", False)
+    if build_regime_policy_active and not regime_analysis_active:
+        warn(
+            "--build-regime-policy requires --regime-analysis; "
+            "enabling --regime-analysis automatically."
+        )
+        regime_analysis_active = True
+    policy_output_path: Optional[Path] = (
+        Path(args.policy_output)
+        if getattr(args, "policy_output", None)
+        else Path("research") / "regime_policy.json"
+    )
 
     # -----------------------------------------------------------------------
     # Main research loop
@@ -1080,6 +1117,62 @@ def main() -> None:
             warn(f"Regime analysis failed: {exc}")
     elif regime_analysis_active and not all_rows:
         warn("--regime-analysis enabled but no results produced; skipping report")
+
+    # -----------------------------------------------------------------------
+    # Regime policy build (optional --build-regime-policy flag)
+    # Requires --regime-analysis to have populated all_rows with regime labels.
+    # -----------------------------------------------------------------------
+    if build_regime_policy_active and all_rows:
+        section("REGIME POLICY BUILD")
+        from src.research.regime_analysis import analyze_by_regime as _analyze
+        from src.decision.regime_policy import (
+            RegimePolicyBuilder as _Builder,
+            generate_policy_report as _gen_policy_report,
+        )
+
+        policy_md_path = policy_output_path.with_suffix(".md")
+        policy_meta: dict = {
+            "interval":       args.interval,
+            "days":           args.days,
+            "symbols_tested": len(symbols),
+            "strategies":     ", ".join(args.strategies),
+            "source_report":  "research/regime_validation.md",
+        }
+        try:
+            df_rows_policy = pd.DataFrame(all_rows)
+            agg_df = _analyze(df_rows_policy)
+
+            builder = _Builder()
+            policy = builder.build(
+                agg_df,
+                source_description=(
+                    f"Built from {len(symbols)} NIFTY symbols, "
+                    f"{args.interval} interval, {args.days} days"
+                ),
+                metadata=policy_meta,
+            )
+
+            # JSON artifact
+            policy.save_json(policy_output_path)
+            ok(f"Regime policy JSON  : {policy_output_path.resolve()}")
+
+            # Markdown report
+            _gen_policy_report(policy, output_path=policy_md_path)
+            ok(f"Regime policy report: {policy_md_path.resolve()}")
+
+            # Console summary
+            info("Policy summary:")
+            for label, entry in sorted(policy.entries.items()):
+                trade_flag = "TRADE" if entry.should_trade else "NO-TRADE"
+                pref = entry.preferred_strategy or "none"
+                allow = ", ".join(entry.allowed_strategies) or "none"
+                info(f"  [{trade_flag:<8}] {label:<22} preferred={pref:<12} allowed=[{allow}]")
+
+        except Exception as exc:
+            warn(f"Regime policy build failed: {exc}")
+
+    elif build_regime_policy_active and not all_rows:
+        warn("--build-regime-policy enabled but no results produced; skipping policy build")
 
     # -----------------------------------------------------------------------
     # Export reports

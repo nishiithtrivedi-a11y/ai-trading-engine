@@ -23,6 +23,14 @@ from .pick_engine import PickEngine, PickEngineError
 from .portfolio_candidate_selector import PortfolioCandidateSelector, PortfolioCandidateSelectorError
 from .ranking_engine import RankingEngine
 from .regime_filter import RegimeFilter, RegimeFilterError
+from .regime_policy import (
+    RegimePolicy,
+    RegimePolicyBuilder,
+    RegimePolicyDecision,
+    RegimePolicyEntry,
+    generate_policy_report,
+    select_for_regime,
+)
 from .trade_plan_builder import TradePlanBuilder, TradePlanBuilderError
 
 __all__ = [
@@ -45,8 +53,14 @@ __all__ = [
     "RegimeFilter",
     "RegimeFilterError",
     "RegimeFilterResult",
+    "RegimePolicy",
+    "RegimePolicyBuilder",
     "RegimePolicyConfig",
+    "RegimePolicyDecision",
+    "RegimePolicyEntry",
     "RejectedOpportunity",
+    "generate_policy_report",
+    "select_for_regime",
     "RejectionReason",
     "SelectionPolicyConfig",
     "TradePlan",
