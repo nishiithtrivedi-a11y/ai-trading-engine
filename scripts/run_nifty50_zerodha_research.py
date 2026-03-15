@@ -203,6 +203,34 @@ def parse_args() -> argparse.Namespace:
             "Only used when --walk-forward-regime is active."
         ),
     )
+    # ---- Phase 5: Relative Strength / Top-Stock Selection ----
+    p.add_argument(
+        "--top-n-symbols", type=int, default=0, metavar="N",
+        help=(
+            "After the main research loop, compute relative strength scores for "
+            "all symbols and rank them.  When N > 0, the top-N names are printed "
+            "and highlighted in the report.  Generates "
+            "research/relative_strength_analysis.md. "
+            "Disabled by default (0 = off)."
+        ),
+    )
+    p.add_argument(
+        "--relative-strength-lookback", type=int, default=90, metavar="N",
+        help=(
+            "Look-back window in bars for relative strength computation "
+            "(default: 90 bars ~= 3 months of daily data). "
+            "Only used when --top-n-symbols is active."
+        ),
+    )
+    p.add_argument(
+        "--benchmark-symbol", type=str, default="", metavar="SYM",
+        help=(
+            "Optional symbol to use as a benchmark for relative-return "
+            "computation (e.g. 'NIFTY50').  When provided, each symbol's "
+            "momentum return is compared to the benchmark's momentum return. "
+            "Ignored when empty."
+        ),
+    )
     # ---- Phase 4: Portfolio-Level Backtest ----
     p.add_argument(
         "--portfolio-backtest", action="store_true",
@@ -864,6 +892,11 @@ def main() -> None:
         info(f"  train-days : {args.train_days}")
         info(f"  test-days  : {args.test_days}")
         info(f"  step-days  : {args.step_days}")
+    info(f"Rel strength : {getattr(args, 'top_n_symbols', 0) > 0}")
+    if getattr(args, "top_n_symbols", 0) > 0:
+        info(f"  top-n      : {args.top_n_symbols}")
+        info(f"  lookback   : {args.relative_strength_lookback}")
+        info(f"  benchmark  : {args.benchmark_symbol or 'none'}")
     info(f"Portfolio bt : {getattr(args, 'portfolio_backtest', False)}")
     if getattr(args, "portfolio_backtest", False):
         info(f"  max-pos    : {args.max_positions}")
@@ -1350,6 +1383,87 @@ def main() -> None:
             "--walk-forward-regime enabled but no symbol data was cached "
             "(all symbols may have failed data fetch); skipping walk-forward"
         )
+
+    # -----------------------------------------------------------------------
+    # Relative Strength / Top-Stock Selection (optional --top-n-symbols)
+    # Ranks all symbols by a composite relative strength score.
+    # -----------------------------------------------------------------------
+    rs_top_n = getattr(args, "top_n_symbols", 0)
+    if rs_top_n and rs_top_n > 0:
+        section("RELATIVE STRENGTH ANALYSIS")
+        from src.market_intelligence.relative_strength import (
+            compute_relative_strength as _compute_rs,
+            select_top_symbols as _select_top,
+            generate_relative_strength_report as _gen_rs_report,
+        )
+
+        _rs_lookback = getattr(args, "relative_strength_lookback", 90)
+        _rs_benchmark_sym = getattr(args, "benchmark_symbol", "").strip()
+
+        # Build symbol -> OHLCV dict from cache or re-fetch
+        _rs_sym_ohlcv: dict = {}
+        for sym in symbols:
+            if sym in symbols_df_cache:
+                _rs_sym_ohlcv[sym] = symbols_df_cache[sym]
+            elif fallback_dfs:
+                df_sym = fetch_symbol_df(sym, z_source, timeframe, start_dt, end_dt, fallback_dfs)
+                if df_sym is not None and not df_sym.empty:
+                    _rs_sym_ohlcv[sym] = df_sym
+
+        if not _rs_sym_ohlcv:
+            warn("Relative strength: no OHLCV data available; skipping.")
+        else:
+            # Optional benchmark series
+            _rs_benchmark_series = None
+            if _rs_benchmark_sym and _rs_benchmark_sym in _rs_sym_ohlcv:
+                _rs_benchmark_series = _rs_sym_ohlcv[_rs_benchmark_sym]["close"]
+                info(f"Benchmark series: {_rs_benchmark_sym}")
+            elif _rs_benchmark_sym:
+                warn(f"Benchmark symbol '{_rs_benchmark_sym}' not in data cache; "
+                     "relative_return will be 0.")
+
+            try:
+                info(
+                    f"Computing relative strength for {len(_rs_sym_ohlcv)} symbols "
+                    f"(lookback={_rs_lookback} bars)..."
+                )
+                rs_df = _compute_rs(
+                    symbol_to_ohlcv=_rs_sym_ohlcv,
+                    lookback=_rs_lookback,
+                    benchmark_series=_rs_benchmark_series,
+                )
+
+                if not rs_df.empty:
+                    top_syms = _select_top(rs_df, n=rs_top_n)
+                    ok(f"Top {rs_top_n} by relative strength: {top_syms}")
+
+                    info("Relative strength ranking:")
+                    for rank_i, (_, row) in enumerate(rs_df.head(rs_top_n).iterrows(), 1):
+                        sym_name = row.get("symbol", "?")
+                        score    = row.get("rolling_strength_score", float("nan"))
+                        mom      = row.get("momentum_return", float("nan"))
+                        info(
+                            f"  {rank_i}. {sym_name:<16} "
+                            f"score={score:+.4f}  momentum={mom:+.2%}"
+                        )
+
+                    _rs_report_path = Path("research") / "relative_strength_analysis.md"
+                    _rs_meta: dict = {
+                        "lookback_bars": _rs_lookback,
+                        "benchmark_symbol": _rs_benchmark_sym or "none",
+                        "symbols_analysed": len(_rs_sym_ohlcv),
+                        "top_n_requested": rs_top_n,
+                        "interval": args.interval,
+                    }
+                    _gen_rs_report(rs_df, output_path=_rs_report_path, metadata=_rs_meta)
+                    ok(f"Relative strength report: {_rs_report_path.resolve()}")
+                else:
+                    warn("Relative strength computation produced no results.")
+
+            except Exception as exc:
+                warn(f"Relative strength analysis failed: {exc}")
+                if getattr(args, "verbose", False):
+                    traceback.print_exc()
 
     # -----------------------------------------------------------------------
     # Portfolio-level backtest (optional --portfolio-backtest flag)
