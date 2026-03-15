@@ -139,6 +139,16 @@ def parse_args() -> argparse.Namespace:
             "Disabled by default; existing behaviour is fully preserved without this flag."
         ),
     )
+    p.add_argument(
+        "--regime-analysis", action="store_true",
+        help=(
+            "Detect regime independently per-symbol and run regime-segmented "
+            "performance analysis after the backtest loop. Generates a markdown "
+            "research report at research/regime_validation.md. "
+            "Orthogonal to --include-regime and --regime-filter. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
     return p.parse_args()
 
 
@@ -774,6 +784,7 @@ def main() -> None:
     info(f"Top-N        : {args.top_n}")
     info(f"Regime detect: {getattr(args, 'include_regime', False)}")
     info(f"Regime filter: {getattr(args, 'regime_filter', False)}")
+    info(f"Regime anlys : {getattr(args, 'regime_analysis', False)}")
     info(f"Output dir   : {output_dir.resolve()}")
 
     # -----------------------------------------------------------------------
@@ -897,6 +908,17 @@ def main() -> None:
             info(f"  {sn:<12} -> {status}  ({reason})")
 
     # -----------------------------------------------------------------------
+    # Regime analysis flag (orthogonal to --include-regime / --regime-filter)
+    # When active: detect regime per-symbol for accurate historical tagging.
+    # -----------------------------------------------------------------------
+    regime_analysis_active = getattr(args, "regime_analysis", False)
+    if regime_analysis_active:
+        info(
+            "Regime analysis enabled: regime_label will be detected per-symbol "
+            "from each symbol's own OHLCV data (end-of-period snapshot)."
+        )
+
+    # -----------------------------------------------------------------------
     # Main research loop
     # -----------------------------------------------------------------------
     section("RUNNING BACKTESTS")
@@ -917,6 +939,31 @@ def main() -> None:
             continue
 
         info(f"    Data: {len(df)} bars  ({df.index[0]} -> {df.index[-1]})")
+
+        # -------------------------------------------------------------------
+        # Per-symbol regime label for result row tagging
+        #
+        # --regime-analysis: detect regime from THIS symbol's own OHLCV data
+        #   → accurate historical label for each symbol's test period
+        # --include-regime only: reuse the global (first-symbol) regime label
+        #   → preserves original single-regime-per-run behaviour
+        # Neither flag: no regime_label added to rows
+        # -------------------------------------------------------------------
+        sym_regime_label = "unknown"   # safe default used only when analysis active
+        if regime_analysis_active:
+            sym_snap = detect_market_regime(df, symbol=symbol)
+            if sym_snap is not None:
+                sym_regime_label = sym_snap.composite_regime.value
+                info(
+                    f"    Regime ({symbol}): {sym_regime_label} "
+                    f"| trend={sym_snap.trend_regime.value} "
+                    f"| vol={sym_snap.volatility_regime.value}"
+                )
+            else:
+                warn(f"    Regime detection failed for {symbol}; label set to 'unknown'")
+        elif regime_snap is not None:
+            # --include-regime only: uniform label from first-symbol detection
+            sym_regime_label = composite_value
 
         # Run each strategy
         for strat_name, strat_def in selected.items():
@@ -956,9 +1003,11 @@ def main() -> None:
                 )
 
             if row is not None:
-                # Tag every successful row with the regime label (if known)
-                if regime_snap is not None:
-                    row["regime_label"] = composite_value
+                # Tag regime_label when any regime detection was active.
+                # When --regime-analysis: per-symbol label (most precise).
+                # When --include-regime only: global label (original behaviour).
+                if regime_analysis_active or regime_snap is not None:
+                    row["regime_label"] = sym_regime_label
                 all_rows.append(row)
                 trades = row.get("num_trades", 0) or 0
                 score  = row.get("score", float("nan"))
@@ -995,6 +1044,42 @@ def main() -> None:
                 f"{score:>8.3f} {sharpe:>8.3f} {ret_pct:>8.1f}% "
                 f"{dd_pct:>7.1f}% {trades:>7}"
             )
+
+    # -----------------------------------------------------------------------
+    # Regime-segmented analysis (optional --regime-analysis flag)
+    # -----------------------------------------------------------------------
+    if regime_analysis_active and all_rows:
+        section("REGIME ANALYSIS")
+        from src.research.regime_analysis import generate_regime_report as _gen_report
+
+        regime_report_path = Path("research") / "regime_validation.md"
+        report_meta: dict = {
+            "interval":         args.interval,
+            "days":             args.days,
+            "symbols_tested":   len(symbols),
+            "strategies":       ", ".join(args.strategies),
+            "regime_label_scope": "per-symbol end-of-period composite regime",
+            "output_dir":       str(output_dir),
+        }
+        try:
+            df_rows = pd.DataFrame(all_rows)
+            valid_labelled = df_rows[df_rows["regime_label"].notna()] if "regime_label" in df_rows.columns else pd.DataFrame()
+
+            # Console distribution preview
+            if not valid_labelled.empty:
+                dist = valid_labelled.groupby("regime_label").size()
+                info("Regime distribution across all result rows:")
+                for regime_val, count in dist.items():
+                    info(f"  {regime_val:<22} {count} run(s)")
+            else:
+                warn("No regime labels found in result rows - report will be minimal")
+
+            _gen_report(df_rows, output_path=regime_report_path, metadata=report_meta)
+            ok(f"Regime analysis report: {regime_report_path.resolve()}")
+        except Exception as exc:
+            warn(f"Regime analysis failed: {exc}")
+    elif regime_analysis_active and not all_rows:
+        warn("--regime-analysis enabled but no results produced; skipping report")
 
     # -----------------------------------------------------------------------
     # Export reports

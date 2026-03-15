@@ -10,6 +10,11 @@ from .strategy_generator import (
     GeneratorResult,
     get_default_templates,
 )
+from .regime_analysis import (
+    analyze_by_regime,
+    rank_strategies_by_regime,
+    generate_regime_report,
+)
 
 __all__ = [
     "OptimizationResult",
@@ -30,4 +35,7 @@ __all__ = [
     "RankedStrategy",
     "GeneratorResult",
     "get_default_templates",
+    "analyze_by_regime",
+    "rank_strategies_by_regime",
+    "generate_regime_report",
 ]
