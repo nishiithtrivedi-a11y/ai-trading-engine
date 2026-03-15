@@ -290,6 +290,41 @@ def parse_args() -> argparse.Namespace:
             "Only used when --enable-risk-management is active."
         ),
     )
+    # ---- Phase 7: Execution Realism / Cost Modeling ----
+    p.add_argument(
+        "--execution-realism", action="store_true",
+        help=(
+            "Apply realistic execution costs (commission + slippage) to the "
+            "portfolio trade log and generate a gross vs net comparison.  "
+            "Requires --portfolio-backtest to produce a trade log.  "
+            "Generates research/execution_realism.md. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
+    p.add_argument(
+        "--commission-bps", type=float, default=10.0, metavar="F",
+        help=(
+            "Proportional commission in basis points of notional value "
+            "(default: 10.0 bps = 0.10%%). "
+            "Only used when --execution-realism is active."
+        ),
+    )
+    p.add_argument(
+        "--slippage-bps", type=float, default=5.0, metavar="F",
+        help=(
+            "Slippage / market-impact in basis points of notional value "
+            "(default: 5.0 bps = 0.05%%). "
+            "Only used when --execution-realism is active."
+        ),
+    )
+    p.add_argument(
+        "--use-next-bar-fill", action="store_true", default=True,
+        help=(
+            "Fill trades at the next bar's open price (default: True). "
+            "This is the realistic mode consistent with NEXT_BAR_OPEN execution. "
+            "Only used when --execution-realism is active."
+        ),
+    )
     return p.parse_args()
 
 
@@ -946,6 +981,11 @@ def main() -> None:
         info(f"  max-exp    : {args.max_portfolio_exposure:.2%}")
         info(f"  max-dd     : {args.max_drawdown:.2%}")
         info(f"  max-pos    : {args.max_concurrent_positions}")
+    info(f"Exec realism : {getattr(args, 'execution_realism', False)}")
+    if getattr(args, "execution_realism", False):
+        info(f"  comm-bps   : {args.commission_bps:.1f}")
+        info(f"  slip-bps   : {args.slippage_bps:.1f}")
+        info(f"  next-bar   : {getattr(args, 'use_next_bar_fill', True)}")
     info(f"Output dir   : {output_dir.resolve()}")
 
     # -----------------------------------------------------------------------
@@ -1695,6 +1735,114 @@ def main() -> None:
             warn(f"Risk engine validation failed: {exc}")
             if getattr(args, "verbose", False):
                 traceback.print_exc()
+
+    # -----------------------------------------------------------------------
+    # Execution Realism / Cost Modeling (optional --execution-realism flag)
+    # Applies realistic commission + slippage costs to the portfolio trade log
+    # and compares gross vs net P&L.  Requires --portfolio-backtest trade log.
+    # Generates research/execution_realism.md.
+    # -----------------------------------------------------------------------
+    exec_realism_active = getattr(args, "execution_realism", False)
+    if exec_realism_active:
+        section("EXECUTION REALISM / COST MODELING")
+        from src.execution import (
+            CostConfig as _CostCfg,
+            FillConfig as _FillCfg,
+            ExecutionCostAnalyzer as _CostAnalyzer,
+            generate_execution_report as _gen_exec_report,
+        )
+
+        _commission_bps = getattr(args, "commission_bps", 10.0)
+        _slippage_bps   = getattr(args, "slippage_bps",   5.0)
+        _next_bar_fill  = getattr(args, "use_next_bar_fill", True)
+
+        _exec_cost_cfg = _CostCfg(
+            commission_bps=_commission_bps,
+            slippage_bps=_slippage_bps,
+        )
+        _exec_fill_cfg = _FillCfg(use_next_bar_open=_next_bar_fill)
+
+        info(
+            f"Cost config  : commission={_commission_bps:.1f} bps, "
+            f"slippage={_slippage_bps:.1f} bps, "
+            f"fill={'next_bar_open' if _next_bar_fill else 'current_bar_close'}"
+        )
+
+        # Pull trade log from this run's portfolio backtest if available
+        _exec_trade_log = None
+        _exec_initial_capital = args.initial_capital
+        _pb_res_exec = locals().get("_pb_result")
+        if _pb_res_exec is not None:
+            try:
+                if not _pb_res_exec.trade_log.empty:
+                    _exec_trade_log = _pb_res_exec.trade_log
+                    _exec_initial_capital = _pb_res_exec.initial_capital
+                    info(f"Trade log    : {len(_exec_trade_log)} trades from portfolio backtest")
+            except Exception:
+                pass
+
+        if _exec_trade_log is None:
+            warn(
+                "--execution-realism requires a trade log from --portfolio-backtest. "
+                "Run with --portfolio-backtest to enable cost analysis."
+            )
+        else:
+            try:
+                _exec_analyzer = _CostAnalyzer(
+                    cost_config=_exec_cost_cfg,
+                    fill_config=_exec_fill_cfg,
+                )
+                _exec_records = _exec_analyzer.analyze_trade_log(
+                    _exec_trade_log,
+                    initial_capital=_exec_initial_capital,
+                )
+
+                if _exec_records:
+                    # Aggregate summary
+                    _total_gross = sum(r.gross_pnl  for r in _exec_records)
+                    _total_cost  = sum(r.total_cost for r in _exec_records)
+                    _total_net   = sum(r.net_pnl    for r in _exec_records)
+                    _cap         = _exec_initial_capital or 1.0
+                    ok(f"Gross P&L    : {_total_gross:,.2f}  ({_total_gross / _cap:.2%})")
+                    ok(f"Total costs  : {_total_cost:,.2f}  ({_total_cost / _cap:.2%})")
+                    ok(f"Net P&L      : {_total_net:,.2f}  ({_total_net / _cap:.2%})")
+                    info(f"Cost drag    : {(_total_gross - _total_net) / _cap:.4%} of capital")
+
+                    # Top 5 by gross P&L
+                    info("Top groups by gross P&L:")
+                    for _r in _exec_records[:5]:
+                        info(
+                            f"  {_r.symbol:<16} {_r.strategy:<12} "
+                            f"gross={_r.gross_return_pct:+.2%}  "
+                            f"net={_r.net_return_pct:+.2%}  "
+                            f"drag={_r.cost_drag_pct:.4%}"
+                        )
+                else:
+                    warn("No execution cost records produced (trade log may be empty).")
+
+                _exec_report_path = Path("research") / "execution_realism.md"
+                _exec_meta: dict = {
+                    "interval":           args.interval,
+                    "days":               args.days,
+                    "symbols_tested":     len(symbols),
+                    "strategies":         ", ".join(args.strategies),
+                    "commission_bps":     _commission_bps,
+                    "slippage_bps":       _slippage_bps,
+                    "fill_mode":          "next_bar_open" if _next_bar_fill else "current_bar_close",
+                }
+                _gen_exec_report(
+                    _exec_records,
+                    cost_config=_exec_cost_cfg,
+                    fill_config=_exec_fill_cfg,
+                    output_path=_exec_report_path,
+                    metadata=_exec_meta,
+                )
+                ok(f"Exec report  : {_exec_report_path.resolve()}")
+
+            except Exception as exc:
+                warn(f"Execution realism analysis failed: {exc}")
+                if getattr(args, "verbose", False):
+                    traceback.print_exc()
 
     # -----------------------------------------------------------------------
     # Export reports
