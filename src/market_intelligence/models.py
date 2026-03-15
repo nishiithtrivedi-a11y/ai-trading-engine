@@ -10,6 +10,11 @@ from typing import Any, Optional
 
 import pandas as pd
 
+# RegimeState lives in the monitoring layer; imported here only for the
+# MarketRegimeSnapshot dataclass. No circular dependency because
+# src.monitoring.models does not import from src.market_intelligence.
+from src.monitoring.models import RegimeState  # noqa: E402
+
 
 def _now_utc() -> pd.Timestamp:
     return pd.Timestamp.now(tz="UTC")
@@ -247,6 +252,138 @@ class MarketStateAssessment:
             "components": dict(self.components),
             "metadata": dict(self.metadata),
         }
+
+
+class CompositeRegime(str, Enum):
+    """
+    Synthesized market regime combining the trend and volatility dimensions.
+
+    Label semantics
+    ---------------
+    bullish_trending  : Confirmed uptrend; volatility is manageable.
+                        Strategy bias: trend-following long.
+    bullish_sideways  : Bullish bias but price is consolidating / low-vol.
+                        Strategy bias: breakout entries, reduced size.
+    bearish_trending  : Confirmed downtrend; volatility is moderate-low.
+                        Strategy bias: avoid longs, reduce exposure.
+    bearish_volatile  : Downtrend with expanding / spiking volatility.
+                        Strategy bias: hard reduce or hedge.
+    rangebound        : No directional trend; volatility contained.
+                        Strategy bias: mean-reversion / range strategies.
+    risk_off          : High volatility detected (cross-asset stress signal).
+                        Strategy bias: stay in cash, stop new positions.
+    unknown           : Insufficient bars or conflicting signals.
+                        Strategy bias: treat as neutral / skip.
+    """
+
+    BULLISH_TRENDING = "bullish_trending"
+    BULLISH_SIDEWAYS = "bullish_sideways"
+    BEARISH_TRENDING = "bearish_trending"
+    BEARISH_VOLATILE = "bearish_volatile"
+    RANGEBOUND       = "rangebound"
+    RISK_OFF         = "risk_off"
+    UNKNOWN          = "unknown"
+
+
+@dataclass
+class MarketRegimeSnapshot:
+    """
+    Unified output of MarketRegimeEngine.detect().
+
+    Combines the Phase-4 RegimeDetector (trend/volatility via MA crossover)
+    and the Phase-6 VolatilityRegimeAnalyzer (ATR + realized-vol) into a
+    single, research-friendly object.
+
+    Fields
+    ------
+    symbol           : Symbol or index used for detection (e.g. "NIFTY50").
+    timestamp        : Bar timestamp of the most recent bar used.
+    trend_regime     : RegimeState from RegimeDetector (BULLISH / BEARISH /
+                       RANGEBOUND / HIGH_VOLATILITY / LOW_VOLATILITY / UNKNOWN).
+    trend_state      : Simplified TrendState (BULLISH / BEARISH /
+                       RANGEBOUND / UNKNOWN), derived from trend_regime.
+    volatility_regime: VolatilityRegimeType from VolatilityRegimeAnalyzer
+                       (LOW / EXPANDING / HIGH / CONTRACTION / UNKNOWN).
+    composite_regime : Final synthesized label (see CompositeRegime docs).
+    trend_score      : Raw MA-crossover momentum score. Positive = bullish
+                       momentum, negative = bearish. Unitless ratio.
+    volatility_score : Raw daily-return standard deviation used by
+                       RegimeDetector for its threshold comparisons.
+    vol_state_score  : 0-100 score from VolatilityRegimeAnalyzer.
+                       Higher = more volatile.
+    realized_volatility: Annualized realized volatility (e.g. 0.18 = 18%).
+    atr_value        : Latest ATR absolute value (in price points).
+    atr_ratio        : ATR(current) / ATR(baseline). >1 = expanding vol.
+    fast_ma          : Most recent fast-MA value (default period 20).
+    slow_ma          : Most recent slow-MA value (default period 50).
+    long_ma          : Most recent long-MA value (default period 200).
+                       None if insufficient history.
+    last_close       : Last closing price of the input series.
+    bars_used        : Number of bars supplied to the detector.
+    reason           : Human-readable explanation of the classification.
+    warnings         : Non-fatal issues encountered during detection.
+    metadata         : Arbitrary extra fields.
+    """
+
+    symbol:             str
+    timestamp:          pd.Timestamp
+    trend_regime:       RegimeState
+    trend_state:        TrendState
+    volatility_regime:  VolatilityRegimeType
+    composite_regime:   CompositeRegime
+    trend_score:        Optional[float]       = None   # MA-crossover ratio
+    volatility_score:   Optional[float]       = None   # daily-return std dev
+    vol_state_score:    Optional[float]       = None   # 0-100 vol score
+    realized_volatility: Optional[float]      = None   # annualized
+    atr_value:          Optional[float]       = None
+    atr_ratio:          Optional[float]       = None
+    fast_ma:            Optional[float]       = None
+    slow_ma:            Optional[float]       = None
+    long_ma:            Optional[float]       = None   # 200-day MA
+    last_close:         Optional[float]       = None
+    bars_used:          int                   = 0
+    reason:             str                   = ""
+    warnings:           list[str]             = field(default_factory=list)
+    metadata:           dict[str, Any]        = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "symbol":              self.symbol,
+            "timestamp":           self.timestamp.isoformat(),
+            "trend_regime":        self.trend_regime.value,
+            "trend_state":         self.trend_state.value,
+            "volatility_regime":   self.volatility_regime.value,
+            "composite_regime":    self.composite_regime.value,
+            "trend_score":         self.trend_score,
+            "volatility_score":    self.volatility_score,
+            "vol_state_score":     self.vol_state_score,
+            "realized_volatility": self.realized_volatility,
+            "atr_value":           self.atr_value,
+            "atr_ratio":           self.atr_ratio,
+            "fast_ma":             self.fast_ma,
+            "slow_ma":             self.slow_ma,
+            "long_ma":             self.long_ma,
+            "last_close":          self.last_close,
+            "bars_used":           self.bars_used,
+            "reason":              self.reason,
+            "warnings":            list(self.warnings),
+            "metadata":            dict(self.metadata),
+        }
+
+    def summary_line(self) -> str:
+        """One-line human-readable summary (ASCII-safe for Windows cp1252)."""
+        ret_pct = ""
+        if self.trend_score is not None:
+            ret_pct = f"  trend_score={self.trend_score:+.4f}"
+        vol_pct = ""
+        if self.realized_volatility is not None:
+            vol_pct = f"  ann_vol={self.realized_volatility * 100:.1f}%"
+        return (
+            f"[{self.symbol}] composite={self.composite_regime.value}"
+            f"  trend={self.trend_regime.value}"
+            f"  vol={self.volatility_regime.value}"
+            f"{ret_pct}{vol_pct}"
+        )
 
 
 @dataclass

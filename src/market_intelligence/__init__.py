@@ -16,8 +16,10 @@ from .models import (
     BreadthMetrics,
     BreadthSnapshot,
     BreadthState,
+    CompositeRegime,
     InstitutionalFlowSnapshot,
     MarketIntelligenceResult,
+    MarketRegimeSnapshot,
     MarketStateAssessment,
     RiskEnvironment,
     SectorRotationState,
@@ -29,6 +31,11 @@ from .models import (
     VolumeSignal,
     VolumeSignalType,
 )
+from .regime_engine import (
+    MarketRegimeEngine,
+    MarketRegimeEngineConfig,
+    MarketRegimeEngineError,
+)
 from .sector_rotation import SectorRotationAnalyzer, SectorRotationError
 from .volatility_regime import VolatilityRegimeAnalyzer, VolatilityRegimeError
 from .volume_intelligence import VolumeIntelligenceAnalyzer, VolumeIntelligenceError
@@ -38,6 +45,7 @@ __all__ = [
     "BreadthMetrics",
     "BreadthSnapshot",
     "BreadthState",
+    "CompositeRegime",
     "InstitutionalFlowAnalyzer",
     "InstitutionalFlowConfig",
     "InstitutionalFlowError",
@@ -48,6 +56,10 @@ __all__ = [
     "MarketIntelligenceExporter",
     "MarketIntelligenceExportConfig",
     "MarketIntelligenceResult",
+    "MarketRegimeEngine",
+    "MarketRegimeEngineConfig",
+    "MarketRegimeEngineError",
+    "MarketRegimeSnapshot",
     "MarketStateAssessment",
     "MarketStateConfig",
     "MarketStateEngine",
