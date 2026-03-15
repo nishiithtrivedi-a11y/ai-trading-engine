@@ -46,3 +46,6 @@ output/
 *.pem
 secrets.json
 credentials.json
+
+# Cached data (instrument lists, etc.)
+data/cache/

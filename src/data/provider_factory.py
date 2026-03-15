@@ -140,7 +140,11 @@ class ProviderFactory:
         )
 
     def _build_zerodha(self, entry: ProviderEntry, **kwargs) -> BaseDataSource:
-        """Build a Zerodha data source with credential injection."""
+        """Build a Zerodha data source with credential injection.
+
+        Supports optional kwargs: default_symbol, default_timeframe,
+        default_days, exchange — passed through to ZerodhaDataSource.
+        """
         from src.data.sources import ZerodhaDataSource
 
         creds = entry.get_credentials()
@@ -155,6 +159,7 @@ class ProviderFactory:
             api_key=creds.api_key,
             api_secret=creds.api_secret,
             access_token=creds.access_token,
+            **kwargs,
         )
 
     def _build_upstox(self, entry: ProviderEntry, **kwargs) -> BaseDataSource:

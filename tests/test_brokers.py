@@ -59,6 +59,11 @@ class TestOrderResponseAndStatus:
 # ---------------------------------------------------------------------------
 
 class TestZerodhaBroker:
+    """Tests for the implemented Zerodha broker integration.
+
+    All methods now raise BrokerError (not NotImplementedError) because
+    the implementation is real — it just requires valid authentication.
+    """
 
     def _make_broker(self) -> ZerodhaBroker:
         return ZerodhaBroker(api_key="test_key", api_secret="test_secret")
@@ -69,44 +74,44 @@ class TestZerodhaBroker:
         assert broker.api_secret == "test_secret"
         assert broker.is_authenticated is False
 
-    def test_authenticate_raises(self):
+    def test_authenticate_with_bad_credentials_raises_broker_error(self):
         broker = self._make_broker()
-        with pytest.raises(NotImplementedError, match="kiteconnect"):
-            broker.authenticate("token")
+        with pytest.raises(BrokerError, match="authentication failed"):
+            broker.authenticate("invalid_token")
 
-    def test_place_order_raises(self):
+    def test_place_order_requires_auth(self):
         broker = self._make_broker()
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(BrokerError, match="Not authenticated"):
             broker.place_order("RELIANCE", "buy", 10)
 
-    def test_cancel_order_raises(self):
+    def test_cancel_order_requires_auth(self):
         broker = self._make_broker()
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(BrokerError, match="Not authenticated"):
             broker.cancel_order("ORD123")
 
-    def test_get_order_status_raises(self):
+    def test_get_order_status_requires_auth(self):
         broker = self._make_broker()
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(BrokerError, match="Not authenticated"):
             broker.get_order_status("ORD123")
 
-    def test_get_orders_raises(self):
+    def test_get_orders_requires_auth(self):
         broker = self._make_broker()
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(BrokerError, match="Not authenticated"):
             broker.get_orders()
 
-    def test_get_positions_raises(self):
+    def test_get_positions_requires_auth(self):
         broker = self._make_broker()
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(BrokerError, match="Not authenticated"):
             broker.get_positions()
 
-    def test_get_holdings_raises(self):
+    def test_get_holdings_requires_auth(self):
         broker = self._make_broker()
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(BrokerError, match="Not authenticated"):
             broker.get_holdings()
 
-    def test_get_account_summary_raises(self):
+    def test_get_account_summary_requires_auth(self):
         broker = self._make_broker()
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(BrokerError, match="Not authenticated"):
             broker.get_account_summary()
 
 
