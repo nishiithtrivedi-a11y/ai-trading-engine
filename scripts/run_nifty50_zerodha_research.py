@@ -124,6 +124,13 @@ def parse_args() -> argparse.Namespace:
         "--slippage-rate", type=float, default=0.0005,
         help="Slippage rate (default: 0.0005 = 0.05%%).",
     )
+    p.add_argument(
+        "--include-regime", action="store_true",
+        help=(
+            "Detect the current market regime using the first fetched symbol "
+            "and include it in summary.md. Adds ~1 second. Disabled by default."
+        ),
+    )
     return p.parse_args()
 
 
@@ -313,6 +320,77 @@ def run_optimized(
 
 
 # ---------------------------------------------------------------------------
+# Market regime detection helper (optional, for --include-regime)
+# ---------------------------------------------------------------------------
+def detect_market_regime(df: pd.DataFrame, symbol: str = "NIFTY50") -> Optional[Any]:
+    """
+    Run MarketRegimeEngine on the supplied DataFrame.
+    Returns a MarketRegimeSnapshot or None on failure.
+    Kept as a standalone helper so the main backtest loop is not affected.
+    """
+    try:
+        from src.market_intelligence.regime_engine import (
+            MarketRegimeEngine,
+            MarketRegimeEngineConfig,
+        )
+        cfg = MarketRegimeEngineConfig(symbol=symbol, long_ma_period=200)
+        snap = MarketRegimeEngine().detect(df, config=cfg, symbol=symbol)
+        return snap
+    except Exception as exc:
+        warn(f"Regime detection failed: {exc}")
+        return None
+
+
+def _regime_md_section(snap: Any) -> list[str]:
+    """Render a MarketRegimeSnapshot as Markdown lines for summary.md."""
+    lines: list[str] = []
+    lines.append("")
+    lines.append("## Market Regime (at time of research run)")
+    lines.append("")
+    lines.append(f"| Field | Value |")
+    lines.append(f"| --- | --- |")
+    lines.append(f"| Symbol | {snap.symbol} |")
+    lines.append(f"| As-of date | {snap.timestamp.strftime('%Y-%m-%d')} |")
+    lines.append(f"| **Composite regime** | **{snap.composite_regime.value}** |")
+    lines.append(f"| Trend regime | {snap.trend_regime.value} |")
+    lines.append(f"| Trend state | {snap.trend_state.value} |")
+    lines.append(f"| Volatility regime | {snap.volatility_regime.value} |")
+    if snap.trend_score is not None:
+        lines.append(f"| Trend score | {snap.trend_score:+.4f} |")
+    if snap.realized_volatility is not None:
+        lines.append(f"| Annualized vol | {snap.realized_volatility*100:.2f}% |")
+    if snap.atr_ratio is not None:
+        lines.append(f"| ATR ratio | {snap.atr_ratio:.4f} |")
+    if snap.last_close is not None:
+        lines.append(f"| Last close | {snap.last_close:.2f} |")
+    if snap.fast_ma is not None:
+        lines.append(f"| Fast MA (20) | {snap.fast_ma:.2f} |")
+    if snap.slow_ma is not None:
+        lines.append(f"| Slow MA (50) | {snap.slow_ma:.2f} |")
+    if snap.long_ma is not None:
+        lines.append(f"| Long MA (200) | {snap.long_ma:.2f} |")
+    if snap.warnings:
+        lines.append(f"| Warnings | {'; '.join(snap.warnings)} |")
+    lines.append("")
+
+    # Strategy hint
+    hint = {
+        "bullish_trending": "Favour trend-following long setups.",
+        "bullish_sideways": "Look for breakout entries; reduce position size.",
+        "bearish_trending": "Avoid new longs; reduce exposure.",
+        "bearish_volatile": "Hard reduction or hedging; minimal new positions.",
+        "rangebound":       "Mean-reversion / range strategies.",
+        "risk_off":         "Stay in cash; stop all new positions.",
+        "unknown":          "Treat as neutral; skip or paper-trade only.",
+    }.get(snap.composite_regime.value, "")
+    if hint:
+        lines.append(f"> **Strategy hint:** {hint}")
+        lines.append("")
+    lines.append("---")
+    return lines
+
+
+# ---------------------------------------------------------------------------
 # Data loading helpers
 # ---------------------------------------------------------------------------
 def load_zerodha_source(api_key: str, api_secret: str, access_token: str):
@@ -407,6 +485,7 @@ def export_results(
     output_dir: Path,
     args: argparse.Namespace,
     start_time: float,
+    regime_snap: Optional[Any] = None,
 ) -> None:
     """Write all_results.csv, top_ranked.csv, and summary.md."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -487,6 +566,10 @@ def export_results(
     lines.append("```")
     lines.append("")
     lines.append("---")
+
+    # -- Market regime (optional) ------------------------------------------
+    if regime_snap is not None:
+        lines.extend(_regime_md_section(regime_snap))
 
     # -- Overall top N
     lines.append("")
@@ -577,6 +660,7 @@ def main() -> None:
     info(f"Optimize     : {args.optimize}")
     info(f"Symbols limit: {args.symbols_limit or 'all'}")
     info(f"Top-N        : {args.top_n}")
+    info(f"Regime detect: {getattr(args, 'include_regime', False)}")
     info(f"Output dir   : {output_dir.resolve()}")
 
     # -----------------------------------------------------------------------
@@ -648,6 +732,32 @@ def main() -> None:
         info(f"Primary source : Live Zerodha Kite API  (interval={args.interval}, days={args.days})")
     else:
         info(f"Primary source : CSV fallback  ({list(fallback_dfs)})")
+
+    # -----------------------------------------------------------------------
+    # Market regime detection (optional --include-regime flag)
+    # -----------------------------------------------------------------------
+    regime_snap = None
+    if getattr(args, "include_regime", False):
+        section("MARKET REGIME DETECTION")
+        # Use the first symbol as a market proxy (e.g. RELIANCE or HDFCBANK
+        # as NIFTY constituent); fall back to CSV data if live API fails.
+        regime_symbol = symbols[0] if symbols else "RELIANCE"
+        info(f"Detecting regime using {regime_symbol} as market proxy ...")
+        regime_df = fetch_symbol_df(regime_symbol, z_source, timeframe, start_dt, end_dt, fallback_dfs)
+        if regime_df is not None and not regime_df.empty:
+            regime_snap = detect_market_regime(regime_df, symbol=regime_symbol)
+            if regime_snap is not None:
+                ok(f"Composite regime : {regime_snap.composite_regime.value}")
+                ok(f"Trend regime     : {regime_snap.trend_regime.value}")
+                ok(f"Vol regime       : {regime_snap.volatility_regime.value}")
+                if regime_snap.trend_score is not None:
+                    ok(f"Trend score      : {regime_snap.trend_score:+.4f}")
+                if regime_snap.realized_volatility is not None:
+                    ok(f"Annualized vol   : {regime_snap.realized_volatility*100:.2f}%")
+            else:
+                warn("Regime detection returned None — summary will omit regime section")
+        else:
+            warn(f"Could not load data for regime symbol {regime_symbol}")
 
     # -----------------------------------------------------------------------
     # Main research loop
@@ -736,7 +846,7 @@ def main() -> None:
     # Export reports
     # -----------------------------------------------------------------------
     section("EXPORTING REPORTS")
-    export_results(all_rows, args.top_n, output_dir, args, start_time)
+    export_results(all_rows, args.top_n, output_dir, args, start_time, regime_snap=regime_snap)
 
     elapsed = time.time() - start_time
     section("DONE")
