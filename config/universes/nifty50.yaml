@@ -1,0 +1,88 @@
+# NIFTY 50 Universe Configuration
+# =================================
+# Zerodha-compatible bare tradingsymbols (NSE exchange).
+# The .NS suffix used internally by NSEUniverseLoader is stripped
+# by KiteInstrumentMapper before hitting the Kite API.
+#
+# Source: NSE NIFTY 50 index constituents (as of March 2026).
+# To add / remove symbols, edit this list and re-run the research script.
+#
+# Usage:
+#   python scripts/run_nifty50_zerodha_research.py --interval day --days 365
+
+universe:
+  name: nifty50
+  exchange: NSE
+  description: "NIFTY 50 Index Constituents - NSE's benchmark large-cap index"
+  total_constituents: 53   # index has 50 slots; NSEUniverseLoader includes 53 mapped symbols
+
+  # Symbols in Zerodha/NSE tradingsymbol format (no .NS suffix)
+  symbols:
+    - ADANIENT
+    - ADANIPORTS
+    - APOLLOHOSP
+    - ASIANPAINT
+    - AXISBANK
+    - BAJAJ-AUTO
+    - BAJAJFINSV
+    - BAJFINANCE
+    - BEL
+    - BHARTIARTL
+    - BPCL
+    - BRITANNIA
+    - CIPLA
+    - COALINDIA
+    - DRREDDY
+    - EICHERMOT
+    - ETERNAL
+    - GRASIM
+    - HCLTECH
+    - HDFC
+    - HDFCBANK
+    - HDFCLIFE
+    - HEROMOTOCO
+    - HINDALCO
+    - HINDUNILVR
+    - ICICIBANK
+    - INDUSINDBK
+    - INFY
+    - ITC
+    - JIOFIN
+    - JSWSTEEL
+    - KOTAKBANK
+    - LT
+    - M&M
+    - MARUTI
+    - NESTLEIND
+    - NTPC
+    - ONGC
+    - POWERGRID
+    - RELIANCE
+    - SBILIFE
+    - SBIN
+    - SHRIRAMFIN
+    - SUNPHARMA
+    - TATACONSUM
+    - TATAMOTORS
+    - TATASTEEL
+    - TCS
+    - TECHM
+    - TITAN
+    - TRENT
+    - ULTRACEMCO
+    - WIPRO
+
+# Ranking / scoring weights used by the research runner
+scoring:
+  sharpe_weight:      1.0    # multiplier applied to Sharpe Ratio
+  return_weight:    100.0    # multiplier applied to total_return_pct (decimal)
+  drawdown_penalty:  50.0    # penalty multiplier applied to max_drawdown_pct (decimal)
+  min_trades:           3    # results with fewer trades are filtered out
+
+# Default backtest parameters
+backtest_defaults:
+  initial_capital:  100000   # Rs. 1,00,000
+  fee_rate:         0.001    # 0.10% brokerage
+  slippage_rate:    0.0005   # 0.05% slippage
+  days:               365    # look-back window
+  interval:          "day"   # bar interval: day | 5minute | 15minute | 60minute
