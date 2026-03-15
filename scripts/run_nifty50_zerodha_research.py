@@ -131,6 +131,14 @@ def parse_args() -> argparse.Namespace:
             "and include it in summary.md. Adds ~1 second. Disabled by default."
         ),
     )
+    p.add_argument(
+        "--regime-filter", action="store_true",
+        help=(
+            "Skip strategies that are incompatible with the detected market regime. "
+            "Requires --include-regime. When regime is UNKNOWN all strategies run. "
+            "Disabled by default; existing behaviour is fully preserved without this flag."
+        ),
+    )
     return p.parse_args()
 
 
@@ -202,6 +210,33 @@ RETURN_W    = 100.0 # total_return_pct weight  (decimal, e.g. 0.12 for 12%)
 DRAWDOWN_P  = 50.0  # max_drawdown_pct penalty (decimal)
 MIN_TRADES  = 3     # minimum trades required to be included in ranking
 
+# ---------------------------------------------------------------------------
+# Regime-aware filtering  (Phases 3 & 4)
+# ---------------------------------------------------------------------------
+# Maps each strategy short-name to the CompositeRegime *values* that are
+# compatible with it.  UNKNOWN is always included so that an ambiguous
+# regime never blocks a strategy (conservative / safe default).
+# Keyed by the same strings used in build_strategy_registry().
+_REGIME_ALLOWED: dict[str, frozenset] = {
+    "sma":      frozenset({"bullish_trending", "bullish_sideways", "unknown"}),
+    "breakout": frozenset({"bullish_trending", "bullish_sideways", "unknown"}),
+    "rsi":      frozenset({"rangebound",       "bullish_sideways", "unknown"}),
+}
+
+# CompositeRegime.value -> nearest RegimeState.value.
+# Documented adapter so future callers can bridge MarketRegimeSnapshot to the
+# Phase-5 RegimeFilter (src.decision.regime_filter) without re-implementing
+# the mapping.  NOT used by the research runner itself.
+_COMPOSITE_TO_REGIME_STATE: dict[str, str] = {
+    "bullish_trending": "bullish",
+    "bullish_sideways": "low_volatility",
+    "bearish_trending": "bearish",
+    "bearish_volatile": "bearish",
+    "rangebound":       "rangebound",
+    "risk_off":         "high_volatility",
+    "unknown":          "unknown",
+}
+
 
 def compute_score(row: dict[str, Any]) -> float:
     sharpe   = row.get("sharpe_ratio")    or 0.0
@@ -211,6 +246,39 @@ def compute_score(row: dict[str, Any]) -> float:
     # apply penalty on magnitude
     score = (SHARPE_W * sharpe) + (RETURN_W * ret) - (DRAWDOWN_P * abs(dd))
     return round(score, 6)
+
+
+def is_strategy_allowed(
+    strategy_name: str,
+    composite_regime_value: str,
+) -> tuple[bool, str]:
+    """
+    Return (allowed, reason) for a strategy in the current composite regime.
+
+    Parameters
+    ----------
+    strategy_name : str
+        Short key matching build_strategy_registry(): "sma", "rsi", "breakout".
+    composite_regime_value : str
+        The .value string of a CompositeRegime (e.g. "bullish_trending").
+
+    Returns
+    -------
+    (bool, str)
+        True + reason if the strategy is compatible with the regime.
+        False + reason if the strategy is blocked.
+        Strategies not present in _REGIME_ALLOWED are allowed by default
+        (open-world assumption: don't block novel strategies).
+    """
+    allowed_set = _REGIME_ALLOWED.get(strategy_name)
+    if allowed_set is None:
+        return True, f"'{strategy_name}' not in filter table; allowed by default"
+    if composite_regime_value in allowed_set:
+        return True, f"{strategy_name} compatible with {composite_regime_value}"
+    return False, (
+        f"{strategy_name} blocked in '{composite_regime_value}' "
+        f"(allowed: {sorted(allowed_set)})"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -341,14 +409,29 @@ def detect_market_regime(df: pd.DataFrame, symbol: str = "NIFTY50") -> Optional[
         return None
 
 
-def _regime_md_section(snap: Any) -> list[str]:
-    """Render a MarketRegimeSnapshot as Markdown lines for summary.md."""
+def _regime_md_section(
+    snap: Any,
+    filter_active: bool = False,
+    regime_skipped: int = 0,
+) -> list[str]:
+    """
+    Render a MarketRegimeSnapshot as Markdown lines for summary.md.
+
+    Parameters
+    ----------
+    snap : MarketRegimeSnapshot
+        Output of MarketRegimeEngine.detect().
+    filter_active : bool
+        True when --regime-filter was active for this run.
+    regime_skipped : int
+        Number of (symbol, strategy) combinations skipped by the filter.
+    """
     lines: list[str] = []
     lines.append("")
     lines.append("## Market Regime (at time of research run)")
     lines.append("")
-    lines.append(f"| Field | Value |")
-    lines.append(f"| --- | --- |")
+    lines.append("| Field | Value |")
+    lines.append("| --- | --- |")
     lines.append(f"| Symbol | {snap.symbol} |")
     lines.append(f"| As-of date | {snap.timestamp.strftime('%Y-%m-%d')} |")
     lines.append(f"| **Composite regime** | **{snap.composite_regime.value}** |")
@@ -371,6 +454,9 @@ def _regime_md_section(snap: Any) -> list[str]:
         lines.append(f"| Long MA (200) | {snap.long_ma:.2f} |")
     if snap.warnings:
         lines.append(f"| Warnings | {'; '.join(snap.warnings)} |")
+    lines.append(f"| Regime filter active | {'Yes' if filter_active else 'No'} |")
+    if filter_active:
+        lines.append(f"| Combinations skipped by filter | {regime_skipped} |")
     lines.append("")
 
     # Strategy hint
@@ -386,6 +472,22 @@ def _regime_md_section(snap: Any) -> list[str]:
     if hint:
         lines.append(f"> **Strategy hint:** {hint}")
         lines.append("")
+
+    # Strategy allow/block table (shown when filter was active)
+    if filter_active:
+        composite_val = snap.composite_regime.value
+        lines.append("### Strategy Allow / Block Table")
+        lines.append("")
+        lines.append("| Strategy | Regime | Decision | Allowed regimes |")
+        lines.append("| --- | --- | --- | --- |")
+        for strat_name, allowed_set in sorted(_REGIME_ALLOWED.items()):
+            decision = "ALLOWED" if composite_val in allowed_set else "BLOCKED"
+            allowed_str = ", ".join(sorted(allowed_set))
+            lines.append(
+                f"| {strat_name} | {composite_val} | {decision} | {allowed_str} |"
+            )
+        lines.append("")
+
     lines.append("---")
     return lines
 
@@ -486,6 +588,8 @@ def export_results(
     args: argparse.Namespace,
     start_time: float,
     regime_snap: Optional[Any] = None,
+    regime_filter_active: bool = False,
+    regime_skipped: int = 0,
 ) -> None:
     """Write all_results.csv, top_ranked.csv, and summary.md."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -549,6 +653,10 @@ def export_results(
     lines.append(f"**Strategies tested:** {', '.join(args.strategies)}  ")
     lines.append(f"**Optimised:** {'Yes' if args.optimize else 'No'}  ")
     lines.append(f"**Total results:** {len(df_all)} ({len(df_valid)} passed min-trades filter)  ")
+    if regime_filter_active:
+        lines.append(f"**Regime-filtered (skipped):** {regime_skipped}  ")
+    regime_label = regime_snap.composite_regime.value if regime_snap is not None else "N/A"
+    lines.append(f"**Market regime:** {regime_label}  ")
     lines.append("")
     lines.append("---")
 
@@ -569,7 +677,11 @@ def export_results(
 
     # -- Market regime (optional) ------------------------------------------
     if regime_snap is not None:
-        lines.extend(_regime_md_section(regime_snap))
+        lines.extend(_regime_md_section(
+            regime_snap,
+            filter_active=regime_filter_active,
+            regime_skipped=regime_skipped,
+        ))
 
     # -- Overall top N
     lines.append("")
@@ -661,6 +773,7 @@ def main() -> None:
     info(f"Symbols limit: {args.symbols_limit or 'all'}")
     info(f"Top-N        : {args.top_n}")
     info(f"Regime detect: {getattr(args, 'include_regime', False)}")
+    info(f"Regime filter: {getattr(args, 'regime_filter', False)}")
     info(f"Output dir   : {output_dir.resolve()}")
 
     # -----------------------------------------------------------------------
@@ -760,6 +873,30 @@ def main() -> None:
             warn(f"Could not load data for regime symbol {regime_symbol}")
 
     # -----------------------------------------------------------------------
+    # Activate regime filter (optional --regime-filter flag)
+    # -----------------------------------------------------------------------
+    regime_filter_active = getattr(args, "regime_filter", False)
+    if regime_filter_active and not getattr(args, "include_regime", False):
+        warn("--regime-filter requires --include-regime; filter disabled for this run")
+        regime_filter_active = False
+    if regime_filter_active and regime_snap is None:
+        warn("Regime detection failed; --regime-filter disabled for this run")
+        regime_filter_active = False
+
+    # Pre-compute composite value string once (safe even when regime_snap is None)
+    composite_value = (
+        regime_snap.composite_regime.value if regime_snap is not None else "unknown"
+    )
+
+    if regime_filter_active:
+        section("REGIME FILTER PREVIEW")
+        info(f"Active composite regime : {composite_value}")
+        for sn in selected:
+            allowed_flag, reason = is_strategy_allowed(sn, composite_value)
+            status = "ALLOWED" if allowed_flag else "BLOCKED"
+            info(f"  {sn:<12} -> {status}  ({reason})")
+
+    # -----------------------------------------------------------------------
     # Main research loop
     # -----------------------------------------------------------------------
     section("RUNNING BACKTESTS")
@@ -767,6 +904,7 @@ def main() -> None:
     total_combos = len(symbols) * len(selected)
     combo_num    = 0
     skipped      = 0
+    regime_skipped = 0
 
     for sym_idx, symbol in enumerate(symbols):
         print(f"\n  [{sym_idx + 1}/{len(symbols)}] {symbol}")
@@ -783,6 +921,18 @@ def main() -> None:
         # Run each strategy
         for strat_name, strat_def in selected.items():
             combo_num += 1
+
+            # --- Regime gate (active only when --regime-filter was given) ---
+            if regime_filter_active:
+                allowed_flag, filter_reason = is_strategy_allowed(strat_name, composite_value)
+                if not allowed_flag:
+                    print(
+                        f"    ({combo_num}/{total_combos}) Strategy: {strat_name}"
+                        f"  -> SKIPPED [{filter_reason}]"
+                    )
+                    regime_skipped += 1
+                    continue
+
             print(f"    ({combo_num}/{total_combos}) Strategy: {strat_name}", end="  ", flush=True)
 
             if args.optimize:
@@ -806,6 +956,9 @@ def main() -> None:
                 )
 
             if row is not None:
+                # Tag every successful row with the regime label (if known)
+                if regime_snap is not None:
+                    row["regime_label"] = composite_value
                 all_rows.append(row)
                 trades = row.get("num_trades", 0) or 0
                 score  = row.get("score", float("nan"))
@@ -820,7 +973,8 @@ def main() -> None:
     section("RESULTS SUMMARY")
     info(f"Total combinations attempted : {total_combos}")
     info(f"Successful results           : {len(all_rows)}")
-    info(f"Skipped / failed             : {skipped}")
+    info(f"Regime-filtered (skipped)    : {regime_skipped}")
+    info(f"Backtest failures / no data  : {skipped}")
 
     if all_rows:
         df_all = pd.DataFrame(all_rows)
@@ -846,7 +1000,12 @@ def main() -> None:
     # Export reports
     # -----------------------------------------------------------------------
     section("EXPORTING REPORTS")
-    export_results(all_rows, args.top_n, output_dir, args, start_time, regime_snap=regime_snap)
+    export_results(
+        all_rows, args.top_n, output_dir, args, start_time,
+        regime_snap=regime_snap,
+        regime_filter_active=regime_filter_active,
+        regime_skipped=regime_skipped,
+    )
 
     elapsed = time.time() - start_time
     section("DONE")
