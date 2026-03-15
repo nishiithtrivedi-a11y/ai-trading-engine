@@ -39,6 +39,13 @@ from .regime_engine import (
 from .sector_rotation import SectorRotationAnalyzer, SectorRotationError
 from .volatility_regime import VolatilityRegimeAnalyzer, VolatilityRegimeError
 from .volume_intelligence import VolumeIntelligenceAnalyzer, VolumeIntelligenceError
+from .relative_strength import (
+    RelativeStrengthRecord,
+    compute_relative_strength,
+    rank_symbols_by_strength,
+    select_top_symbols,
+    generate_relative_strength_report,
+)
 
 __all__ = [
     "BreadthConfig",
@@ -82,4 +89,9 @@ __all__ = [
     "VolumeIntelligenceError",
     "VolumeSignal",
     "VolumeSignalType",
+    "RelativeStrengthRecord",
+    "compute_relative_strength",
+    "rank_symbols_by_strength",
+    "select_top_symbols",
+    "generate_relative_strength_report",
 ]

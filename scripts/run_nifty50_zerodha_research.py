@@ -139,6 +139,192 @@ def parse_args() -> argparse.Namespace:
             "Disabled by default; existing behaviour is fully preserved without this flag."
         ),
     )
+    p.add_argument(
+        "--regime-analysis", action="store_true",
+        help=(
+            "Detect regime independently per-symbol and run regime-segmented "
+            "performance analysis after the backtest loop. Generates a markdown "
+            "research report at research/regime_validation.md. "
+            "Orthogonal to --include-regime and --regime-filter. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
+    p.add_argument(
+        "--build-regime-policy", action="store_true",
+        help=(
+            "Build a deterministic regime-driven strategy selection policy from "
+            "the regime analysis results. Requires --regime-analysis. "
+            "Generates research/regime_policy.json and research/regime_policy.md. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
+    p.add_argument(
+        "--policy-output", type=str, default=None,
+        metavar="PATH",
+        help=(
+            "Custom output path for the regime policy JSON artifact. "
+            "Defaults to research/regime_policy.json when --build-regime-policy "
+            "is active. Ignored when --build-regime-policy is absent."
+        ),
+    )
+    p.add_argument(
+        "--walk-forward-regime", action="store_true",
+        help=(
+            "Run regime policy walk-forward validation after the main backtest "
+            "loop.  For each rolling window the policy is built from train-window "
+            "data only (no lookahead) and then evaluated on the held-out test "
+            "window.  Generates research/regime_walk_forward.md. "
+            "Automatically enables --regime-analysis. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
+    p.add_argument(
+        "--train-days", type=int, default=180, metavar="N",
+        help=(
+            "Number of bars in each walk-forward training window "
+            "(default: 180, approximately 6 months of daily bars). "
+            "Only used when --walk-forward-regime is active."
+        ),
+    )
+    p.add_argument(
+        "--test-days", type=int, default=90, metavar="N",
+        help=(
+            "Number of bars in each walk-forward test window "
+            "(default: 90, approximately 3 months of daily bars). "
+            "Only used when --walk-forward-regime is active."
+        ),
+    )
+    p.add_argument(
+        "--step-days", type=int, default=45, metavar="N",
+        help=(
+            "Number of bars to advance the window start between walk-forward "
+            "iterations (default: 45).  A value equal to --test-days gives "
+            "non-overlapping test windows. "
+            "Only used when --walk-forward-regime is active."
+        ),
+    )
+    # ---- Phase 5: Relative Strength / Top-Stock Selection ----
+    p.add_argument(
+        "--top-n-symbols", type=int, default=0, metavar="N",
+        help=(
+            "After the main research loop, compute relative strength scores for "
+            "all symbols and rank them.  When N > 0, the top-N names are printed "
+            "and highlighted in the report.  Generates "
+            "research/relative_strength_analysis.md. "
+            "Disabled by default (0 = off)."
+        ),
+    )
+    p.add_argument(
+        "--relative-strength-lookback", type=int, default=90, metavar="N",
+        help=(
+            "Look-back window in bars for relative strength computation "
+            "(default: 90 bars ~= 3 months of daily data). "
+            "Only used when --top-n-symbols is active."
+        ),
+    )
+    p.add_argument(
+        "--benchmark-symbol", type=str, default="", metavar="SYM",
+        help=(
+            "Optional symbol to use as a benchmark for relative-return "
+            "computation (e.g. 'NIFTY50').  When provided, each symbol's "
+            "momentum return is compared to the benchmark's momentum return. "
+            "Ignored when empty."
+        ),
+    )
+    # ---- Phase 4: Portfolio-Level Backtest ----
+    p.add_argument(
+        "--portfolio-backtest", action="store_true",
+        help=(
+            "Run a portfolio-level backtest after the main research loop. "
+            "Allocates total capital equally across up to --max-positions symbols, "
+            "selects strategy per symbol (via regime policy if available), and "
+            "generates research/portfolio_backtest.md. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
+    p.add_argument(
+        "--max-positions", type=int, default=10, metavar="N",
+        help=(
+            "Maximum concurrent portfolio positions (default: 10). "
+            "Limits the number of symbols active in --portfolio-backtest. "
+            "Capital is allocated as initial_capital / max_positions per symbol."
+        ),
+    )
+    # ---- Phase 6: Risk Engine ----
+    p.add_argument(
+        "--enable-risk-management", action="store_true",
+        help=(
+            "Enable portfolio-level risk guardrails after the main backtest. "
+            "Runs validate_portfolio_risk() against the portfolio equity curve "
+            "and generates research/risk_engine_validation.md. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
+    p.add_argument(
+        "--max-risk-per-trade", type=float, default=0.01, metavar="F",
+        help=(
+            "Maximum fraction of portfolio equity to risk per trade (default: 0.01 = 1%%). "
+            "Only used when --enable-risk-management is active."
+        ),
+    )
+    p.add_argument(
+        "--max-portfolio-exposure", type=float, default=0.20, metavar="F",
+        help=(
+            "Maximum fraction of portfolio equity deployed simultaneously "
+            "(default: 0.20 = 20%%). "
+            "Only used when --enable-risk-management is active."
+        ),
+    )
+    p.add_argument(
+        "--max-drawdown", type=float, default=0.15, metavar="F",
+        help=(
+            "Portfolio drawdown kill-switch threshold (default: 0.15 = 15%%). "
+            "New entries are blocked when drawdown exceeds this level. "
+            "Only used when --enable-risk-management is active."
+        ),
+    )
+    p.add_argument(
+        "--max-concurrent-positions", type=int, default=10, metavar="N",
+        help=(
+            "Hard cap on simultaneous open positions (default: 10). "
+            "Only used when --enable-risk-management is active."
+        ),
+    )
+    # ---- Phase 7: Execution Realism / Cost Modeling ----
+    p.add_argument(
+        "--execution-realism", action="store_true",
+        help=(
+            "Apply realistic execution costs (commission + slippage) to the "
+            "portfolio trade log and generate a gross vs net comparison.  "
+            "Requires --portfolio-backtest to produce a trade log.  "
+            "Generates research/execution_realism.md. "
+            "Disabled by default; zero behaviour change when absent."
+        ),
+    )
+    p.add_argument(
+        "--commission-bps", type=float, default=10.0, metavar="F",
+        help=(
+            "Proportional commission in basis points of notional value "
+            "(default: 10.0 bps = 0.10%%). "
+            "Only used when --execution-realism is active."
+        ),
+    )
+    p.add_argument(
+        "--slippage-bps", type=float, default=5.0, metavar="F",
+        help=(
+            "Slippage / market-impact in basis points of notional value "
+            "(default: 5.0 bps = 0.05%%). "
+            "Only used when --execution-realism is active."
+        ),
+    )
+    p.add_argument(
+        "--use-next-bar-fill", action="store_true", default=True,
+        help=(
+            "Fill trades at the next bar's open price (default: True). "
+            "This is the realistic mode consistent with NEXT_BAR_OPEN execution. "
+            "Only used when --execution-realism is active."
+        ),
+    )
     return p.parse_args()
 
 
@@ -774,6 +960,32 @@ def main() -> None:
     info(f"Top-N        : {args.top_n}")
     info(f"Regime detect: {getattr(args, 'include_regime', False)}")
     info(f"Regime filter: {getattr(args, 'regime_filter', False)}")
+    info(f"Regime anlys : {getattr(args, 'regime_analysis', False)}")
+    info(f"Regime policy: {getattr(args, 'build_regime_policy', False)}")
+    info(f"Walk-forward : {getattr(args, 'walk_forward_regime', False)}")
+    if getattr(args, "walk_forward_regime", False):
+        info(f"  train-days : {args.train_days}")
+        info(f"  test-days  : {args.test_days}")
+        info(f"  step-days  : {args.step_days}")
+    info(f"Rel strength : {getattr(args, 'top_n_symbols', 0) > 0}")
+    if getattr(args, "top_n_symbols", 0) > 0:
+        info(f"  top-n      : {args.top_n_symbols}")
+        info(f"  lookback   : {args.relative_strength_lookback}")
+        info(f"  benchmark  : {args.benchmark_symbol or 'none'}")
+    info(f"Portfolio bt : {getattr(args, 'portfolio_backtest', False)}")
+    if getattr(args, "portfolio_backtest", False):
+        info(f"  max-pos    : {args.max_positions}")
+    info(f"Risk mgmt    : {getattr(args, 'enable_risk_management', False)}")
+    if getattr(args, "enable_risk_management", False):
+        info(f"  max-risk   : {args.max_risk_per_trade:.2%}")
+        info(f"  max-exp    : {args.max_portfolio_exposure:.2%}")
+        info(f"  max-dd     : {args.max_drawdown:.2%}")
+        info(f"  max-pos    : {args.max_concurrent_positions}")
+    info(f"Exec realism : {getattr(args, 'execution_realism', False)}")
+    if getattr(args, "execution_realism", False):
+        info(f"  comm-bps   : {args.commission_bps:.1f}")
+        info(f"  slip-bps   : {args.slippage_bps:.1f}")
+        info(f"  next-bar   : {getattr(args, 'use_next_bar_fill', True)}")
     info(f"Output dir   : {output_dir.resolve()}")
 
     # -----------------------------------------------------------------------
@@ -897,6 +1109,51 @@ def main() -> None:
             info(f"  {sn:<12} -> {status}  ({reason})")
 
     # -----------------------------------------------------------------------
+    # Regime analysis flag (orthogonal to --include-regime / --regime-filter)
+    # When active: detect regime per-symbol for accurate historical tagging.
+    # -----------------------------------------------------------------------
+    regime_analysis_active = getattr(args, "regime_analysis", False)
+    if regime_analysis_active:
+        info(
+            "Regime analysis enabled: regime_label will be detected per-symbol "
+            "from each symbol's own OHLCV data (end-of-period snapshot)."
+        )
+
+    # -----------------------------------------------------------------------
+    # Regime policy build flag (requires --regime-analysis)
+    # When active: build a deterministic strategy selection policy from the
+    # aggregated regime analysis results after the backtest loop.
+    # -----------------------------------------------------------------------
+    build_regime_policy_active = getattr(args, "build_regime_policy", False)
+    if build_regime_policy_active and not regime_analysis_active:
+        warn(
+            "--build-regime-policy requires --regime-analysis; "
+            "enabling --regime-analysis automatically."
+        )
+        regime_analysis_active = True
+    policy_output_path: Optional[Path] = (
+        Path(args.policy_output)
+        if getattr(args, "policy_output", None)
+        else Path("research") / "regime_policy.json"
+    )
+
+    # -----------------------------------------------------------------------
+    # Walk-forward regime validation flag (auto-enables --regime-analysis)
+    # When active: run rolling train/test walk-forward policy validation
+    # after the backtest loop.  Symbol DataFrames are cached during the loop.
+    # -----------------------------------------------------------------------
+    walk_forward_active = getattr(args, "walk_forward_regime", False)
+    if walk_forward_active and not regime_analysis_active:
+        warn(
+            "--walk-forward-regime requires --regime-analysis; "
+            "enabling --regime-analysis automatically."
+        )
+        regime_analysis_active = True
+
+    # Cache pre-fetched DataFrames for walk-forward (populated in loop below)
+    symbols_df_cache: dict[str, Any] = {}
+
+    # -----------------------------------------------------------------------
     # Main research loop
     # -----------------------------------------------------------------------
     section("RUNNING BACKTESTS")
@@ -917,6 +1174,35 @@ def main() -> None:
             continue
 
         info(f"    Data: {len(df)} bars  ({df.index[0]} -> {df.index[-1]})")
+
+        # Cache DataFrame for walk-forward validation (when active)
+        if walk_forward_active:
+            symbols_df_cache[symbol] = df
+
+        # -------------------------------------------------------------------
+        # Per-symbol regime label for result row tagging
+        #
+        # --regime-analysis: detect regime from THIS symbol's own OHLCV data
+        #   → accurate historical label for each symbol's test period
+        # --include-regime only: reuse the global (first-symbol) regime label
+        #   → preserves original single-regime-per-run behaviour
+        # Neither flag: no regime_label added to rows
+        # -------------------------------------------------------------------
+        sym_regime_label = "unknown"   # safe default used only when analysis active
+        if regime_analysis_active:
+            sym_snap = detect_market_regime(df, symbol=symbol)
+            if sym_snap is not None:
+                sym_regime_label = sym_snap.composite_regime.value
+                info(
+                    f"    Regime ({symbol}): {sym_regime_label} "
+                    f"| trend={sym_snap.trend_regime.value} "
+                    f"| vol={sym_snap.volatility_regime.value}"
+                )
+            else:
+                warn(f"    Regime detection failed for {symbol}; label set to 'unknown'")
+        elif regime_snap is not None:
+            # --include-regime only: uniform label from first-symbol detection
+            sym_regime_label = composite_value
 
         # Run each strategy
         for strat_name, strat_def in selected.items():
@@ -956,9 +1242,11 @@ def main() -> None:
                 )
 
             if row is not None:
-                # Tag every successful row with the regime label (if known)
-                if regime_snap is not None:
-                    row["regime_label"] = composite_value
+                # Tag regime_label when any regime detection was active.
+                # When --regime-analysis: per-symbol label (most precise).
+                # When --include-regime only: global label (original behaviour).
+                if regime_analysis_active or regime_snap is not None:
+                    row["regime_label"] = sym_regime_label
                 all_rows.append(row)
                 trades = row.get("num_trades", 0) or 0
                 score  = row.get("score", float("nan"))
@@ -995,6 +1283,566 @@ def main() -> None:
                 f"{score:>8.3f} {sharpe:>8.3f} {ret_pct:>8.1f}% "
                 f"{dd_pct:>7.1f}% {trades:>7}"
             )
+
+    # -----------------------------------------------------------------------
+    # Regime-segmented analysis (optional --regime-analysis flag)
+    # -----------------------------------------------------------------------
+    if regime_analysis_active and all_rows:
+        section("REGIME ANALYSIS")
+        from src.research.regime_analysis import generate_regime_report as _gen_report
+
+        regime_report_path = Path("research") / "regime_validation.md"
+        report_meta: dict = {
+            "interval":         args.interval,
+            "days":             args.days,
+            "symbols_tested":   len(symbols),
+            "strategies":       ", ".join(args.strategies),
+            "regime_label_scope": "per-symbol end-of-period composite regime",
+            "output_dir":       str(output_dir),
+        }
+        try:
+            df_rows = pd.DataFrame(all_rows)
+            valid_labelled = df_rows[df_rows["regime_label"].notna()] if "regime_label" in df_rows.columns else pd.DataFrame()
+
+            # Console distribution preview
+            if not valid_labelled.empty:
+                dist = valid_labelled.groupby("regime_label").size()
+                info("Regime distribution across all result rows:")
+                for regime_val, count in dist.items():
+                    info(f"  {regime_val:<22} {count} run(s)")
+            else:
+                warn("No regime labels found in result rows - report will be minimal")
+
+            _gen_report(df_rows, output_path=regime_report_path, metadata=report_meta)
+            ok(f"Regime analysis report: {regime_report_path.resolve()}")
+        except Exception as exc:
+            warn(f"Regime analysis failed: {exc}")
+    elif regime_analysis_active and not all_rows:
+        warn("--regime-analysis enabled but no results produced; skipping report")
+
+    # -----------------------------------------------------------------------
+    # Regime policy build (optional --build-regime-policy flag)
+    # Requires --regime-analysis to have populated all_rows with regime labels.
+    # -----------------------------------------------------------------------
+    if build_regime_policy_active and all_rows:
+        section("REGIME POLICY BUILD")
+        from src.research.regime_analysis import analyze_by_regime as _analyze
+        from src.decision.regime_policy import (
+            RegimePolicyBuilder as _Builder,
+            generate_policy_report as _gen_policy_report,
+        )
+
+        policy_md_path = policy_output_path.with_suffix(".md")
+        policy_meta: dict = {
+            "interval":       args.interval,
+            "days":           args.days,
+            "symbols_tested": len(symbols),
+            "strategies":     ", ".join(args.strategies),
+            "source_report":  "research/regime_validation.md",
+        }
+        try:
+            df_rows_policy = pd.DataFrame(all_rows)
+            agg_df = _analyze(df_rows_policy)
+
+            builder = _Builder()
+            policy = builder.build(
+                agg_df,
+                source_description=(
+                    f"Built from {len(symbols)} NIFTY symbols, "
+                    f"{args.interval} interval, {args.days} days"
+                ),
+                metadata=policy_meta,
+            )
+
+            # JSON artifact
+            policy.save_json(policy_output_path)
+            ok(f"Regime policy JSON  : {policy_output_path.resolve()}")
+
+            # Markdown report
+            _gen_policy_report(policy, output_path=policy_md_path)
+            ok(f"Regime policy report: {policy_md_path.resolve()}")
+
+            # Console summary
+            info("Policy summary:")
+            for label, entry in sorted(policy.entries.items()):
+                trade_flag = "TRADE" if entry.should_trade else "NO-TRADE"
+                pref = entry.preferred_strategy or "none"
+                allow = ", ".join(entry.allowed_strategies) or "none"
+                info(f"  [{trade_flag:<8}] {label:<22} preferred={pref:<12} allowed=[{allow}]")
+
+        except Exception as exc:
+            warn(f"Regime policy build failed: {exc}")
+
+    elif build_regime_policy_active and not all_rows:
+        warn("--build-regime-policy enabled but no results produced; skipping policy build")
+
+    # -----------------------------------------------------------------------
+    # Regime policy walk-forward validation (optional --walk-forward-regime)
+    # Requires: symbols_df_cache populated during the loop above.
+    # Policy is built only from train-window data (no lookahead guaranteed).
+    # -----------------------------------------------------------------------
+    if walk_forward_active and symbols_df_cache:
+        section("REGIME POLICY WALK-FORWARD VALIDATION")
+        from src.research.regime_walk_forward import (
+            run_regime_policy_walk_forward as _run_wf,
+            summarize_walk_forward_results as _summarize_wf,
+            generate_walk_forward_report   as _gen_wf_report,
+        )
+
+        wf_train_days = args.train_days
+        wf_test_days  = args.test_days
+        wf_step_days  = args.step_days
+        min_required  = wf_train_days + wf_test_days
+
+        info(f"Walk-forward parameters: train={wf_train_days}, test={wf_test_days}, step={wf_step_days}")
+        info(f"Symbols with cached data: {len(symbols_df_cache)}")
+
+        # Warn if any symbol has insufficient bars
+        insufficient = [
+            sym for sym, df in symbols_df_cache.items()
+            if len(df) < min_required
+        ]
+        if insufficient:
+            warn(
+                f"{len(insufficient)} symbol(s) have fewer than {min_required} bars "
+                f"and may yield no windows: {insufficient[:5]}"
+                + (" ..." if len(insufficient) > 5 else "")
+            )
+
+        wf_report_path = Path("research") / "regime_walk_forward.md"
+        wf_meta: dict = {
+            "interval":       args.interval,
+            "days":           args.days,
+            "symbols_tested": len(symbols_df_cache),
+            "strategies":     ", ".join(args.strategies),
+            "train_days":     wf_train_days,
+            "test_days":      wf_test_days,
+            "step_days":      wf_step_days,
+        }
+
+        try:
+            wf_records = _run_wf(
+                symbols_data=symbols_df_cache,
+                strategies=registry,
+                train_days=wf_train_days,
+                test_days=wf_test_days,
+                step_days=wf_step_days,
+                base_config=base_config,
+            )
+
+            if wf_records:
+                wf_summary = _summarize_wf(wf_records)
+                hit_rate   = wf_summary.get("policy_hit_rate")
+                hit_str    = f"{hit_rate*100:.1f}%" if hit_rate is not None else "N/A"
+                ok(f"Walk-forward records    : {len(wf_records)}")
+                ok(f"Windows completed       : {wf_summary.get('total_windows', 0)}")
+                ok(f"Policy hit rate         : {hit_str}")
+                info(f"  Correct calls        : {wf_summary.get('correct_calls', 0)} / {wf_summary.get('total_records', 0)}")
+                info(f"  Should-trade         : {wf_summary.get('should_trade_records', 0)}")
+                info(f"  No-trade decisions   : {wf_summary.get('no_trade_records', 0)}")
+                by_regime_wf = wf_summary.get("by_regime", {})
+                if by_regime_wf:
+                    info("  Hit rate by regime:")
+                    for rl, d in sorted(by_regime_wf.items()):
+                        hr = d.get("hit_rate")
+                        hr_s = f"{hr*100:.1f}%" if hr is not None else "N/A"
+                        info(f"    {rl:<22} {d['correct']}/{d['total']} ({hr_s})")
+
+                _gen_wf_report(wf_records, output_path=wf_report_path, metadata=wf_meta)
+                ok(f"Walk-forward report     : {wf_report_path.resolve()}")
+            else:
+                warn(
+                    "Walk-forward produced no records. "
+                    f"Ensure each symbol has >= {min_required} bars "
+                    f"(train_days={wf_train_days} + test_days={wf_test_days}). "
+                    f"Current --days={args.days}."
+                )
+
+        except Exception as exc:
+            warn(f"Walk-forward validation failed: {exc}")
+            if getattr(args, "verbose", False):
+                import traceback as _tb
+                _tb.print_exc()
+
+    elif walk_forward_active and not symbols_df_cache:
+        warn(
+            "--walk-forward-regime enabled but no symbol data was cached "
+            "(all symbols may have failed data fetch); skipping walk-forward"
+        )
+
+    # -----------------------------------------------------------------------
+    # Relative Strength / Top-Stock Selection (optional --top-n-symbols)
+    # Ranks all symbols by a composite relative strength score.
+    # -----------------------------------------------------------------------
+    rs_top_n = getattr(args, "top_n_symbols", 0)
+    if rs_top_n and rs_top_n > 0:
+        section("RELATIVE STRENGTH ANALYSIS")
+        from src.market_intelligence.relative_strength import (
+            compute_relative_strength as _compute_rs,
+            select_top_symbols as _select_top,
+            generate_relative_strength_report as _gen_rs_report,
+        )
+
+        _rs_lookback = getattr(args, "relative_strength_lookback", 90)
+        _rs_benchmark_sym = getattr(args, "benchmark_symbol", "").strip()
+
+        # Build symbol -> OHLCV dict from cache or re-fetch
+        _rs_sym_ohlcv: dict = {}
+        for sym in symbols:
+            if sym in symbols_df_cache:
+                _rs_sym_ohlcv[sym] = symbols_df_cache[sym]
+            elif fallback_dfs:
+                df_sym = fetch_symbol_df(sym, z_source, timeframe, start_dt, end_dt, fallback_dfs)
+                if df_sym is not None and not df_sym.empty:
+                    _rs_sym_ohlcv[sym] = df_sym
+
+        if not _rs_sym_ohlcv:
+            warn("Relative strength: no OHLCV data available; skipping.")
+        else:
+            # Optional benchmark series
+            _rs_benchmark_series = None
+            if _rs_benchmark_sym and _rs_benchmark_sym in _rs_sym_ohlcv:
+                _rs_benchmark_series = _rs_sym_ohlcv[_rs_benchmark_sym]["close"]
+                info(f"Benchmark series: {_rs_benchmark_sym}")
+            elif _rs_benchmark_sym:
+                warn(f"Benchmark symbol '{_rs_benchmark_sym}' not in data cache; "
+                     "relative_return will be 0.")
+
+            try:
+                info(
+                    f"Computing relative strength for {len(_rs_sym_ohlcv)} symbols "
+                    f"(lookback={_rs_lookback} bars)..."
+                )
+                rs_df = _compute_rs(
+                    symbol_to_ohlcv=_rs_sym_ohlcv,
+                    lookback=_rs_lookback,
+                    benchmark_series=_rs_benchmark_series,
+                )
+
+                if not rs_df.empty:
+                    top_syms = _select_top(rs_df, n=rs_top_n)
+                    ok(f"Top {rs_top_n} by relative strength: {top_syms}")
+
+                    info("Relative strength ranking:")
+                    for rank_i, (_, row) in enumerate(rs_df.head(rs_top_n).iterrows(), 1):
+                        sym_name = row.get("symbol", "?")
+                        score    = row.get("rolling_strength_score", float("nan"))
+                        mom      = row.get("momentum_return", float("nan"))
+                        info(
+                            f"  {rank_i}. {sym_name:<16} "
+                            f"score={score:+.4f}  momentum={mom:+.2%}"
+                        )
+
+                    _rs_report_path = Path("research") / "relative_strength_analysis.md"
+                    _rs_meta: dict = {
+                        "lookback_bars": _rs_lookback,
+                        "benchmark_symbol": _rs_benchmark_sym or "none",
+                        "symbols_analysed": len(_rs_sym_ohlcv),
+                        "top_n_requested": rs_top_n,
+                        "interval": args.interval,
+                    }
+                    _gen_rs_report(rs_df, output_path=_rs_report_path, metadata=_rs_meta)
+                    ok(f"Relative strength report: {_rs_report_path.resolve()}")
+                else:
+                    warn("Relative strength computation produced no results.")
+
+            except Exception as exc:
+                warn(f"Relative strength analysis failed: {exc}")
+                if getattr(args, "verbose", False):
+                    traceback.print_exc()
+
+    # -----------------------------------------------------------------------
+    # Portfolio-level backtest (optional --portfolio-backtest flag)
+    # Uses the cached symbol DataFrames (populated in loop above).
+    # Requires at least one successful backtest result row.
+    # -----------------------------------------------------------------------
+    portfolio_backtest_active = getattr(args, "portfolio_backtest", False)
+
+    # Ensure symbols_df_cache is populated (reuse walk-forward cache if active,
+    # otherwise re-build it from symbols that produced successful results).
+    if portfolio_backtest_active and not symbols_df_cache and all_rows:
+        info("Building symbol data cache for portfolio backtest (re-fetching)...")
+        for row in all_rows:
+            sym = row.get("symbol")
+            if sym and sym not in symbols_df_cache:
+                df_sym = fetch_symbol_df(
+                    sym, z_source, timeframe, start_dt, end_dt, fallback_dfs
+                )
+                if df_sym is not None and not df_sym.empty:
+                    symbols_df_cache[sym] = df_sym
+
+    if portfolio_backtest_active and symbols_df_cache:
+        section("PORTFOLIO-LEVEL BACKTEST")
+        from src.core.data_handler import DataHandler as _DataHandler
+        from src.research.portfolio_backtester import (
+            PortfolioBacktester as _PBacktester,
+            generate_portfolio_report as _gen_portfolio_report,
+        )
+
+        # Optionally load the regime policy built earlier in this run.
+        _portfolio_policy = None
+        if build_regime_policy_active and policy_output_path.exists():
+            try:
+                from src.decision.regime_policy import RegimePolicy as _RegimePolicy
+                _portfolio_policy = _RegimePolicy.load_json(policy_output_path)
+                info("Regime policy loaded for portfolio strategy selection")
+            except Exception as _exc:
+                warn(f"Could not load regime policy for portfolio backtest: {_exc}")
+
+        # Build symbol -> DataHandler mapping from cache
+        _sym_to_dh = {
+            sym: _DataHandler(df_cached)
+            for sym, df_cached in symbols_df_cache.items()
+        }
+
+        _max_pos = getattr(args, "max_positions", 10)
+        _portfolio_output = str(output_dir / "portfolio")
+        _pb = _PBacktester(
+            base_config=base_config,
+            strategy_registry=registry,
+            symbol_to_data=_sym_to_dh,
+            max_positions=_max_pos,
+            regime_policy=_portfolio_policy,
+            output_dir=_portfolio_output,
+        )
+
+        info(
+            f"Running portfolio backtest: {len(_sym_to_dh)} symbols, "
+            f"max_positions={_max_pos}, "
+            f"regime_policy={'Yes' if _portfolio_policy else 'No'}"
+        )
+
+        try:
+            _pb_result = _pb.run()
+
+            ok(f"Portfolio return    : {_pb_result.portfolio_return_pct * 100:.2f}%")
+            ok(f"Portfolio Sharpe    : {_pb_result.sharpe_ratio:.4f}")
+            ok(f"Portfolio MaxDD     : {_pb_result.max_drawdown_pct * 100:.2f}%")
+            ok(f"Portfolio turnover  : {_pb_result.turnover:.2f}x")
+            info(f"  Active symbols   : {_pb_result.num_symbols_active}")
+            info(f"  Total trades     : {_pb_result.num_trades}")
+            info(f"  Win rate         : {_pb_result.win_rate * 100:.1f}%")
+
+            _pb_report_path = Path("research") / "portfolio_backtest.md"
+            _pb_meta: dict = {
+                "interval":      args.interval,
+                "days":          args.days,
+                "symbols_tested": len(_sym_to_dh),
+                "strategies":    ", ".join(args.strategies),
+                "max_positions": _max_pos,
+                "regime_policy_used": bool(_portfolio_policy),
+            }
+            _gen_portfolio_report(
+                _pb_result,
+                output_path=_pb_report_path,
+                metadata=_pb_meta,
+            )
+            ok(f"Portfolio report    : {_pb_report_path.resolve()}")
+            ok(f"Portfolio CSVs      : {_portfolio_output}/")
+
+        except Exception as exc:
+            warn(f"Portfolio backtest failed: {exc}")
+            if getattr(args, "verbose", False):
+                traceback.print_exc()
+
+    elif portfolio_backtest_active and not symbols_df_cache:
+        warn(
+            "--portfolio-backtest enabled but no symbol data was cached; "
+            "ensure at least one symbol fetched data successfully."
+        )
+
+    # -----------------------------------------------------------------------
+    # Risk engine validation (optional --enable-risk-management flag)
+    # Runs post-hoc risk checks against the portfolio equity curve (when
+    # --portfolio-backtest was also active) or against an empty curve.
+    # Generates research/risk_engine_validation.md.
+    # -----------------------------------------------------------------------
+    risk_mgmt_active = getattr(args, "enable_risk_management", False)
+    if risk_mgmt_active:
+        section("RISK ENGINE VALIDATION")
+        from src.risk.risk_engine import (
+            PortfolioRiskConfig as _RiskCfg,
+            validate_portfolio_risk as _validate_risk,
+            generate_risk_report as _gen_risk_report,
+        )
+
+        _risk_config = _RiskCfg(
+            max_risk_per_trade_pct=getattr(args, "max_risk_per_trade", 0.01),
+            max_portfolio_exposure_pct=getattr(args, "max_portfolio_exposure", 0.20),
+            max_drawdown_pct=getattr(args, "max_drawdown", 0.15),
+            max_concurrent_positions=getattr(args, "max_concurrent_positions", 10),
+        )
+
+        info(
+            f"Risk config  : max_risk={_risk_config.max_risk_per_trade_pct:.2%}  "
+            f"max_exposure={_risk_config.max_portfolio_exposure_pct:.2%}  "
+            f"max_dd={_risk_config.max_drawdown_pct:.2%}  "
+            f"max_pos={_risk_config.max_concurrent_positions}"
+        )
+
+        # Use portfolio equity curve from this run if available
+        _risk_equity_curve = None
+        _pb_res = locals().get("_pb_result")
+        if _pb_res is not None:
+            try:
+                if not _pb_res.portfolio_equity_curve.empty:
+                    _risk_equity_curve = _pb_res.portfolio_equity_curve
+                    info(
+                        f"Equity curve : {len(_risk_equity_curve)} bars "
+                        f"(from portfolio backtest)"
+                    )
+            except Exception:
+                pass
+
+        if _risk_equity_curve is None:
+            info(
+                "No portfolio equity curve available; "
+                "risk checks will use an empty curve.  "
+                "Run with --portfolio-backtest to validate against real equity."
+            )
+
+        try:
+            _risk_violations = _validate_risk(
+                _risk_equity_curve if _risk_equity_curve is not None else pd.DataFrame(),
+                _risk_config,
+            )
+
+            if not _risk_violations:
+                ok("Validation   : PASS - no violations detected")
+            else:
+                warn(f"Validation   : {len(_risk_violations)} violation(s) detected")
+                for _v in _risk_violations:
+                    warn(f"  -> {_v}")
+
+            _risk_report_path = Path("research") / "risk_engine_validation.md"
+            _risk_meta: dict = {
+                "interval":           args.interval,
+                "days":               args.days,
+                "symbols_tested":     len(symbols),
+                "strategies":         ", ".join(args.strategies),
+                "portfolio_backtest": portfolio_backtest_active,
+            }
+            _gen_risk_report(
+                _risk_config,
+                _risk_violations,
+                equity_curve=_risk_equity_curve,
+                output_path=_risk_report_path,
+                metadata=_risk_meta,
+            )
+            ok(f"Risk report  : {_risk_report_path.resolve()}")
+
+        except Exception as exc:
+            warn(f"Risk engine validation failed: {exc}")
+            if getattr(args, "verbose", False):
+                traceback.print_exc()
+
+    # -----------------------------------------------------------------------
+    # Execution Realism / Cost Modeling (optional --execution-realism flag)
+    # Applies realistic commission + slippage costs to the portfolio trade log
+    # and compares gross vs net P&L.  Requires --portfolio-backtest trade log.
+    # Generates research/execution_realism.md.
+    # -----------------------------------------------------------------------
+    exec_realism_active = getattr(args, "execution_realism", False)
+    if exec_realism_active:
+        section("EXECUTION REALISM / COST MODELING")
+        from src.execution import (
+            CostConfig as _CostCfg,
+            FillConfig as _FillCfg,
+            ExecutionCostAnalyzer as _CostAnalyzer,
+            generate_execution_report as _gen_exec_report,
+        )
+
+        _commission_bps = getattr(args, "commission_bps", 10.0)
+        _slippage_bps   = getattr(args, "slippage_bps",   5.0)
+        _next_bar_fill  = getattr(args, "use_next_bar_fill", True)
+
+        _exec_cost_cfg = _CostCfg(
+            commission_bps=_commission_bps,
+            slippage_bps=_slippage_bps,
+        )
+        _exec_fill_cfg = _FillCfg(use_next_bar_open=_next_bar_fill)
+
+        info(
+            f"Cost config  : commission={_commission_bps:.1f} bps, "
+            f"slippage={_slippage_bps:.1f} bps, "
+            f"fill={'next_bar_open' if _next_bar_fill else 'current_bar_close'}"
+        )
+
+        # Pull trade log from this run's portfolio backtest if available
+        _exec_trade_log = None
+        _exec_initial_capital = args.initial_capital
+        _pb_res_exec = locals().get("_pb_result")
+        if _pb_res_exec is not None:
+            try:
+                if not _pb_res_exec.trade_log.empty:
+                    _exec_trade_log = _pb_res_exec.trade_log
+                    _exec_initial_capital = _pb_res_exec.initial_capital
+                    info(f"Trade log    : {len(_exec_trade_log)} trades from portfolio backtest")
+            except Exception:
+                pass
+
+        if _exec_trade_log is None:
+            warn(
+                "--execution-realism requires a trade log from --portfolio-backtest. "
+                "Run with --portfolio-backtest to enable cost analysis."
+            )
+        else:
+            try:
+                _exec_analyzer = _CostAnalyzer(
+                    cost_config=_exec_cost_cfg,
+                    fill_config=_exec_fill_cfg,
+                )
+                _exec_records = _exec_analyzer.analyze_trade_log(
+                    _exec_trade_log,
+                    initial_capital=_exec_initial_capital,
+                )
+
+                if _exec_records:
+                    # Aggregate summary
+                    _total_gross = sum(r.gross_pnl  for r in _exec_records)
+                    _total_cost  = sum(r.total_cost for r in _exec_records)
+                    _total_net   = sum(r.net_pnl    for r in _exec_records)
+                    _cap         = _exec_initial_capital or 1.0
+                    ok(f"Gross P&L    : {_total_gross:,.2f}  ({_total_gross / _cap:.2%})")
+                    ok(f"Total costs  : {_total_cost:,.2f}  ({_total_cost / _cap:.2%})")
+                    ok(f"Net P&L      : {_total_net:,.2f}  ({_total_net / _cap:.2%})")
+                    info(f"Cost drag    : {(_total_gross - _total_net) / _cap:.4%} of capital")
+
+                    # Top 5 by gross P&L
+                    info("Top groups by gross P&L:")
+                    for _r in _exec_records[:5]:
+                        info(
+                            f"  {_r.symbol:<16} {_r.strategy:<12} "
+                            f"gross={_r.gross_return_pct:+.2%}  "
+                            f"net={_r.net_return_pct:+.2%}  "
+                            f"drag={_r.cost_drag_pct:.4%}"
+                        )
+                else:
+                    warn("No execution cost records produced (trade log may be empty).")
+
+                _exec_report_path = Path("research") / "execution_realism.md"
+                _exec_meta: dict = {
+                    "interval":           args.interval,
+                    "days":               args.days,
+                    "symbols_tested":     len(symbols),
+                    "strategies":         ", ".join(args.strategies),
+                    "commission_bps":     _commission_bps,
+                    "slippage_bps":       _slippage_bps,
+                    "fill_mode":          "next_bar_open" if _next_bar_fill else "current_bar_close",
+                }
+                _gen_exec_report(
+                    _exec_records,
+                    cost_config=_exec_cost_cfg,
+                    fill_config=_exec_fill_cfg,
+                    output_path=_exec_report_path,
+                    metadata=_exec_meta,
+                )
+                ok(f"Exec report  : {_exec_report_path.resolve()}")
+
+            except Exception as exc:
+                warn(f"Execution realism analysis failed: {exc}")
+                if getattr(args, "verbose", False):
+                    traceback.print_exc()
 
     # -----------------------------------------------------------------------
     # Export reports
