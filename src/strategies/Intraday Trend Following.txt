@@ -1,0 +1,78 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=6
+strategy("Intraday Trend Following Strategy with Session Filter", overlay = true, margin_long = 100, margin_short = 100, initial_capital = 100000, default_qty_type = strategy.percent_of_equity, default_qty_value = 10)
+
+// --- Constants ---
+var string GROUP_ST = "SuperTrend Settings"
+var string GROUP_MA = "Moving Average Settings"
+var string GROUP_RM = "Risk Management"
+var string GROUP_TIME = "Session Filter"
+var color BULL_COLOR = #089981
+var color BEAR_COLOR = #f23645
+
+// --- Inputs ---
+stPeriod = input.int(10, "SuperTrend Period", minval = 1, group = GROUP_ST, tooltip = "The period for ATR calculation in SuperTrend.")
+stFactor = input.float(3.0, "SuperTrend Factor", minval = 0.1, step = 0.1, group = GROUP_ST, tooltip = "The multiplier for the ATR to determine the stop distance.")
+
+emaLength = input.int(200, "Trend Filter EMA", minval = 1, group = GROUP_MA, tooltip = "Exponential Moving Average used to filter the long-term trend.")
+
+tpPercent = input.float(1.0, "Take Profit (%)", minval = 0.1, group = GROUP_RM, tooltip = "Percentage profit target from entry price.")
+slPercent = input.float(0.5, "Stop Loss (%)", minval = 0.1, group = GROUP_RM, tooltip = "Percentage stop loss from entry price.")
+
+sessionInput = input.session("0930-1500", "Trading Session", group = GROUP_TIME, tooltip = "The timeframe during which entries are allowed. Format: HHMM-HHMM. Default skips the first 15 mins and last 30 mins of the NSE session to avoid excessive volatility.")
+
+// --- Calculations ---
+// Session Check (India is GMT+5:30)
+isInSession = not na(time(timeframe.period, sessionInput, "GMT+5:30"))
+
+// VWAP Calculation
+vwapValue = ta.vwap(hlc3)
+
+// SuperTrend Calculation
+[superTrend, direction] = ta.supertrend(stFactor, stPeriod)
+
+// Trend Filter
+emaValue = ta.ema(close, emaLength)
+
+// Signal Logic
+// Long: In Session and Price > VWAP and SuperTrend is Bullish and Price > 200 EMA
+longCondition = isInSession and close > vwapValue and direction < 0 and close > emaValue
+// Short: In Session and Price < VWAP and SuperTrend is Bearish and Price < 200 EMA
+shortCondition = isInSession and close < vwapValue and direction > 0 and close < emaValue
+
+// --- Strategy Execution ---
+if longCondition
+    strategy.entry("Long", strategy.long)
+
+if shortCondition
+    strategy.entry("Short", strategy.short)
+
+// Risk Management
+if strategy.position_size > 0
+    strategy.exit("Exit Long", "Long", limit = strategy.position_avg_price * (1 + tpPercent / 100), stop = strategy.position_avg_price * (1 - slPercent / 100))
+
+if strategy.position_size < 0
+    strategy.exit("Exit Short", "Short", limit = strategy.position_avg_price * (1 - tpPercent / 100), stop = strategy.position_avg_price * (1 + slPercent / 100))
+
+// --- Visuals ---
+// Plot VWAP
+plot(vwapValue, "VWAP", color = color.gray, linewidth = 2)
+
+// Plot EMA Filter
+plot(emaValue, "200 EMA", color = color.blue, linewidth = 1)
+
+// Plot SuperTrend
+stPlot = plot(direction < 0 ? superTrend : na, "SuperTrend Bullish", color = BULL_COLOR, style = plot.style_linebr)
+stPlotBear = plot(direction > 0 ? superTrend : na, "SuperTrend Bearish", color = BEAR_COLOR, style = plot.style_linebr)
+
+// Trailing Stop Gradient (Vertical gradient between trailing stop and price)
+pricePlot = plot(close, "Price Plot", display = display.none)
+fill(stPlot, pricePlot, top_value = math.max(superTrend, close), bottom_value = math.min(superTrend, close), top_color = color.new(BULL_COLOR, 50), bottom_color = color.new(BULL_COLOR, 100), title = "Bullish Gradient")
+fill(stPlotBear, pricePlot, top_value = math.max(superTrend, close), bottom_value = math.min(superTrend, close), top_color = color.new(BEAR_COLOR, 50), bottom_color = color.new(BEAR_COLOR, 100), title = "Bearish Gradient")
+
+// Session Background
+bgcolor(isInSession ? color.new(color.blue, 96) : na, title = "Trading Session")
+
+// Background highlights for signals
+bgcolor(longCondition ? color.new(BULL_COLOR, 85) : na, title = "Long Signal Highlight")
+bgcolor(shortCondition ? color.new(BEAR_COLOR, 85) : na, title = "Short Signal Highlight")
