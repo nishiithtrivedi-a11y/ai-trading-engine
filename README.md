@@ -40,6 +40,7 @@ Current layers:
 5. Paper Trading (`src/paper_trading/`)
 6. Live-safe Signals (`src/live/`, `src/realtime/`)
 7. Broker Adapters (integration-oriented, no live execution path enabled)
+8. Runtime Guardrails (`src/runtime/`)
 
 See detailed architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
@@ -92,6 +93,7 @@ python scripts/run_nifty50_zerodha_research.py \
 ```
 
 Outputs include ranked research artifacts under `output/nifty50_research/` and policy artifacts under `research/`.
+Each run also writes `output/nifty50_research/run_manifest.json`.
 
 ### Paper trading workflow
 
@@ -101,11 +103,12 @@ python scripts/run_paper_trading.py \
   --provider indian_csv \
   --symbols RELIANCE.NS TCS.NS INFY.NS \
   --interval day \
-  --paper-output-dir output/paper_trading_run \
+  --output-dir output/paper_trading_run \
+  --use-next-bar-fill \
   --paper-max-orders 10
 ```
 
-Outputs include orders, positions, PnL, state, and session summary markdown.
+Outputs include orders, positions, PnL, state, session summary markdown, and `run_manifest.json`.
 
 ### Live signal workflow
 
@@ -121,6 +124,7 @@ python scripts/run_live_signal_pipeline.py \
 ```
 
 Outputs include `signals.csv`, `regime_snapshot.csv`, `session_state.json`, and optional `paper_handoff_signals.csv`.
+Each cycle writes `run_manifest.json` with mode/provider/artifact metadata.
 
 ## Safety Boundaries
 
@@ -128,6 +132,7 @@ Outputs include `signals.csv`, `regime_snapshot.csv`, `session_state.json`, and 
 - `src/execution/execution_interface.py` is placeholder-only and inert by design.
 - Broker adapters exist for data/integration-readiness, not active live order placement.
 - Paper trading and live-signal flows are explicit opt-in CLI paths with safe defaults.
+- Shared runtime guardrails and mode profiles are centralized in `src/runtime/`.
 
 Safety details: [`docs/SAFETY.md`](docs/SAFETY.md)
 

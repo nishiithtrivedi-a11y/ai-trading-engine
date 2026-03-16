@@ -26,6 +26,10 @@ This platform is currently constrained to:
 - Live-safe pipeline is explicit opt-in (`--live-signals`) and supports safe single-run mode.
 - Realtime engine defaults are OFF unless explicitly enabled.
 - Test suite enforces non-execution behavior for placeholder/live-safe paths.
+- Runtime mode policies are centralized in `src/runtime/run_profiles.py`.
+- Shared safety enforcement is centralized in `src/runtime/safety_guards.py`.
+- Shared runner validation is centralized in `src/runtime/runner_validation.py`.
+- Runner artifacts include `run_manifest.json` for mode/provider/output traceability.
 
 ## Documentation Integrity
 

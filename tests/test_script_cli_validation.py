@@ -31,6 +31,18 @@ def test_run_paper_trading_validates_paper_capital(monkeypatch) -> None:
         run_paper_trading.parse_args()
 
 
+def test_run_paper_supports_generic_fill_mode_alias(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["runner", "--use-next-bar-fill"])
+    args = run_paper_trading.parse_args()
+    assert args.paper_use_next_bar_fill is True
+
+
+def test_run_paper_custom_universe_requires_file_or_symbols(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["runner", "--universe", "custom"])
+    with pytest.raises(SystemExit):
+        run_paper_trading.parse_args()
+
+
 def test_run_live_pipeline_validates_poll_seconds(monkeypatch) -> None:
     monkeypatch.setattr(sys, "argv", ["runner", "--poll-seconds", "-5"])
     with pytest.raises(SystemExit):

@@ -53,6 +53,13 @@ except Exception:
     pass
 
 import pandas as pd  # noqa: E402
+from src.runtime import (  # noqa: E402
+    RunMode,
+    RunnerValidationError,
+    enforce_runtime_safety,
+    normalize_fee_inputs,
+    write_output_manifest,
+)
 
 # ---------------------------------------------------------------------------
 # Console helpers (ASCII-only for Windows cp1252 compatibility)
@@ -355,8 +362,15 @@ def parse_args() -> argparse.Namespace:
         p.error("--relative-strength-lookback must be >= 1")
     if args.fee_rate < 0 or args.slippage_rate < 0:
         p.error("--fee-rate and --slippage-rate must be >= 0")
-    if args.commission_bps < 0 or args.slippage_bps < 0:
-        p.error("--commission-bps and --slippage-bps must be >= 0")
+    try:
+        normalize_fee_inputs(
+            commission_bps=args.commission_bps,
+            slippage_bps=args.slippage_bps,
+            fee_rate=args.fee_rate,
+            slippage_rate=args.slippage_rate,
+        )
+    except RunnerValidationError as exc:
+        p.error(str(exc))
     if not 0 < args.max_risk_per_trade <= 1:
         p.error("--max-risk-per-trade must be in (0, 1]")
     if not 0 < args.max_portfolio_exposure <= 1:
@@ -987,6 +1001,11 @@ def _df_to_md(df: pd.DataFrame) -> str:
 # ---------------------------------------------------------------------------
 def main() -> None:
     args = parse_args()
+    enforce_runtime_safety(
+        RunMode.RESEARCH,
+        explicit_enable_flag=True,
+        execution_requested=False,
+    )
     start_time = time.time()
 
     output_dir = Path(args.output_dir)
@@ -1898,6 +1917,26 @@ def main() -> None:
         regime_filter_active=regime_filter_active,
         regime_skipped=regime_skipped,
     )
+    _manifest_artifacts: dict[str, str] = {}
+    if output_dir.exists():
+        for _path in sorted(output_dir.rglob("*")):
+            if _path.is_file():
+                _manifest_artifacts[_path.relative_to(output_dir).as_posix()] = str(_path)
+    if _manifest_artifacts:
+        _manifest_path = write_output_manifest(
+            output_dir=output_dir,
+            run_mode=RunMode.RESEARCH,
+            provider_name="zerodha",
+            artifacts=_manifest_artifacts,
+            metadata={
+                "interval": args.interval,
+                "days": args.days,
+                "symbols_limit": args.symbols_limit,
+                "execution_realism": bool(args.execution_realism),
+                "portfolio_backtest": bool(args.portfolio_backtest),
+            },
+        )
+        ok(f"Written: {_manifest_path}")
 
     elapsed = time.time() - start_time
     section("DONE")

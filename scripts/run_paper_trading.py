@@ -27,10 +27,20 @@ from src.data.nse_universe import NSEUniverseLoader  # noqa: E402
 from src.data.provider_factory import ProviderFactory  # noqa: E402
 from src.data.symbol_mapping import SymbolMapper  # noqa: E402
 from src.decision.regime_policy import RegimePolicy  # noqa: E402
+from src.execution.cost_model import CostConfig, CostModel  # noqa: E402
 from src.paper_trading import (  # noqa: E402
     PaperStateStore,
     PaperTradingConfig,
     PaperTradingEngine,
+)
+from src.runtime import (  # noqa: E402
+    RunMode,
+    RunnerValidationError,
+    enforce_runtime_safety,
+    normalize_fee_inputs,
+    validate_provider_for_mode,
+    validate_symbol_inputs,
+    write_output_manifest,
 )
 from src.strategies.breakout import BreakoutStrategy  # noqa: E402
 from src.strategies.rsi_reversion import RSIReversionStrategy  # noqa: E402
@@ -63,7 +73,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--paper-capital", type=float, default=100_000.0, help="Initial paper capital.")
     parser.add_argument(
         "--paper-output-dir",
+        "--output-dir",
         type=str,
+        dest="paper_output_dir",
         default="output/paper_trading",
         help="Output directory for paper-trading artifacts.",
     )
@@ -80,10 +92,31 @@ def parse_args() -> argparse.Namespace:
         help="Maximum paper orders created in one session.",
     )
     parser.add_argument(
+        "--commission-bps",
+        type=float,
+        default=10.0,
+        help="Paper cost-model commission in bps (default: 10.0).",
+    )
+    parser.add_argument(
+        "--slippage-bps",
+        type=float,
+        default=5.0,
+        help="Paper cost-model slippage in bps (default: 5.0).",
+    )
+    fill_mode = parser.add_mutually_exclusive_group()
+    fill_mode.add_argument(
         "--paper-use-next-bar-fill",
+        "--use-next-bar-fill",
+        dest="paper_use_next_bar_fill",
         action="store_true",
-        default=False,
-        help="Use next-bar-open fills instead of same-bar-close fills.",
+        help="Use next-bar-open fills.",
+    )
+    fill_mode.add_argument(
+        "--paper-use-same-bar-fill",
+        "--use-same-bar-fill",
+        dest="paper_use_next_bar_fill",
+        action="store_false",
+        help="Use same-bar-close fills.",
     )
     parser.add_argument(
         "--paper-close-at-end",
@@ -97,20 +130,30 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional regime policy JSON artifact to reuse.",
     )
+    parser.set_defaults(paper_use_next_bar_fill=False)
     args = parser.parse_args()
-    if args.symbols_limit < 0:
-        parser.error("--symbols-limit must be >= 0")
-    if args.days < 1:
-        parser.error("--days must be >= 1")
-    if args.paper_capital <= 0:
-        parser.error("--paper-capital must be > 0")
-    if args.paper_max_orders < 1:
-        parser.error("--paper-max-orders must be >= 1")
-    if args.paper_session_date:
-        try:
+    try:
+        if args.symbols_limit < 0:
+            raise RunnerValidationError("--symbols-limit must be >= 0")
+        if args.days < 1:
+            raise RunnerValidationError("--days must be >= 1")
+        if args.paper_capital <= 0:
+            raise RunnerValidationError("--paper-capital must be > 0")
+        if args.paper_max_orders < 1:
+            raise RunnerValidationError("--paper-max-orders must be >= 1")
+        validate_symbol_inputs(
+            symbols=args.symbols,
+            universe=args.universe,
+            universe_file=args.universe_file,
+        )
+        normalize_fee_inputs(
+            commission_bps=args.commission_bps,
+            slippage_bps=args.slippage_bps,
+        )
+        if args.paper_session_date:
             pd.Timestamp(args.paper_session_date)
-        except Exception as exc:
-            parser.error(f"--paper-session-date is invalid: {exc}")
+    except (RunnerValidationError, ValueError) as exc:
+        parser.error(str(exc))
     return args
 
 
@@ -186,8 +229,9 @@ def load_symbol_data(
     provider_name: str,
     timeframe: Timeframe,
     days: int,
+    provider_factory: Optional[ProviderFactory] = None,
 ) -> dict[str, DataHandler]:
-    factory = ProviderFactory.from_config()
+    factory = provider_factory or ProviderFactory.from_config()
     provider = provider_name or factory.config.default_provider
     mapper = SymbolMapper()
     end = datetime.now(UTC)
@@ -227,16 +271,47 @@ def load_symbol_data(
 def main() -> int:
     args = parse_args()
     if not args.paper_trading:
-        print("Paper trading is OFF by default. Re-run with --paper-trading to execute a safe paper session.")
+        try:
+            enforce_runtime_safety(
+                RunMode.PAPER,
+                explicit_enable_flag=False,
+                execution_requested=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(str(exc))
         return 0
+
+    enforce_runtime_safety(
+        RunMode.PAPER,
+        explicit_enable_flag=True,
+        execution_requested=False,
+    )
 
     timeframe = interval_to_timeframe(args.interval)
     symbols = resolve_symbols(args)
+    provider_factory = ProviderFactory.from_config()
+    provider_name = args.provider or provider_factory.config.default_provider
+    try:
+        validate_provider_for_mode(
+            provider_name=provider_name,
+            mode=RunMode.PAPER,
+            timeframe="1D" if timeframe == Timeframe.DAILY else timeframe.value,
+        )
+    except RunnerValidationError as exc:
+        print(f"Provider validation failed: {exc}")
+        return 1
+
+    fee_inputs = normalize_fee_inputs(
+        commission_bps=args.commission_bps,
+        slippage_bps=args.slippage_bps,
+    )
+
     symbol_to_data = load_symbol_data(
         symbols=symbols,
-        provider_name=args.provider,
+        provider_name=provider_name,
         timeframe=timeframe,
         days=args.days,
+        provider_factory=provider_factory,
     )
     if not symbol_to_data:
         print("No symbol data could be loaded for the requested paper session.")
@@ -269,6 +344,12 @@ def main() -> int:
         paper_config=paper_config,
         regime_policy=regime_policy,
         state_store=state_store,
+        cost_model=CostModel(
+            CostConfig(
+                commission_bps=fee_inputs.commission_bps,
+                slippage_bps=fee_inputs.slippage_bps,
+            )
+        ),
     )
     result = engine.run(symbol_to_data)
 
@@ -285,6 +366,24 @@ def main() -> int:
     print(f"Realized PnL      : {result.state.realized_pnl:,.2f}")
     print(f"Unrealized PnL    : {result.state.unrealized_pnl:,.2f}")
     if result.exports:
+        manifest_path = write_output_manifest(
+            output_dir=args.paper_output_dir,
+            run_mode=RunMode.PAPER,
+            provider_name=provider_name,
+            artifacts=result.exports,
+            metadata={
+                "paper_enabled": bool(args.paper_trading),
+                "symbols_evaluated": len(result.symbols_evaluated),
+                "fill_mode": (
+                    "next_bar_open"
+                    if args.paper_use_next_bar_fill
+                    else "current_bar_close"
+                ),
+                "commission_bps": fee_inputs.commission_bps,
+                "slippage_bps": fee_inputs.slippage_bps,
+            },
+        )
+        result.exports["run_manifest"] = str(manifest_path)
         print("Artifacts:")
         for name, path in sorted(result.exports.items()):
             print(f"  {name:<22} {path}")
