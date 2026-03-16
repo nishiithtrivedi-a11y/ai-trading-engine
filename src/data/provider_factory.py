@@ -10,6 +10,12 @@ from __future__ import annotations
 from typing import Dict, Optional, Type
 
 from src.data.base import BaseDataSource
+from src.data.instrument_metadata import InstrumentType
+from src.data.provider_capabilities import (
+    ProviderFeatureSet,
+    get_provider_feature_set,
+    validate_provider_workflow,
+)
 from src.data.provider_config import (
     DataProvidersConfig,
     ProviderEntry,
@@ -197,3 +203,30 @@ class ProviderFactory:
             name: entry.enabled
             for name, entry in self.config.providers.items()
         }
+
+    def get_capabilities(
+        self,
+        provider_name: Optional[str] = None,
+    ) -> ProviderFeatureSet:
+        """Return capability metadata for a provider."""
+        name = provider_name or self.config.default_provider
+        return get_provider_feature_set(name)
+
+    def validate_capabilities(
+        self,
+        provider_name: Optional[str] = None,
+        *,
+        require_historical_data: bool = False,
+        require_live_quotes: bool = False,
+        timeframe: Optional[str] = None,
+        instrument_type: InstrumentType | str | None = None,
+    ) -> ProviderFeatureSet:
+        """Validate that a provider can satisfy a requested workflow."""
+        name = provider_name or self.config.default_provider
+        return validate_provider_workflow(
+            name,
+            require_historical_data=require_historical_data,
+            require_live_quotes=require_live_quotes,
+            timeframe=timeframe,
+            instrument_type=instrument_type,
+        )

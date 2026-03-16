@@ -166,3 +166,19 @@ def test_live_pipeline_keeps_execution_inert_metadata(tmp_path: Path) -> None:
 
     assert report.metadata.get("execution_mode") == "none"
     assert report.metadata.get("safety") == "no_live_orders"
+
+
+def test_live_pipeline_rejects_provider_without_historical_capability(tmp_path: Path) -> None:
+    cfg = LiveSignalPipelineConfig(
+        enabled=True,
+        provider_name="upstox",
+        symbols=["RELIANCE.NS"],
+        output_dir=str(tmp_path / "unsupported_provider"),
+    )
+
+    pipeline = LiveSignalPipeline(config=cfg, strategy_registry=_strategy_registry())
+    report = pipeline.run()
+
+    assert report.decisions == []
+    assert report.market_snapshots == []
+    assert any("historical_data" in error for error in report.errors)

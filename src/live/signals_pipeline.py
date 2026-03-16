@@ -13,6 +13,11 @@ from typing import Any, Optional
 
 import pandas as pd
 
+from src.data.instrument_metadata import InstrumentType
+from src.data.provider_capabilities import (
+    ProviderCapabilityError,
+    validate_provider_workflow,
+)
 from src.decision.regime_policy import RegimePolicy, select_for_regime
 from src.live.market_session import LiveSessionStore
 from src.live.models import LiveMarketSnapshot, SessionSignalReport, SignalDecision, WatchlistState
@@ -110,6 +115,9 @@ class LiveSignalPipeline:
             report.warnings.append("Live signals are disabled. Pass --live-signals to run the pipeline.")
             return report
 
+        if not self._validate_provider_capabilities(report):
+            return report
+
         symbols = self._resolve_symbols(report)
         frames, snapshots = self._load_latest_data(symbols, report)
         report.market_snapshots = snapshots
@@ -145,6 +153,19 @@ class LiveSignalPipeline:
         report.metadata["strategy_count"] = len(self.strategy_registry)
         report.metadata["symbols_ranked"] = len(ranked_symbols)
         return report
+
+    def _validate_provider_capabilities(self, report: SessionSignalReport) -> bool:
+        try:
+            validate_provider_workflow(
+                self.config.provider_name,
+                require_historical_data=True,
+                timeframe=self.config.timeframe,
+                instrument_type=InstrumentType.EQUITY,
+            )
+        except ProviderCapabilityError as exc:
+            report.errors.append(str(exc))
+            return False
+        return True
 
     def _resolve_symbols(self, report: SessionSignalReport) -> list[str]:
         try:

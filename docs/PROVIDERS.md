@@ -21,6 +21,15 @@ Provider behavior is controlled through the provider factory and provider-specif
 - Use Zerodha paths for integration testing where credentials are available.
 - Treat Upstox as scaffolded architecture until provider methods are implemented.
 
+## Code Source of Truth
+
+Provider support is now codified in:
+
+- `src/data/provider_capabilities.py`
+
+Use this registry for runtime validation and workflow gating instead of relying
+only on README/doc tables.
+
 ## Symbol and Universe Handling
 
 - NSE symbol normalization and mapping are supported.
