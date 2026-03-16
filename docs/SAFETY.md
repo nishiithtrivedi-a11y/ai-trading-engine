@@ -30,6 +30,9 @@ This platform is currently constrained to:
 - Shared safety enforcement is centralized in `src/runtime/safety_guards.py`.
 - Shared runner validation is centralized in `src/runtime/runner_validation.py`.
 - Runner artifacts include `run_manifest.json` for mode/provider/output traceability.
+- Artifact contracts are centralized in `src/runtime/artifact_contracts.py`.
+- Contract compliance checks are centralized in `src/runtime/contract_validation.py`.
+- Release smoke workflows validate research/paper/live-safe output bundles before future releases.
 
 ## Documentation Integrity
 

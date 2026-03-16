@@ -56,7 +56,9 @@ import pandas as pd  # noqa: E402
 from src.runtime import (  # noqa: E402
     RunMode,
     RunnerValidationError,
+    assert_artifact_contract,
     enforce_runtime_safety,
+    get_artifact_contract,
     normalize_fee_inputs,
     write_output_manifest,
 )
@@ -831,14 +833,15 @@ def export_results(
     regime_snap: Optional[Any] = None,
     regime_filter_active: bool = False,
     regime_skipped: int = 0,
-) -> None:
+) -> dict[str, Path]:
     """Write all_results.csv, top_ranked.csv, and summary.md."""
     output_dir.mkdir(parents=True, exist_ok=True)
     elapsed = time.time() - start_time
+    exports: dict[str, Path] = {}
 
     if not all_rows:
         warn("No results to export — all backtests failed.")
-        return
+        return exports
 
     df_all = pd.DataFrame(all_rows)
 
@@ -848,6 +851,7 @@ def export_results(
     all_path = output_dir / "all_results.csv"
     df_all.to_csv(all_path, index=False)
     ok(f"Written: {all_path}  ({len(df_all)} rows)")
+    exports["all_results"] = all_path
 
     # -----------------------------------------------------------------------
     # Filter by min_trades threshold, then rank by score
@@ -862,6 +866,7 @@ def export_results(
     df_top = df_valid.head(top_n)
     df_top.to_csv(top_path, index=False)
     ok(f"Written: {top_path}  ({len(df_top)} rows)")
+    exports["top_ranked"] = top_path
 
     # -----------------------------------------------------------------------
     # Best strategy per symbol
@@ -973,6 +978,8 @@ def export_results(
     md_path = output_dir / "summary.md"
     md_path.write_text("\n".join(lines), encoding="utf-8")
     ok(f"Written: {md_path}")
+    exports["summary"] = md_path
+    return exports
 
 
 def _df_to_md(df: pd.DataFrame) -> str:
@@ -1911,18 +1918,16 @@ def main() -> None:
     # Export reports
     # -----------------------------------------------------------------------
     section("EXPORTING REPORTS")
-    export_results(
+    exports = export_results(
         all_rows, args.top_n, output_dir, args, start_time,
         regime_snap=regime_snap,
         regime_filter_active=regime_filter_active,
         regime_skipped=regime_skipped,
     )
-    _manifest_artifacts: dict[str, str] = {}
-    if output_dir.exists():
-        for _path in sorted(output_dir.rglob("*")):
-            if _path.is_file():
-                _manifest_artifacts[_path.relative_to(output_dir).as_posix()] = str(_path)
-    if _manifest_artifacts:
+    if exports:
+        contract = get_artifact_contract(RunMode.RESEARCH)
+        _manifest_artifacts: dict[str, str | Path] = dict(exports)
+        _manifest_artifacts["run_manifest"] = output_dir / "run_manifest.json"
         _manifest_path = write_output_manifest(
             output_dir=output_dir,
             run_mode=RunMode.RESEARCH,
@@ -1935,7 +1940,20 @@ def main() -> None:
                 "execution_realism": bool(args.execution_realism),
                 "portfolio_backtest": bool(args.portfolio_backtest),
             },
+            contract_id=contract.contract_id,
+            expected_artifacts=contract.required_names,
+            schema_version=contract.schema_version,
+            safety_mode=contract.safety_mode,
         )
+        try:
+            assert_artifact_contract(
+                run_mode=RunMode.RESEARCH,
+                output_dir=output_dir,
+                manifest_path=_manifest_path,
+            )
+        except Exception as exc:  # noqa: BLE001
+            fail(f"Artifact contract validation failed: {exc}")
+            raise SystemExit(1)
         ok(f"Written: {_manifest_path}")
 
     elapsed = time.time() - start_time

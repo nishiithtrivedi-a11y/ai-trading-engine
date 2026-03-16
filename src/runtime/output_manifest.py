@@ -32,6 +32,9 @@ class OutputManifest:
     schema_version: str
     run_mode: str
     provider_name: str
+    contract_id: str | None = None
+    expected_artifacts: list[str] = field(default_factory=list)
+    safety_mode: str | None = None
     generated_at: str = field(default_factory=_now_utc_iso)
     artifacts: list[OutputArtifact] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -42,6 +45,9 @@ class OutputManifest:
             "schema_version": self.schema_version,
             "run_mode": self.run_mode,
             "provider_name": self.provider_name,
+            "contract_id": self.contract_id,
+            "expected_artifacts": list(self.expected_artifacts),
+            "safety_mode": self.safety_mode,
             "generated_at": self.generated_at,
             "artifacts": [artifact.to_dict() for artifact in self.artifacts],
             "metadata": dict(self.metadata),
@@ -58,6 +64,9 @@ def write_output_manifest(
     metadata: dict[str, Any] | None = None,
     schema_version: str = "1.0",
     filename: str = "run_manifest.json",
+    contract_id: str | None = None,
+    expected_artifacts: Iterable[str] | None = None,
+    safety_mode: str | None = None,
 ) -> Path:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -75,6 +84,9 @@ def write_output_manifest(
         schema_version=schema_version,
         run_mode=profile.mode.value,
         provider_name=str(provider_name).strip().lower() or "unknown",
+        contract_id=contract_id,
+        expected_artifacts=sorted({str(name) for name in (expected_artifacts or [])}),
+        safety_mode=safety_mode or "no_live_execution",
         artifacts=artifact_rows,
         metadata=dict(metadata or {}),
         safety_notes=list(profile.safety_notes),

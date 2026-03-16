@@ -41,6 +41,7 @@ Current layers:
 6. Live-safe Signals (`src/live/`, `src/realtime/`)
 7. Broker Adapters (integration-oriented, no live execution path enabled)
 8. Runtime Guardrails (`src/runtime/`)
+9. Artifact Contracts + Workflow Smoke Paths (`src/runtime/artifact_contracts.py`, `src/runtime/workflow_orchestrator.py`)
 
 See detailed architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
@@ -126,6 +127,14 @@ python scripts/run_live_signal_pipeline.py \
 Outputs include `signals.csv`, `regime_snapshot.csv`, `session_state.json`, and optional `paper_handoff_signals.csv`.
 Each cycle writes `run_manifest.json` with mode/provider/artifact metadata.
 
+### Release smoke workflow
+
+```bash
+python scripts/run_release_smoke.py --output-dir output/release_smoke --symbols-limit 3
+```
+
+This runs a minimal research/paper/live-safe path and validates artifact bundles against runtime contracts.
+
 ## Safety Boundaries
 
 - No live execution occurs in current architecture.
@@ -133,6 +142,7 @@ Each cycle writes `run_manifest.json` with mode/provider/artifact metadata.
 - Broker adapters exist for data/integration-readiness, not active live order placement.
 - Paper trading and live-signal flows are explicit opt-in CLI paths with safe defaults.
 - Shared runtime guardrails and mode profiles are centralized in `src/runtime/`.
+- Artifact contracts and validation are centralized in `src/runtime/artifact_contracts.py` and `src/runtime/contract_validation.py`.
 
 Safety details: [`docs/SAFETY.md`](docs/SAFETY.md)
 
