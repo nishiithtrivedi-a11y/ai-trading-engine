@@ -17,9 +17,12 @@
 | Paper trading | supported | `scripts/run_paper_trading.py` | orders/fills/positions/PnL/session summary | stable |
 | Live-safe signal pipeline | supported | `scripts/run_live_signal_pipeline.py` | signals/watchlist/regime/paper-handoff | stable |
 | Live order execution | not supported | placeholder only | none | future scope |
+| Runtime mode guardrails | supported | `src/runtime/run_profiles.py`, `src/runtime/safety_guards.py` | mode safety checks | stable |
+| Output manifest metadata | supported | `src/runtime/output_manifest.py` | `run_manifest.json` | stable |
 
 ## Notes
 
 - Core workflows are optimized for research correctness and simulation safety.
 - All production order execution concerns are intentionally deferred.
 - Safety-first defaults remain enforced across paper/live-safe runners.
+- Runner validation and provider compatibility checks are shared via `src/runtime/runner_validation.py`.

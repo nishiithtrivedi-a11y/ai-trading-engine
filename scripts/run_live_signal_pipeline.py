@@ -24,6 +24,15 @@ from src.live import (  # noqa: E402
     LiveSignalPipelineConfig,
     load_regime_policy_if_available,
 )
+from src.runtime import (  # noqa: E402
+    RunMode,
+    RunnerValidationError,
+    enforce_runtime_safety,
+    validate_polling_inputs,
+    validate_provider_for_mode,
+    validate_symbol_inputs,
+    write_output_manifest,
+)
 from src.strategies.breakout import BreakoutStrategy  # noqa: E402
 from src.strategies.rsi_reversion import RSIReversionStrategy  # noqa: E402
 from src.strategies.sma_crossover import SMACrossoverStrategy  # noqa: E402
@@ -57,16 +66,25 @@ def parse_args() -> argparse.Namespace:
     )
 
     args = parser.parse_args()
-    if args.symbols_limit < 0:
-        parser.error("--symbols-limit must be >= 0")
-    if args.lookback_bars < 2:
-        parser.error("--lookback-bars must be >= 2")
-    if args.top_n_symbols < 0:
-        parser.error("--top-n-symbols must be >= 0")
-    if args.poll_seconds < 0:
-        parser.error("--poll-seconds must be >= 0")
-    if args.max_cycles < 1:
-        parser.error("--max-cycles must be >= 1")
+    try:
+        if args.symbols_limit < 0:
+            raise RunnerValidationError("--symbols-limit must be >= 0")
+        if args.lookback_bars < 2:
+            raise RunnerValidationError("--lookback-bars must be >= 2")
+        if args.top_n_symbols < 0:
+            raise RunnerValidationError("--top-n-symbols must be >= 0")
+        validate_symbol_inputs(
+            symbols=args.symbols,
+            universe=args.universe,
+            universe_file=None,
+        )
+        validate_polling_inputs(
+            run_once=bool(args.run_once),
+            poll_seconds=args.poll_seconds,
+            max_cycles=args.max_cycles,
+        )
+    except RunnerValidationError as exc:
+        parser.error(str(exc))
     return args
 
 
@@ -116,8 +134,38 @@ def main() -> int:
     args = parse_args()
 
     if not args.live_signals:
-        print("Live signal pipeline is OFF by default. Re-run with --live-signals to execute safely.")
+        try:
+            enforce_runtime_safety(
+                RunMode.LIVE_SAFE,
+                explicit_enable_flag=False,
+                execution_requested=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(str(exc))
         return 0
+
+    enforce_runtime_safety(
+        RunMode.LIVE_SAFE,
+        explicit_enable_flag=True,
+        execution_requested=False,
+    )
+
+    timeframe_map = {
+        "day": "1D",
+        "5minute": "5m",
+        "15minute": "15m",
+        "60minute": "1h",
+    }
+    timeframe = timeframe_map[str(args.interval).strip().lower()]
+    try:
+        validate_provider_for_mode(
+            provider_name=args.provider,
+            mode=RunMode.LIVE_SAFE,
+            timeframe=timeframe,
+        )
+    except RunnerValidationError as exc:
+        print(f"Provider validation failed: {exc}")
+        return 1
 
     regime_policy = load_regime_policy_if_available(args.regime_policy_json)
     if args.regime_policy_json and regime_policy is None:
@@ -149,6 +197,21 @@ def main() -> int:
 
     for cycle in range(1, cycle_count + 1):
         report = pipeline.run()
+        if report.exports:
+            manifest_path = write_output_manifest(
+                output_dir=args.output_dir,
+                run_mode=RunMode.LIVE_SAFE,
+                provider_name=args.provider,
+                artifacts=report.exports,
+                metadata={
+                    "cycle": cycle,
+                    "poll_seconds": args.poll_seconds,
+                    "run_once": bool(run_once),
+                    "paper_handoff": bool(args.paper_handoff),
+                    "symbols_loaded": report.to_dict()["summary"]["symbols_loaded"],
+                },
+            )
+            report.exports["run_manifest"] = str(manifest_path)
         print_cycle_summary(cycle, report)
 
         if run_once or cycle == cycle_count:
