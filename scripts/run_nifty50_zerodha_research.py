@@ -247,7 +247,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Maximum concurrent portfolio positions (default: 10). "
             "Limits the number of symbols active in --portfolio-backtest. "
-            "Capital is allocated as initial_capital / max_positions per symbol."
+            "Capital is allocated across active symbols by default."
         ),
     )
     # ---- Phase 6: Risk Engine ----
@@ -317,15 +317,56 @@ def parse_args() -> argparse.Namespace:
             "Only used when --execution-realism is active."
         ),
     )
-    p.add_argument(
-        "--use-next-bar-fill", action="store_true", default=True,
+    fill_mode = p.add_mutually_exclusive_group()
+    fill_mode.add_argument(
+        "--use-next-bar-fill", dest="use_next_bar_fill", action="store_true",
         help=(
-            "Fill trades at the next bar's open price (default: True). "
+            "Fill trades at the next bar's open price (default). "
             "This is the realistic mode consistent with NEXT_BAR_OPEN execution. "
             "Only used when --execution-realism is active."
         ),
     )
-    return p.parse_args()
+    fill_mode.add_argument(
+        "--use-same-bar-fill", dest="use_next_bar_fill", action="store_false",
+        help=(
+            "Fill trades on same-bar close for sensitivity analysis. "
+            "Only used when --execution-realism is active."
+        ),
+    )
+    p.set_defaults(use_next_bar_fill=True)
+
+    args = p.parse_args()
+
+    if args.symbols_limit < 0:
+        p.error("--symbols-limit must be >= 0")
+    if args.days < 1:
+        p.error("--days must be >= 1")
+    if args.top_n < 1:
+        p.error("--top-n must be >= 1")
+    if args.train_days < 1 or args.test_days < 1 or args.step_days < 1:
+        p.error("--train-days, --test-days, and --step-days must all be >= 1")
+    if args.max_positions < 1:
+        p.error("--max-positions must be >= 1")
+    if args.max_concurrent_positions < 1:
+        p.error("--max-concurrent-positions must be >= 1")
+    if args.top_n_symbols < 0:
+        p.error("--top-n-symbols must be >= 0")
+    if args.relative_strength_lookback < 1:
+        p.error("--relative-strength-lookback must be >= 1")
+    if args.fee_rate < 0 or args.slippage_rate < 0:
+        p.error("--fee-rate and --slippage-rate must be >= 0")
+    if args.commission_bps < 0 or args.slippage_bps < 0:
+        p.error("--commission-bps and --slippage-bps must be >= 0")
+    if not 0 < args.max_risk_per_trade <= 1:
+        p.error("--max-risk-per-trade must be in (0, 1]")
+    if not 0 < args.max_portfolio_exposure <= 1:
+        p.error("--max-portfolio-exposure must be in (0, 1]")
+    if not 0 < args.max_drawdown <= 1:
+        p.error("--max-drawdown must be in (0, 1]")
+    if args.execution_realism and not args.portfolio_backtest:
+        p.error("--execution-realism requires --portfolio-backtest")
+
+    return args
 
 
 # ---------------------------------------------------------------------------
@@ -958,6 +999,8 @@ def main() -> None:
     info(f"Optimize     : {args.optimize}")
     info(f"Symbols limit: {args.symbols_limit or 'all'}")
     info(f"Top-N        : {args.top_n}")
+    info(f"Backtest fee : {args.fee_rate:.6f} (fraction)")
+    info(f"Backtest slip: {args.slippage_rate:.6f} (fraction)")
     info(f"Regime detect: {getattr(args, 'include_regime', False)}")
     info(f"Regime filter: {getattr(args, 'regime_filter', False)}")
     info(f"Regime anlys : {getattr(args, 'regime_analysis', False)}")
@@ -986,6 +1029,7 @@ def main() -> None:
         info(f"  comm-bps   : {args.commission_bps:.1f}")
         info(f"  slip-bps   : {args.slippage_bps:.1f}")
         info(f"  next-bar   : {getattr(args, 'use_next_bar_fill', True)}")
+        info("  note       : commission/slippage bps apply only to execution-realism analysis")
     info(f"Output dir   : {output_dir.resolve()}")
 
     # -----------------------------------------------------------------------

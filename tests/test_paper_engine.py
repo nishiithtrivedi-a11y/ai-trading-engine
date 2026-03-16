@@ -64,6 +64,7 @@ def _engine(
     paper_config: PaperTradingConfig,
     risk_manager: PortfolioRiskManager | None = None,
     state_store: PaperStateStore | None = None,
+    cost_model: CostModel | None = None,
 ) -> PaperTradingEngine:
     return PaperTradingEngine(
         strategy_registry=_registry(strategy_cls),
@@ -71,7 +72,8 @@ def _engine(
         paper_config=paper_config,
         risk_manager=risk_manager,
         state_store=state_store,
-        cost_model=CostModel(CostConfig(commission_per_trade=0.0, commission_bps=0.0, slippage_bps=0.0)),
+        cost_model=cost_model
+        or CostModel(CostConfig(commission_per_trade=0.0, commission_bps=0.0, slippage_bps=0.0)),
     )
 
 
@@ -212,3 +214,49 @@ def test_persistence_and_summary_are_written(tmp_path: Path) -> None:
     assert "Paper Trading Session Summary" in summary
     reloaded = state_store.load()
     assert len(reloaded.orders) == len(result.state.orders)
+
+
+def test_unrealized_pnl_excludes_entry_fee_bias_for_open_positions() -> None:
+    engine = _engine(
+        BuyOnlyStrategy,
+        PaperTradingConfig(
+            enabled=True,
+            use_next_bar_fill=False,
+            persist_state=False,
+            default_take_profit_pct=None,
+        ),
+        cost_model=CostModel(CostConfig(commission_per_trade=5.0, commission_bps=0.0, slippage_bps=0.0)),
+    )
+    result = engine.run({"SBIN.NS": DataHandler(_make_ohlcv())}, persist=False)
+
+    assert result.state is not None
+    assert len(result.state.open_positions) == 1
+    position = result.state.open_positions[0]
+
+    last_price = float(position.last_price or position.entry_price)
+    gross_unrealized = (last_price - position.entry_price) * position.quantity
+
+    assert position.unrealized_pnl(last_price) == gross_unrealized
+    assert result.state.unrealized_pnl == gross_unrealized
+    assert result.state.realized_pnl == -position.entry_fees
+
+
+def test_realized_pnl_stays_consistent_after_open_and_close_with_fees() -> None:
+    engine = _engine(
+        BuyExitStrategy,
+        PaperTradingConfig(
+            enabled=True,
+            use_next_bar_fill=False,
+            persist_state=False,
+            default_stop_loss_pct=None,
+            default_take_profit_pct=None,
+        ),
+        cost_model=CostModel(CostConfig(commission_per_trade=3.0, commission_bps=0.0, slippage_bps=0.0)),
+    )
+    result = engine.run({"AXISBANK.NS": DataHandler(_make_ohlcv())}, persist=False)
+
+    assert result.state is not None
+    assert len(result.state.closed_positions) == 1
+
+    closed = result.state.closed_positions[0]
+    assert result.state.realized_pnl == closed.realized_pnl

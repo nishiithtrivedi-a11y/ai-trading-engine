@@ -22,6 +22,9 @@ from src.decision.regime_filter import RegimeFilter
 from src.decision.trade_plan_builder import TradePlanBuilder, TradePlanBuilderError
 from src.monitoring.models import MonitoringRunResult, RelativeStrengthSnapshot
 from src.scanners.models import Opportunity, OpportunityClass, ScanResult
+from src.utils.logger import setup_logger
+
+logger = setup_logger("pick_engine")
 
 
 class PickEngineError(Exception):
@@ -56,6 +59,11 @@ class PickEngine:
         rejected: list[RejectedOpportunity] = []
 
         scan = self._resolve_scan_result(scan_result, monitoring_result)
+        logger.info(
+            "Decision run started: opportunities=%s include_rejections=%s",
+            len(scan.opportunities),
+            cfg.include_rejections,
+        )
         regime_assessment = monitoring_result.regime_assessment if monitoring_result else None
         rs_map = self._relative_strength_map(monitoring_result)
 
@@ -64,6 +72,13 @@ class PickEngine:
             try:
                 plan = self.trade_plan_builder.build(opp)
             except TradePlanBuilderError as exc:
+                logger.warning(
+                    "Trade plan build failed for %s/%s/%s: %s",
+                    opp.symbol,
+                    opp.timeframe,
+                    opp.strategy_name,
+                    exc,
+                )
                 rejected.append(
                     self._reject(
                         opportunity=opp,
@@ -76,6 +91,14 @@ class PickEngine:
 
             min_score = cfg.thresholds.min_score(plan.horizon)
             if float(opp.score) < min_score:
+                logger.debug(
+                    "Rejected %s/%s/%s for score threshold: %.2f < %.2f",
+                    opp.symbol,
+                    opp.timeframe,
+                    opp.strategy_name,
+                    float(opp.score),
+                    min_score,
+                )
                 rejected.append(
                     self._reject(
                         opportunity=opp,
@@ -88,6 +111,14 @@ class PickEngine:
 
             min_rr = cfg.thresholds.min_rr(plan.horizon)
             if float(plan.risk_reward) < min_rr:
+                logger.debug(
+                    "Rejected %s/%s/%s for RR threshold: %.2f < %.2f",
+                    opp.symbol,
+                    opp.timeframe,
+                    opp.strategy_name,
+                    float(plan.risk_reward),
+                    min_rr,
+                )
                 rejected.append(
                     self._reject(
                         opportunity=opp,
@@ -100,6 +131,13 @@ class PickEngine:
 
             regime_result = self.regime_filter.evaluate(opp, regime_assessment, cfg)
             if not regime_result.allowed:
+                logger.debug(
+                    "Regime blocked %s/%s/%s: %s",
+                    opp.symbol,
+                    opp.timeframe,
+                    opp.strategy_name,
+                    regime_result.reasons,
+                )
                 rejected.append(
                     RejectedOpportunity(
                         symbol=opp.symbol,
@@ -150,6 +188,13 @@ class PickEngine:
 
         selected_ranked = self.ranking_engine.rank(selected)
         grouped = self.ranking_engine.split_by_horizon(selected_ranked)
+
+        logger.info(
+            "Decision run complete: candidates=%s selected=%s rejected=%s",
+            len(candidates),
+            len(selected_ranked),
+            len(rejected),
+        )
 
         return PickRunResult(
             selected_picks=selected_ranked,

@@ -317,3 +317,35 @@ class TestWalkForwardTester:
             # Test start of window N+1 >= test end of window N
             for i in range(len(windows) - 1):
                 assert windows[i + 1].test_start >= windows[i].test_end
+
+
+class TestWalkForwardCloneConfig:
+
+    def test_clone_config_uses_copy_when_model_copy_missing(self):
+        class CopyOnlyConfig:
+            def __init__(self):
+                self.value = 1
+
+            def copy(self, deep: bool = False):
+                clone = CopyOnlyConfig()
+                clone.value = self.value
+                return clone
+
+        original = CopyOnlyConfig()
+        cloned = WalkForwardTester._clone_config(original)  # type: ignore[arg-type]
+        cloned.value = 2
+
+        assert original.value == 1
+        assert cloned.value == 2
+
+    def test_clone_config_falls_back_to_deepcopy_when_copy_missing(self):
+        class DeepcopyOnlyConfig:
+            def __init__(self):
+                self.values = [1, 2, 3]
+
+        original = DeepcopyOnlyConfig()
+        cloned = WalkForwardTester._clone_config(original)  # type: ignore[arg-type]
+        cloned.values.append(4)
+
+        assert original.values == [1, 2, 3]
+        assert cloned.values == [1, 2, 3, 4]

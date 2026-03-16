@@ -241,7 +241,11 @@ class ZerodhaDataSource(BaseDataSource):
         logger.info(f"Fetched {len(df)} total bars for {symbol}")
         return df
 
-    def fetch_live(self, symbol: str) -> pd.Series:
+    def fetch_live(
+        self,
+        symbol: str,
+        timeframe: Timeframe | str | None = None,
+    ) -> pd.Series:
         """Fetch latest quote for a symbol.
 
         Returns a pd.Series with open/high/low/close/volume from the
@@ -399,7 +403,11 @@ class UpstoxDataSource(BaseDataSource):
             "Requires upstox-python-sdk: HistoryApi.get_historical_candle_data()"
         )
 
-    def fetch_live(self, symbol: str) -> pd.Series:
+    def fetch_live(
+        self,
+        symbol: str,
+        timeframe: Timeframe | str | None = None,
+    ) -> pd.Series:
         """Fetch live tick data from Upstox (placeholder)."""
         raise NotImplementedError(
             "Upstox fetch_live not yet implemented. "
@@ -435,7 +443,7 @@ class UpstoxDataSource(BaseDataSource):
                 "message": "Missing API credentials",
             }
         return {
-            "status": "ok",
+            "status": "error",
             "provider": "upstox",
-            "message": "Credentials configured (connection not tested)",
+            "message": "Upstox provider scaffolding present but integration is not implemented yet",
         }

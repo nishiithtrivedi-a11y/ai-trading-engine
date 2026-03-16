@@ -116,8 +116,15 @@ class BaseStrategy(ABC):
         avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
         avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
-        rs = avg_gain / avg_loss
+        rs = avg_gain / avg_loss.replace(0.0, pd.NA)
         rsi = 100 - (100 / (1 + rs))
+        # Deterministic guard rails for edge cases:
+        # - no losses and some gains -> RSI = 100
+        # - no gains and some losses -> RSI = 0
+        # - completely flat window -> RSI = 50
+        rsi = rsi.mask((avg_loss == 0.0) & (avg_gain > 0.0), 100.0)
+        rsi = rsi.mask((avg_gain == 0.0) & (avg_loss > 0.0), 0.0)
+        rsi = rsi.mask((avg_gain == 0.0) & (avg_loss == 0.0), 50.0)
 
         return rsi
 

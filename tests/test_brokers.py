@@ -1,5 +1,7 @@
 """Tests for broker integration placeholders (Step 11)."""
 
+from datetime import datetime
+
 import pytest
 
 from src.brokers.base import BaseBroker, BrokerError, OrderResponse, OrderStatus
@@ -73,6 +75,24 @@ class TestZerodhaBroker:
         assert broker.api_key == "test_key"
         assert broker.api_secret == "test_secret"
         assert broker.is_authenticated is False
+
+    def test_custom_order_defaults_are_configurable(self):
+        broker = ZerodhaBroker(
+            api_key="test_key",
+            api_secret="test_secret",
+            default_exchange="BSE",
+            default_product="MIS",
+            default_variety="AMO",
+        )
+        assert broker.default_exchange == "BSE"
+        assert broker.default_product == "MIS"
+        assert broker.default_variety == "AMO"
+
+    def test_broker_timestamp_prefers_payload_timestamp(self):
+        payload = {"order_timestamp": "2026-03-16T09:30:00+05:30"}
+        ts = ZerodhaBroker._broker_timestamp(payload)
+        assert isinstance(ts, datetime)
+        assert ts.year == 2026
 
     def test_authenticate_with_bad_credentials_raises_broker_error(self):
         broker = self._make_broker()

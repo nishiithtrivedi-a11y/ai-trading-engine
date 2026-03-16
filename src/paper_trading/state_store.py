@@ -4,10 +4,14 @@ Persistence helpers for paper-trading state and session artifacts.
 
 from __future__ import annotations
 
+import os
 import json
+import time
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 import pandas as pd
 
@@ -28,6 +32,8 @@ from src.paper_trading.models import (
 @dataclass
 class PaperStateStore:
     state_file: str | Path = Path("output") / "paper_trading" / "paper_state.json"
+    lock_timeout_seconds: float = 5.0
+    lock_poll_seconds: float = 0.05
 
     def load(self, default_initial_capital: float = 100_000.0) -> PaperPortfolioState:
         path = Path(self.state_file)
@@ -37,17 +43,45 @@ class PaperStateStore:
                 cash=float(default_initial_capital),
             )
 
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        with self._file_lock(path):
+            raw = json.loads(path.read_text(encoding="utf-8"))
         return self._state_from_dict(raw)
 
     def save(self, state: PaperPortfolioState, path: str | Path | None = None) -> Path:
         target = Path(path or self.state_file)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            json.dumps(state.to_dict(), indent=2, ensure_ascii=True),
-            encoding="utf-8",
-        )
+        payload = json.dumps(state.to_dict(), indent=2, ensure_ascii=True)
+        with self._file_lock(target):
+            tmp_path = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+            try:
+                tmp_path.write_text(payload, encoding="utf-8")
+                os.replace(tmp_path, target)
+            finally:
+                if tmp_path.exists():
+                    tmp_path.unlink(missing_ok=True)
         return target
+
+    @contextmanager
+    def _file_lock(self, target: Path) -> Iterator[None]:
+        lock_path = target.with_name(f"{target.name}.lock")
+        deadline = time.monotonic() + max(0.0, float(self.lock_timeout_seconds))
+        acquired = False
+
+        while not acquired:
+            try:
+                fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    handle.write(str(os.getpid()))
+                acquired = True
+            except FileExistsError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"Timed out acquiring lock for {target}")
+                time.sleep(max(0.0, float(self.lock_poll_seconds)))
+
+        try:
+            yield
+        finally:
+            lock_path.unlink(missing_ok=True)
 
     def export_session(
         self,

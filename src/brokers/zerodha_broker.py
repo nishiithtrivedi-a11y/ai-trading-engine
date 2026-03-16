@@ -14,8 +14,10 @@ See: https://kite.trade/docs/connect/v3/
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional
+
+import pandas as pd
 
 from src.brokers.base import BaseBroker, BrokerError, OrderResponse, OrderStatus
 from src.utils.logger import setup_logger
@@ -47,9 +49,19 @@ class ZerodhaBroker(BaseBroker):
         resp = broker.place_order("RELIANCE", "buy", 10)
     """
 
-    def __init__(self, api_key: str, api_secret: str) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        api_secret: str,
+        default_exchange: str = "NSE",
+        default_product: str = "CNC",
+        default_variety: str = "REGULAR",
+    ) -> None:
         super().__init__(api_key, api_secret)
         self._kite = None  # KiteConnect instance
+        self.default_exchange = str(default_exchange).strip().upper()
+        self.default_product = str(default_product).strip().upper()
+        self.default_variety = str(default_variety).strip().upper()
 
     # ------------------------------------------------------------------
     # Authentication
@@ -108,6 +120,37 @@ class ZerodhaBroker(BaseBroker):
     # Order management
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _utc_now() -> datetime:
+        return datetime.now(UTC)
+
+    @staticmethod
+    def _parse_timestamp(value: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+        try:
+            return pd.Timestamp(value).to_pydatetime()
+        except Exception:
+            return None
+
+    @classmethod
+    def _broker_timestamp(cls, payload: Optional[dict[str, Any]]) -> datetime:
+        if payload:
+            for key in (
+                "exchange_update_timestamp",
+                "exchange_timestamp",
+                "filled_timestamp",
+                "order_timestamp",
+            ):
+                ts = cls._parse_timestamp(payload.get(key))
+                if ts is not None:
+                    return ts
+        return cls._utc_now()
+
+    def _kite_constant(self, prefix: str, value: str) -> str:
+        attr = f"{prefix}_{str(value).strip().upper()}"
+        return getattr(self._kite, attr, str(value).strip().upper())
+
     def place_order(
         self,
         symbol: str,
@@ -116,6 +159,9 @@ class ZerodhaBroker(BaseBroker):
         order_type: str = "market",
         price: Optional[float] = None,
         trigger_price: Optional[float] = None,
+        exchange: Optional[str] = None,
+        product: Optional[str] = None,
+        variety: Optional[str] = None,
     ) -> OrderResponse:
         """Place an order on Zerodha.
 
@@ -146,12 +192,12 @@ class ZerodhaBroker(BaseBroker):
 
         order_params = {
             "tradingsymbol": symbol.upper(),
-            "exchange": self._kite.EXCHANGE_NSE,
+            "exchange": self._kite_constant("EXCHANGE", exchange or self.default_exchange),
             "transaction_type": kite_side,
             "quantity": int(quantity),
             "order_type": kite_order_type,
-            "product": self._kite.PRODUCT_CNC,  # delivery
-            "variety": self._kite.VARIETY_REGULAR,
+            "product": self._kite_constant("PRODUCT", product or self.default_product),
+            "variety": self._kite_constant("VARIETY", variety or self.default_variety),
         }
 
         if price is not None:
@@ -173,7 +219,8 @@ class ZerodhaBroker(BaseBroker):
                 quantity=float(quantity),
                 price=price,
                 order_type=order_type,
-                timestamp=datetime.now(),
+                timestamp=self._utc_now(),
+                raw={"order_params": order_params},
             )
         except Exception as exc:
             raise BrokerError(f"Order placement failed: {exc}") from exc
@@ -193,7 +240,7 @@ class ZerodhaBroker(BaseBroker):
         self._require_auth()
         try:
             self._kite.cancel_order(
-                variety=self._kite.VARIETY_REGULAR,
+                variety=self._kite_constant("VARIETY", self.default_variety),
                 order_id=order_id,
             )
             logger.info(f"Order cancelled: {order_id}")
@@ -203,7 +250,7 @@ class ZerodhaBroker(BaseBroker):
                 symbol="",
                 side="",
                 quantity=0,
-                timestamp=datetime.now(),
+                timestamp=self._utc_now(),
             )
         except Exception as exc:
             raise BrokerError(f"Cancel failed: {exc}") from exc
@@ -239,7 +286,7 @@ class ZerodhaBroker(BaseBroker):
                 quantity=float(latest.get("quantity", 0)),
                 price=latest.get("average_price"),
                 order_type=latest.get("order_type", "market").lower(),
-                timestamp=datetime.now(),
+                timestamp=self._broker_timestamp(latest),
                 raw=latest,
             )
         except Exception as exc:
@@ -273,6 +320,7 @@ class ZerodhaBroker(BaseBroker):
                         quantity=float(o.get("quantity", 0)),
                         price=o.get("average_price"),
                         order_type=o.get("order_type", "").lower(),
+                        timestamp=self._broker_timestamp(o),
                         raw=o,
                     )
                 )

@@ -282,8 +282,8 @@ class LiveSignalPipeline:
             report.errors.append("No available strategies configured for signal generation")
             return
 
-        accepted_actionable = 0
-        base_deployed = float(self.config.risk_context_deployed_capital)
+        open_positions_estimate = int(self.config.risk_context_open_positions_count)
+        deployed_capital_estimate = float(self.config.risk_context_deployed_capital)
         slot_capital = self.config.risk_context_portfolio_equity / max(
             1,
             self.risk_manager.config.max_concurrent_positions,
@@ -342,8 +342,8 @@ class LiveSignalPipeline:
                 risk_decision = self.risk_manager.check_entry(
                     portfolio_equity=float(self.config.risk_context_portfolio_equity),
                     current_drawdown_pct=float(self.config.risk_context_current_drawdown_pct),
-                    open_positions_count=int(self.config.risk_context_open_positions_count + accepted_actionable),
-                    deployed_capital=float(base_deployed + accepted_actionable * slot_capital),
+                    open_positions_count=open_positions_estimate,
+                    deployed_capital=deployed_capital_estimate,
                     regime_label=regime_label,
                 )
                 risk_allowed = bool(risk_decision.allowed)
@@ -367,7 +367,16 @@ class LiveSignalPipeline:
                 )
                 continue
 
-            accepted_actionable += 1
+            estimated_quantity = self.risk_manager.compute_position_size(
+                capital=float(slot_capital),
+                price=close_price,
+                portfolio_equity=float(self.config.risk_context_portfolio_equity),
+                stop_loss_pct=None,
+            )
+            estimated_notional = max(0.0, float(estimated_quantity) * close_price)
+            open_positions_estimate += 1
+            deployed_capital_estimate += estimated_notional
+
             report.decisions.append(
                 SignalDecision(
                     symbol=symbol,
@@ -381,6 +390,10 @@ class LiveSignalPipeline:
                     regime_label=regime_label,
                     risk_allowed=True,
                     paper_handoff_eligible=bool(self.config.paper_handoff),
+                    metadata={
+                        "estimated_deployed_capital": deployed_capital_estimate,
+                        "estimated_open_positions": open_positions_estimate,
+                    },
                 )
             )
 

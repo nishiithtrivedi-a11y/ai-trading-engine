@@ -1,5 +1,6 @@
 """Tests for data source implementations and stubs."""
 
+import builtins
 import pytest
 import pandas as pd
 from datetime import datetime
@@ -160,3 +161,20 @@ class TestUpstoxDataSource:
         source = UpstoxDataSource("", "", "")
         result = source.health_check()
         assert result["status"] == "error"
+
+    def test_health_check_reports_error_when_package_and_credentials_present(self, monkeypatch):
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "upstox_client":
+                class _DummyModule:
+                    pass
+                return _DummyModule()
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        source = UpstoxDataSource("key", "secret", "token")
+        result = source.health_check()
+        assert result["status"] == "error"
+        assert "not implemented" in result["message"].lower()

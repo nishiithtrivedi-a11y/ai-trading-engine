@@ -311,8 +311,8 @@ class TestPortfolioBacktesterMaxPositions:
         active = set(result.strategy_selection.keys())
         assert active == {"ALPHA", "BETA"}
 
-    def test_per_symbol_capital_uses_max_positions(self, tmp_path):
-        """Capital per symbol should be initial_capital / max_positions (not / num_active)."""
+    def test_per_symbol_capital_uses_active_symbols_by_default(self, tmp_path):
+        """Default allocation uses active symbols, not max_positions capacity."""
         capital = 100_000.0
         max_pos = 10
         # Only 3 symbols available, but max_positions=10
@@ -321,6 +321,21 @@ class TestPortfolioBacktesterMaxPositions:
             strategy_registry=_make_registry(),
             symbol_to_data={f"S{i}": _make_data_handler() for i in range(3)},
             max_positions=max_pos,
+            output_dir=str(tmp_path / "out"),
+        )
+        result = bt.run()
+        assert result.per_symbol_capital == capital / 3
+
+    def test_per_symbol_capital_can_reserve_full_capacity(self, tmp_path):
+        """Conservative reserve mode keeps allocation anchored to max_positions."""
+        capital = 100_000.0
+        max_pos = 10
+        bt = PortfolioBacktester(
+            base_config=_make_config(capital),
+            strategy_registry=_make_registry(),
+            symbol_to_data={f"S{i}": _make_data_handler() for i in range(3)},
+            max_positions=max_pos,
+            reserve_full_capacity=True,
             output_dir=str(tmp_path / "out"),
         )
         result = bt.run()

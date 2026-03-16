@@ -97,7 +97,21 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional regime policy JSON artifact to reuse.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.symbols_limit < 0:
+        parser.error("--symbols-limit must be >= 0")
+    if args.days < 1:
+        parser.error("--days must be >= 1")
+    if args.paper_capital <= 0:
+        parser.error("--paper-capital must be > 0")
+    if args.paper_max_orders < 1:
+        parser.error("--paper-max-orders must be >= 1")
+    if args.paper_session_date:
+        try:
+            pd.Timestamp(args.paper_session_date)
+        except Exception as exc:
+            parser.error(f"--paper-session-date is invalid: {exc}")
+    return args
 
 
 def interval_to_timeframe(interval: str) -> Timeframe:
