@@ -19,6 +19,8 @@
 | Live order execution | not supported | placeholder only | none | future scope |
 | Runtime mode guardrails | supported | `src/runtime/run_profiles.py`, `src/runtime/safety_guards.py` | mode safety checks | stable |
 | Output manifest metadata | supported | `src/runtime/output_manifest.py` | `run_manifest.json` | stable |
+| Artifact contracts | supported | `src/runtime/artifact_contracts.py` | explicit required/optional output bundles | stable |
+| Workflow orchestration smoke paths | supported | `src/runtime/workflow_orchestrator.py`, `scripts/run_release_smoke.py` | release smoke summary + validated bundles | stable |
 
 ## Notes
 
@@ -26,3 +28,4 @@
 - All production order execution concerns are intentionally deferred.
 - Safety-first defaults remain enforced across paper/live-safe runners.
 - Runner validation and provider compatibility checks are shared via `src/runtime/runner_validation.py`.
+- Artifact bundles are validated against run-mode contracts via `src/runtime/contract_validation.py`.

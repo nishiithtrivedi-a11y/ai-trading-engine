@@ -27,7 +27,9 @@ from src.live import (  # noqa: E402
 from src.runtime import (  # noqa: E402
     RunMode,
     RunnerValidationError,
+    assert_artifact_contract,
     enforce_runtime_safety,
+    get_artifact_contract,
     validate_polling_inputs,
     validate_provider_for_mode,
     validate_symbol_inputs,
@@ -198,11 +200,14 @@ def main() -> int:
     for cycle in range(1, cycle_count + 1):
         report = pipeline.run()
         if report.exports:
+            contract = get_artifact_contract(RunMode.LIVE_SAFE)
+            manifest_artifacts = dict(report.exports)
+            manifest_artifacts["run_manifest"] = Path(args.output_dir) / "run_manifest.json"
             manifest_path = write_output_manifest(
                 output_dir=args.output_dir,
                 run_mode=RunMode.LIVE_SAFE,
                 provider_name=args.provider,
-                artifacts=report.exports,
+                artifacts=manifest_artifacts,
                 metadata={
                     "cycle": cycle,
                     "poll_seconds": args.poll_seconds,
@@ -210,8 +215,27 @@ def main() -> int:
                     "paper_handoff": bool(args.paper_handoff),
                     "symbols_loaded": report.to_dict()["summary"]["symbols_loaded"],
                 },
+                contract_id=contract.contract_id,
+                expected_artifacts=contract.required_names,
+                schema_version=contract.schema_version,
+                safety_mode=contract.safety_mode,
             )
             report.exports["run_manifest"] = str(manifest_path)
+            required_overrides = (
+                contract.required_names + ("paper_handoff",)
+                if args.paper_handoff
+                else None
+            )
+            try:
+                assert_artifact_contract(
+                    run_mode=RunMode.LIVE_SAFE,
+                    output_dir=args.output_dir,
+                    manifest_path=manifest_path,
+                    required_overrides=required_overrides,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"Artifact contract validation failed: {exc}")
+                return 1
         print_cycle_summary(cycle, report)
 
         if run_once or cycle == cycle_count:

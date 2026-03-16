@@ -36,7 +36,9 @@ from src.paper_trading import (  # noqa: E402
 from src.runtime import (  # noqa: E402
     RunMode,
     RunnerValidationError,
+    assert_artifact_contract,
     enforce_runtime_safety,
+    get_artifact_contract,
     normalize_fee_inputs,
     validate_provider_for_mode,
     validate_symbol_inputs,
@@ -366,11 +368,14 @@ def main() -> int:
     print(f"Realized PnL      : {result.state.realized_pnl:,.2f}")
     print(f"Unrealized PnL    : {result.state.unrealized_pnl:,.2f}")
     if result.exports:
+        contract = get_artifact_contract(RunMode.PAPER)
+        manifest_artifacts = dict(result.exports)
+        manifest_artifacts["run_manifest"] = Path(args.paper_output_dir) / "run_manifest.json"
         manifest_path = write_output_manifest(
             output_dir=args.paper_output_dir,
             run_mode=RunMode.PAPER,
             provider_name=provider_name,
-            artifacts=result.exports,
+            artifacts=manifest_artifacts,
             metadata={
                 "paper_enabled": bool(args.paper_trading),
                 "symbols_evaluated": len(result.symbols_evaluated),
@@ -382,8 +387,21 @@ def main() -> int:
                 "commission_bps": fee_inputs.commission_bps,
                 "slippage_bps": fee_inputs.slippage_bps,
             },
+            contract_id=contract.contract_id,
+            expected_artifacts=contract.required_names,
+            schema_version=contract.schema_version,
+            safety_mode=contract.safety_mode,
         )
         result.exports["run_manifest"] = str(manifest_path)
+        try:
+            assert_artifact_contract(
+                run_mode=RunMode.PAPER,
+                output_dir=args.paper_output_dir,
+                manifest_path=manifest_path,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"Artifact contract validation failed: {exc}")
+            return 1
         print("Artifacts:")
         for name, path in sorted(result.exports.items()):
             print(f"  {name:<22} {path}")

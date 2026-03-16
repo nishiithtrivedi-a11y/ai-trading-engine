@@ -21,6 +21,8 @@ def test_write_output_manifest_from_mapping(tmp_path: Path) -> None:
         provider_name="indian_csv",
         artifacts=artifacts,
         metadata={"cycle": 1},
+        contract_id="live_safe_runner_v1",
+        expected_artifacts=("signals", "session_state", "run_manifest"),
     )
 
     assert manifest_path.exists()
@@ -28,5 +30,8 @@ def test_write_output_manifest_from_mapping(tmp_path: Path) -> None:
     assert raw["run_mode"] == "live_safe"
     assert raw["provider_name"] == "indian_csv"
     assert raw["metadata"]["cycle"] == 1
+    assert raw["contract_id"] == "live_safe_runner_v1"
+    assert "signals" in raw["expected_artifacts"]
+    assert raw["safety_mode"] == "no_live_execution"
     assert len(raw["artifacts"]) == 2
     assert raw["safety_notes"]
