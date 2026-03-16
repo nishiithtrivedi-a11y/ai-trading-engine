@@ -17,6 +17,11 @@ from typing import Optional
 
 from src.core.data_handler import DataHandler
 from src.data.base import Timeframe
+from src.data.instrument_metadata import InstrumentType
+from src.data.provider_capabilities import (
+    ProviderCapabilityError,
+    validate_provider_workflow,
+)
 from src.data.provider_factory import ProviderError, ProviderFactory
 from src.data.symbol_mapping import SymbolMapper
 from src.scanners.config import normalize_timeframe
@@ -111,6 +116,16 @@ class DataGateway:
         start: Optional[datetime],
         end: Optional[datetime],
     ) -> DataHandler:
+        try:
+            validate_provider_workflow(
+                self.provider_name,
+                require_historical_data=True,
+                timeframe=timeframe,
+                instrument_type=InstrumentType.EQUITY,
+            )
+        except ProviderCapabilityError as exc:
+            raise ScannerDataGatewayError(str(exc)) from exc
+
         try:
             source = self._factory.create(self.provider_name)
         except ProviderError as exc:

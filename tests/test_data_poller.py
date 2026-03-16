@@ -136,7 +136,7 @@ def test_polling_mode_uses_live_payload_if_available(tmp_path: Path) -> None:
         provider_factory=_csv_factory(),
     )
     poller = DataPoller(
-        provider_name="csv",
+        provider_name="zerodha",
         data_gateway=gateway,
         provider_factory=_LiveFactory(),  # type: ignore[arg-type]
     )
@@ -159,7 +159,7 @@ def test_polling_mode_supports_symbol_only_fetch_live_signature(tmp_path: Path) 
         provider_factory=_csv_factory(),
     )
     poller = DataPoller(
-        provider_name="csv",
+        provider_name="zerodha",
         data_gateway=gateway,
         provider_factory=_LiveFactorySymbolOnly(),  # type: ignore[arg-type]
     )
@@ -172,3 +172,29 @@ def test_polling_mode_supports_symbol_only_fetch_live_signature(tmp_path: Path) 
     assert len(out.records) == 1
     assert out.records[0].source == "live_poll"
     assert out.records[0].close_price == 222.22
+
+
+def test_polling_mode_capability_guard_falls_back_when_provider_has_no_live_quotes(
+    tmp_path: Path,
+) -> None:
+    _write_ohlcv_csv(tmp_path / "RELIANCE_1D.csv")
+    gateway = DataGateway(
+        provider_name="csv",
+        data_dir=str(tmp_path),
+        provider_factory=_csv_factory(),
+    )
+    poller = DataPoller(
+        provider_name="upstox",
+        data_gateway=gateway,
+        provider_factory=_LiveFactory(),  # should not be used due capability guard
+    )
+    cfg = RealtimeConfig(
+        enabled=True,
+        mode=RealTimeMode.POLLING,
+        enable_live_provider=True,
+    )
+    out = poller.poll(["RELIANCE.NS"], ["1D"], cfg)
+    assert len(out.records) == 1
+    assert out.records[0].source == "historical_snapshot"
+    assert out.records[0].success is True
+    assert any("required capability set" in w for w in out.warnings)

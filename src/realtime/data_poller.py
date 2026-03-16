@@ -10,6 +10,11 @@ from typing import Optional
 
 import pandas as pd
 
+from src.data.instrument_metadata import InstrumentType
+from src.data.provider_capabilities import (
+    ProviderCapabilityError,
+    validate_provider_workflow,
+)
 from src.data.provider_factory import ProviderFactory
 from src.realtime.config import RealtimeConfig
 from src.realtime.models import PollResult, PolledSymbolData, RealTimeMode
@@ -111,6 +116,17 @@ class DataPoller:
         timeframe: str,
         result: PollResult,
     ) -> Optional[PolledSymbolData]:
+        try:
+            validate_provider_workflow(
+                self.provider_name,
+                require_live_quotes=True,
+                timeframe=timeframe,
+                instrument_type=InstrumentType.EQUITY,
+            )
+        except ProviderCapabilityError as exc:
+            result.warnings.append(f"{exc}; fallback to historical snapshot")
+            return None
+
         try:
             source = self.provider_factory.create(self.provider_name)
         except Exception as exc:  # noqa: BLE001

@@ -67,6 +67,8 @@ Expanded matrix: [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md)
 
 Provider details: [`docs/PROVIDERS.md`](docs/PROVIDERS.md)
 
+Code-level provider capability registry: `src/data/provider_capabilities.py`
+
 ## Instrument Support Matrix
 
 | Instrument | Status | Notes |

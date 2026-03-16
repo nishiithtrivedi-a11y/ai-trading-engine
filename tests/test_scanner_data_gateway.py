@@ -107,7 +107,7 @@ def test_unsupported_provider_historical_fetch_is_graceful() -> None:
 
     with pytest.raises(
         ScannerDataGatewayError,
-        match="does not support historical fetch yet",
+        match="historical_data",
     ):
         gateway.load_data("RELIANCE.NS", "1D")
 

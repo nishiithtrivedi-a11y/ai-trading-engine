@@ -3,6 +3,7 @@
 import pytest
 
 from src.data.provider_config import DataProvidersConfig, ProviderEntry
+from src.data.provider_capabilities import ProviderCapabilityError
 from src.data.provider_factory import ProviderError, ProviderFactory
 
 
@@ -111,3 +112,16 @@ class TestProviderFactory:
 
         # Clean up
         del ProviderFactory._registry["custom_test"]
+
+    def test_get_capabilities_for_default_provider(self):
+        config = self._make_config(csv={"enabled": True})
+        factory = ProviderFactory(config)
+        features = factory.get_capabilities()
+        assert features.provider_name == "csv"
+        assert features.supports_historical_data is True
+
+    def test_validate_capabilities_rejects_unsupported_live_quotes(self):
+        config = self._make_config(csv={"enabled": True})
+        factory = ProviderFactory(config)
+        with pytest.raises(ProviderCapabilityError, match="live_quotes"):
+            factory.validate_capabilities(require_live_quotes=True, timeframe="1D")
