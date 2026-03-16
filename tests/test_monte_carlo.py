@@ -119,6 +119,26 @@ class TestMonteCarloAnalyzerValidation:
         assert result.num_simulations == 0
         assert result.runs == []
 
+    def test_sharpe_formula_matches_expected_trade_pnl_standardization(self, tmp_path):
+        trades = [
+            {"net_pnl": 100.0, "return_pct": 0.001, "fees": 0.0},
+            {"net_pnl": 200.0, "return_pct": 0.002, "fees": 0.0},
+            {"net_pnl": 300.0, "return_pct": 0.003, "fees": 0.0},
+        ]
+        analyzer = MonteCarloAnalyzer(
+            trades=trades,
+            initial_capital=100_000,
+            num_simulations=1,
+            seed=42,
+            output_dir=str(tmp_path / "mc"),
+        )
+        result = analyzer.run(SimulationMode.TRADE_RESHUFFLE)
+        run = result.runs[0]
+
+        pnls = np.array([100.0, 200.0, 300.0], dtype=float)
+        expected = float(np.mean(pnls) / np.std(pnls) * np.sqrt(252))
+        assert run.sharpe_ratio == pytest.approx(expected)
+
 
 # ---------------------------------------------------------------------------
 # Tests — Trade reshuffle mode

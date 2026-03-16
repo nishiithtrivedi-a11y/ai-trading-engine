@@ -53,9 +53,27 @@ class _LiveSource:
         }
 
 
+class _LiveSourceSymbolOnly:
+    def load(self):
+        return pd.DataFrame()
+
+    def fetch_live(self, symbol: str):
+        return {
+            "symbol": symbol,
+            "timestamp": "2026-03-07T09:30:00+05:30",
+            "close": 222.22,
+            "bars": 1,
+        }
+
+
 class _LiveFactory:
     def create(self, *_args, **_kwargs):
         return _LiveSource()
+
+
+class _LiveFactorySymbolOnly:
+    def create(self, *_args, **_kwargs):
+        return _LiveSourceSymbolOnly()
 
 
 def test_off_mode_skips_polling() -> None:
@@ -131,3 +149,26 @@ def test_polling_mode_uses_live_payload_if_available(tmp_path: Path) -> None:
     assert len(out.records) == 1
     assert out.records[0].source == "live_poll"
     assert out.records[0].close_price == 123.45
+
+
+def test_polling_mode_supports_symbol_only_fetch_live_signature(tmp_path: Path) -> None:
+    _write_ohlcv_csv(tmp_path / "RELIANCE_1D.csv")
+    gateway = DataGateway(
+        provider_name="csv",
+        data_dir=str(tmp_path),
+        provider_factory=_csv_factory(),
+    )
+    poller = DataPoller(
+        provider_name="csv",
+        data_gateway=gateway,
+        provider_factory=_LiveFactorySymbolOnly(),  # type: ignore[arg-type]
+    )
+    cfg = RealtimeConfig(
+        enabled=True,
+        mode=RealTimeMode.POLLING,
+        enable_live_provider=True,
+    )
+    out = poller.poll(["RELIANCE.NS"], ["1D"], cfg)
+    assert len(out.records) == 1
+    assert out.records[0].source == "live_poll"
+    assert out.records[0].close_price == 222.22

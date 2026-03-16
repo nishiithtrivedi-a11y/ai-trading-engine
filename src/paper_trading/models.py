@@ -255,8 +255,7 @@ class PaperPosition:
 
     def unrealized_pnl(self, current_price: Optional[float] = None) -> float:
         price = float(current_price if current_price is not None else self.last_price or self.entry_price)
-        gross = (price - self.entry_price) * self.quantity
-        return gross - self.entry_fees
+        return (price - self.entry_price) * self.quantity
 
     def update_market_price(self, price: float, timestamp: pd.Timestamp) -> None:
         value = float(price)

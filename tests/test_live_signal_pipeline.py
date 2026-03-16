@@ -79,6 +79,9 @@ def test_live_pipeline_generates_signals_and_artifacts(tmp_path: Path) -> None:
     assert len(report.regime_snapshots) == 2
     assert len(report.decisions) == 2
     assert len(report.actionable_signals) >= 1
+    first_actionable = report.actionable_signals[0]
+    assert "estimated_deployed_capital" in first_actionable.metadata
+    assert "estimated_open_positions" in first_actionable.metadata
     assert "signals" in report.exports
     assert "watchlist" in report.exports
     assert "regime_snapshot" in report.exports

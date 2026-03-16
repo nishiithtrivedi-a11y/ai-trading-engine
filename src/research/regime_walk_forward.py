@@ -59,6 +59,7 @@ POLICY CORRECTNESS DEFINITION
 
 from __future__ import annotations
 
+import copy
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -698,7 +699,15 @@ def _run_backtest_for_slice(
 
     try:
         strategy = strategy_class(**params)
-        cfg = base_config.model_copy(deep=True)
+        if hasattr(base_config, "model_copy"):
+            cfg = base_config.model_copy(deep=True)
+        elif hasattr(base_config, "copy"):
+            try:
+                cfg = base_config.copy(deep=True)
+            except TypeError:
+                cfg = base_config.copy()
+        else:
+            cfg = copy.deepcopy(base_config)
         cfg.strategy_params = params
 
         dh           = DataHandler(df)

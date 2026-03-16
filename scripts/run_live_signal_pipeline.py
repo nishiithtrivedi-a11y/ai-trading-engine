@@ -56,7 +56,18 @@ def parse_args() -> argparse.Namespace:
         help="Available strategy set for signal generation",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.symbols_limit < 0:
+        parser.error("--symbols-limit must be >= 0")
+    if args.lookback_bars < 2:
+        parser.error("--lookback-bars must be >= 2")
+    if args.top_n_symbols < 0:
+        parser.error("--top-n-symbols must be >= 0")
+    if args.poll_seconds < 0:
+        parser.error("--poll-seconds must be >= 0")
+    if args.max_cycles < 1:
+        parser.error("--max-cycles must be >= 1")
+    return args
 
 
 def build_strategy_registry(selected: list[str]) -> dict[str, dict[str, Any]]:

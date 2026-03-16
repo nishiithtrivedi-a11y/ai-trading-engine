@@ -88,6 +88,7 @@ from src.research.regime_walk_forward import (
     _date_str,
     _evaluate_correctness,
     _find_best_test_strategy,
+    _run_backtest_for_slice,
     _records_to_md,
     build_walk_forward_windows,
     generate_walk_forward_report,
@@ -417,6 +418,98 @@ class TestNoLookaheadGuarantee:
                 step_days=90,
                 base_config=base_config,
             )
+
+
+class TestRunBacktestForSlice:
+
+    def test_uses_backtest_engine_with_data_handler(self) -> None:
+        df = _make_ohlcv(n_bars=50)
+        captured: dict[str, Any] = {}
+
+        class FakeEngine:
+            def __init__(self, config, strategy, data_handler):
+                captured["config"] = config
+                captured["strategy"] = strategy
+                captured["data_handler"] = data_handler
+
+            def run(self):
+                return MagicMock(
+                    metrics={
+                        "sharpe_ratio": 0.8,
+                        "total_return_pct": 0.04,
+                        "max_drawdown_pct": -0.1,
+                        "num_trades": 4,
+                        "win_rate": 0.5,
+                    }
+                )
+
+        class CopyOnlyConfig:
+            def __init__(self):
+                self.strategy_params = {}
+                self.copy_calls = 0
+
+            def copy(self, deep: bool = False):
+                self.copy_calls += 1
+                cloned = CopyOnlyConfig()
+                cloned.strategy_params = dict(self.strategy_params)
+                return cloned
+
+        strategy_cls = MagicMock(return_value=MagicMock())
+        base_config = CopyOnlyConfig()
+
+        with patch("src.core.backtest_engine.BacktestEngine", FakeEngine):
+            row = _run_backtest_for_slice(
+                symbol="SYM",
+                df=df,
+                strategy_name="sma",
+                strategy_class=strategy_cls,
+                params={"fast_period": 10},
+                base_config=base_config,
+            )
+
+        assert row is not None
+        assert row["strategy"] == "sma"
+        assert row["sharpe_ratio"] == pytest.approx(0.8)
+        assert base_config.copy_calls == 1
+        assert "data_handler" in captured
+
+    def test_deepcopy_fallback_when_config_has_no_model_copy_or_copy(self) -> None:
+        df = _make_ohlcv(n_bars=50)
+
+        class PlainConfig:
+            def __init__(self):
+                self.strategy_params = {}
+
+        class FakeEngine:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def run(self):
+                return MagicMock(
+                    metrics={
+                        "sharpe_ratio": 0.3,
+                        "total_return_pct": 0.01,
+                        "max_drawdown_pct": -0.05,
+                        "num_trades": 2,
+                        "win_rate": 0.5,
+                    }
+                )
+
+        strategy_cls = MagicMock(return_value=MagicMock())
+        base_config = PlainConfig()
+
+        with patch("src.core.backtest_engine.BacktestEngine", FakeEngine):
+            row = _run_backtest_for_slice(
+                symbol="SYM",
+                df=df,
+                strategy_name="rsi",
+                strategy_class=strategy_cls,
+                params={},
+                base_config=base_config,
+            )
+
+        assert row is not None
+        assert row["strategy"] == "rsi"
 
 
 # ---------------------------------------------------------------------------

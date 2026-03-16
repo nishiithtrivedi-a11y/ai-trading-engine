@@ -503,6 +503,9 @@ class PaperTradingEngine:
                 return
 
             state.cash -= cash_needed
+            # Entry costs are realized at fill time, keeping unrealized PnL
+            # as pure mark-to-market movement for open positions.
+            state.realized_pnl -= fill.total_cost
             position = PaperPosition(
                 position_id=self._next_position_id(state),
                 symbol=order.symbol,
@@ -551,7 +554,9 @@ class PaperTradingEngine:
                 exit_fees=fill.total_cost,
                 exit_reason=order.reason or fill_reason,
             )
-            state.realized_pnl += position.realized_pnl
+            # Position.realized_pnl includes both entry and exit costs.
+            # Entry cost was already realized when the position opened.
+            state.realized_pnl += (position.realized_pnl + position.entry_fees)
             state.open_positions = [
                 existing
                 for existing in state.open_positions

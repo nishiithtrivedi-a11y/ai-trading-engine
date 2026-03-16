@@ -12,6 +12,7 @@ BacktestEngine for the test-window evaluation.
 
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -390,4 +391,9 @@ class WalkForwardTester:
         """Clone a BacktestConfig safely."""
         if hasattr(config, "model_copy"):
             return config.model_copy(deep=True)
-        return config.model_copy(deep=True)
+        if hasattr(config, "copy"):
+            try:
+                return config.copy(deep=True)
+            except TypeError:
+                return config.copy()
+        return copy.deepcopy(config)

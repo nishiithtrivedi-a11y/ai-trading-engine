@@ -51,3 +51,21 @@ def test_typical_price_vwap_returns_series():
     vwap = BaseStrategy.typical_price_vwap(df)
     assert len(vwap) == 2
     assert vwap.name == "vwap"
+
+
+def test_rsi_flat_series_converges_to_50():
+    close = pd.Series([100.0] * 30)
+    rsi = BaseStrategy.rsi(close, period=14)
+    assert float(rsi.iloc[-1]) == 50.0
+
+
+def test_rsi_no_losses_converges_to_100():
+    close = pd.Series([100.0 + i for i in range(30)], dtype=float)
+    rsi = BaseStrategy.rsi(close, period=14)
+    assert float(rsi.iloc[-1]) == 100.0
+
+
+def test_rsi_no_gains_converges_to_0():
+    close = pd.Series([200.0 - i for i in range(30)], dtype=float)
+    rsi = BaseStrategy.rsi(close, period=14)
+    assert float(rsi.iloc[-1]) == 0.0

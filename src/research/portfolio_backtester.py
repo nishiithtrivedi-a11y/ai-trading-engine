@@ -17,7 +17,11 @@ per symbol), this module:
 
 CAPITAL ALLOCATION
 ------------------
-  per_symbol_capital = initial_capital / max(max_positions, num_active_symbols)
+  Default behavior:
+    per_symbol_capital = initial_capital / num_active_symbols
+
+  Optional conservative reserve mode:
+    per_symbol_capital = initial_capital / max_positions
 
   Each active symbol runs a full backtest with ``per_symbol_capital`` as its
   initial capital.  The portfolio equity curve is the sum of all per-symbol
@@ -36,9 +40,7 @@ MAX POSITIONS
 -------------
   When the number of symbols exceeds max_positions, only the first
   ``max_positions`` symbols (alphabetical order) are backtested.  Remaining
-  symbols are skipped and noted in the report.  This keeps capital allocation
-  clean: every active position gets exactly ``initial_capital / max_positions``
-  in the equal-weight case.
+  symbols are skipped and noted in the report.
 
 TURNOVER
 --------
@@ -155,6 +157,7 @@ class PortfolioBacktestResult:
     num_symbols_skipped: int
     max_positions: int
     per_symbol_capital: float
+    reserve_full_capacity: bool = False
     strategy_selection: dict[str, str] = field(default_factory=dict)  # symbol -> strategy
 
     # Per-symbol drill-down
@@ -186,6 +189,10 @@ class PortfolioBacktester:
     max_positions : int
         Maximum concurrent open positions.  Controls capital allocation and
         limits the number of symbols backtested.
+    reserve_full_capacity : bool
+        When True, per-symbol capital remains ``initial_capital / max_positions``
+        even if fewer symbols are active. When False (default), capital is
+        allocated across actual active symbols only.
     regime_policy : optional
         A ``RegimePolicy`` instance (from ``src.decision.regime_policy``).
         When provided, each symbol's regime is detected and the policy selects
@@ -203,6 +210,7 @@ class PortfolioBacktester:
         max_positions: int = 10,
         regime_policy: Optional[Any] = None,
         output_dir: str = "output/portfolio",
+        reserve_full_capacity: bool = False,
     ) -> None:
         if not strategy_registry:
             raise ValueError("strategy_registry cannot be empty.")
@@ -217,6 +225,7 @@ class PortfolioBacktester:
         self.max_positions = max_positions
         self.regime_policy = regime_policy
         self.output_dir = Path(output_dir)
+        self.reserve_full_capacity = bool(reserve_full_capacity)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Computed after run()
@@ -251,12 +260,12 @@ class PortfolioBacktester:
             )
 
         num_active = len(active_symbols)
-        per_symbol_capital = (
-            float(self.base_config.initial_capital) / self.max_positions
-        )
+        allocation_slots = self.max_positions if self.reserve_full_capacity else max(1, num_active)
+        per_symbol_capital = float(self.base_config.initial_capital) / allocation_slots
 
         logger.info(
-            f"Active symbols: {num_active}, per-symbol capital: {per_symbol_capital:,.2f}"
+            f"Active symbols: {num_active}, per-symbol capital: {per_symbol_capital:,.2f}, "
+            f"reserve_full_capacity={self.reserve_full_capacity}"
         )
 
         # Per-symbol results
@@ -331,6 +340,7 @@ class PortfolioBacktester:
             num_symbols_active=num_active,
             num_symbols_skipped=len(skipped_symbols),
             max_positions=self.max_positions,
+            reserve_full_capacity=self.reserve_full_capacity,
             per_symbol_capital=per_symbol_capital,
             strategy_selection=strategy_selection,
             symbol_results=symbol_results,
@@ -797,6 +807,7 @@ def _build_portfolio_report_lines(
         f"| Generated | {now} |",
         f"| Initial Capital | {result.initial_capital:,.2f} |",
         f"| Max Positions | {result.max_positions} |",
+        f"| Reserve Full Capacity | {result.reserve_full_capacity} |",
         f"| Per-Symbol Capital | {result.per_symbol_capital:,.2f} |",
         f"| Active Symbols | {result.num_symbols_active} |",
         f"| Skipped Symbols (>max_positions) | {result.num_symbols_skipped} |",
@@ -921,7 +932,8 @@ def _build_portfolio_report_lines(
         f"- Max drawdown: {_pct(result.max_drawdown_pct)}; "
         f"Sharpe: {result.sharpe_ratio:.4f}.",
         f"- Capital deployed: {result.per_symbol_capital:,.2f} per position "
-        f"(equal-weight, {result.max_positions} max positions).",
+        f"(equal-weight, {result.max_positions} max positions, "
+        f"reserve_full_capacity={result.reserve_full_capacity}).",
         f"- Portfolio turnover: {result.turnover:.2f}x over the test period.",
     ]
     if result.num_symbols_skipped > 0:

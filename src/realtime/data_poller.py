@@ -4,6 +4,7 @@ Data poller for realtime cycles.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from typing import Optional
 
@@ -126,7 +127,11 @@ class DataPoller:
             return None
 
         try:
-            payload = fetch_live(symbol=symbol, timeframe=timeframe)
+            payload = self._call_fetch_live(
+                fetch_live=fetch_live,
+                symbol=symbol,
+                timeframe=timeframe,
+            )
         except NotImplementedError:
             result.warnings.append(
                 f"provider '{self.provider_name}' fetch_live not implemented; fallback to historical snapshot"
@@ -145,6 +150,20 @@ class DataPoller:
             )
 
         return self._parse_live_payload(symbol=symbol, timeframe=timeframe, payload=payload)
+
+    @staticmethod
+    def _call_fetch_live(fetch_live, symbol: str, timeframe: str):
+        """Call provider fetch_live with a normalized scanner contract."""
+        try:
+            signature = inspect.signature(fetch_live)
+            params = signature.parameters
+            if "timeframe" in params:
+                return fetch_live(symbol=symbol, timeframe=timeframe)
+            if "symbol" in params:
+                return fetch_live(symbol=symbol)
+        except (TypeError, ValueError):
+            pass
+        return fetch_live(symbol)
 
     @staticmethod
     def _parse_live_payload(

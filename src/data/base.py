@@ -77,6 +77,19 @@ class BaseDataSource(ABC):
             f"{self.__class__.__name__} does not support fetch_historical"
         )
 
+    def fetch_live(
+        self,
+        symbol: str,
+        timeframe: Timeframe | str | None = None,
+    ) -> pd.Series:
+        """Fetch latest available bar/quote for a symbol.
+
+        Override in API-backed sources that support live or near-live quotes.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support fetch_live"
+        )
+
     def list_instruments(self) -> List[str]:
         """List available instruments/symbols from this source.
 
