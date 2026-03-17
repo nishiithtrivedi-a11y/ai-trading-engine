@@ -11,6 +11,7 @@ Safe by default:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -132,6 +133,16 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional regime policy JSON artifact to reuse.",
     )
+    parser.add_argument(
+        "--portfolio-plan-json",
+        type=str,
+        default="",
+        help=(
+            "Optional portfolio_plan.json from run_decision. "
+            "When provided, recommended quantities can cap paper sizing and "
+            "drawdown no_new_risk mode can block new BUY entries."
+        ),
+    )
     parser.set_defaults(paper_use_next_bar_fill=False)
     args = parser.parse_args()
     try:
@@ -154,6 +165,10 @@ def parse_args() -> argparse.Namespace:
         )
         if args.paper_session_date:
             pd.Timestamp(args.paper_session_date)
+        if args.portfolio_plan_json and not Path(args.portfolio_plan_json).exists():
+            raise RunnerValidationError(
+                f"--portfolio-plan-json file not found: {args.portfolio_plan_json}"
+            )
     except (RunnerValidationError, ValueError) as exc:
         parser.error(str(exc))
     return args
@@ -224,6 +239,41 @@ def load_regime_policy(path_value: str) -> Optional[RegimePolicy]:
     if not path.exists():
         return None
     return RegimePolicy.load_json(path)
+
+
+def load_portfolio_plan_overrides(
+    path_value: str,
+) -> tuple[dict[str, dict[str, Any]], bool, str]:
+    if not path_value:
+        return {}, True, "normal"
+    path = Path(path_value)
+    if not path.exists():
+        raise ValueError(f"portfolio plan file not found: {path}")
+
+    root = json.loads(path.read_text(encoding="utf-8"))
+    plan = root.get("portfolio_plan", root)
+    if not isinstance(plan, dict):
+        return {}, True, "normal"
+
+    summary = plan.get("summary", {})
+    drawdown_mode = str(summary.get("drawdown_mode", "normal"))
+    allow_new_risk = drawdown_mode != "no_new_risk"
+
+    rows = plan.get("items", [])
+    if not isinstance(rows, list):
+        rows = []
+
+    overrides: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("selection_status", "")).strip().lower() == "rejected":
+            continue
+        symbol = str(row.get("symbol", "")).strip().upper()
+        if not symbol:
+            continue
+        overrides[symbol] = row
+    return overrides, allow_new_risk, drawdown_mode
 
 
 def load_symbol_data(
@@ -320,6 +370,18 @@ def main() -> int:
         return 1
 
     regime_policy = load_regime_policy(args.regime_policy_json)
+    portfolio_overrides, allow_new_risk, drawdown_mode = load_portfolio_plan_overrides(
+        args.portfolio_plan_json
+    )
+    if portfolio_overrides:
+        planned_symbols = [symbol for symbol in symbols if symbol in portfolio_overrides]
+        if planned_symbols:
+            symbols = planned_symbols
+            symbol_to_data = {
+                symbol: data
+                for symbol, data in symbol_to_data.items()
+                if symbol in set(planned_symbols)
+            }
     paper_config = PaperTradingConfig(
         enabled=True,
         initial_capital=args.paper_capital,
@@ -346,6 +408,8 @@ def main() -> int:
         paper_config=paper_config,
         regime_policy=regime_policy,
         state_store=state_store,
+        portfolio_plan_overrides=portfolio_overrides,
+        allow_new_risk=allow_new_risk,
         cost_model=CostModel(
             CostConfig(
                 commission_bps=fee_inputs.commission_bps,
@@ -367,6 +431,8 @@ def main() -> int:
     print(f"Closed positions  : {len(result.state.closed_positions)}")
     print(f"Realized PnL      : {result.state.realized_pnl:,.2f}")
     print(f"Unrealized PnL    : {result.state.unrealized_pnl:,.2f}")
+    if portfolio_overrides:
+        print(f"Portfolio overrides: {len(portfolio_overrides)} symbols (drawdown_mode={drawdown_mode})")
     if result.exports:
         contract = get_artifact_contract(RunMode.PAPER)
         manifest_artifacts = dict(result.exports)
@@ -386,6 +452,9 @@ def main() -> int:
                 ),
                 "commission_bps": fee_inputs.commission_bps,
                 "slippage_bps": fee_inputs.slippage_bps,
+                "portfolio_overrides_loaded": len(portfolio_overrides),
+                "portfolio_drawdown_mode": drawdown_mode,
+                "allow_new_risk": allow_new_risk,
             },
             contract_id=contract.contract_id,
             expected_artifacts=contract.required_names,

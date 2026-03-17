@@ -47,3 +47,13 @@ def test_run_live_pipeline_validates_poll_seconds(monkeypatch) -> None:
     monkeypatch.setattr(sys, "argv", ["runner", "--poll-seconds", "-5"])
     with pytest.raises(SystemExit):
         run_live_signal_pipeline.parse_args()
+
+
+def test_run_paper_validates_portfolio_plan_path(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["runner", "--portfolio-plan-json", "missing_portfolio_plan.json"],
+    )
+    with pytest.raises(SystemExit):
+        run_paper_trading.parse_args()

@@ -86,6 +86,9 @@ def test_live_pipeline_generates_signals_and_artifacts(tmp_path: Path) -> None:
     first_actionable = report.actionable_signals[0]
     assert "estimated_deployed_capital" in first_actionable.metadata
     assert "estimated_open_positions" in first_actionable.metadata
+    assert "estimated_allocation_amount" in first_actionable.metadata
+    assert "estimated_quantity" in first_actionable.metadata
+    assert "drawdown_mode" in first_actionable.metadata
     assert "signals" in report.exports
     assert "watchlist" in report.exports
     assert "regime_snapshot" in report.exports
@@ -160,6 +163,30 @@ def test_live_pipeline_risk_precheck_can_reject(tmp_path: Path) -> None:
     assert len(report.actionable_signals) == 0
     assert len(report.risk_rejections) == 1
     assert report.risk_rejections[0].risk_allowed is False
+    assert report.risk_rejections[0].metadata.get("drawdown_mode") in {"normal", "reduced_risk", "no_new_risk"}
+
+
+def test_live_pipeline_drawdown_overlay_can_force_no_new_risk(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    _write_symbol_csv(data_dir / "RELIANCE_1D.csv", base=100.0, slope=0.7, breakout_boost=4.0)
+
+    cfg = LiveSignalPipelineConfig(
+        enabled=True,
+        provider_name="indian_csv",
+        symbols=["RELIANCE.NS"],
+        output_dir=str(tmp_path / "drawdown_overlay"),
+        data_dir=str(data_dir),
+        risk_context_current_drawdown_pct=0.20,
+        paper_handoff=True,
+    )
+    pipeline = LiveSignalPipeline(config=cfg, strategy_registry=_strategy_registry())
+    report = pipeline.run()
+
+    assert len(report.actionable_signals) == 0
+    assert report.risk_rejections
+    assert report.risk_rejections[0].metadata.get("drawdown_mode") == "no_new_risk"
 
 
 def test_live_pipeline_keeps_execution_inert_metadata(tmp_path: Path) -> None:

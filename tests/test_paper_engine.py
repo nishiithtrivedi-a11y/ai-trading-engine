@@ -268,3 +268,33 @@ def test_realized_pnl_stays_consistent_after_open_and_close_with_fees() -> None:
 
     closed = result.state.closed_positions[0]
     assert result.state.realized_pnl == closed.realized_pnl
+
+
+def test_paper_engine_blocks_new_buys_when_allow_new_risk_is_false() -> None:
+    engine = PaperTradingEngine(
+        strategy_registry=_registry(BuyOnlyStrategy),
+        base_config=BacktestConfig(initial_capital=100_000.0),
+        paper_config=PaperTradingConfig(enabled=True, use_next_bar_fill=False, persist_state=False),
+        allow_new_risk=False,
+        cost_model=CostModel(CostConfig(commission_per_trade=0.0, commission_bps=0.0, slippage_bps=0.0)),
+    )
+    result = engine.run({"RELIANCE.NS": DataHandler(_make_ohlcv())}, persist=False)
+    assert result.state is not None
+    assert len(result.state.orders) == 0
+    assert any("no_new_risk" in entry.message for entry in result.state.journal)
+
+
+def test_paper_engine_applies_portfolio_override_quantity_cap() -> None:
+    engine = PaperTradingEngine(
+        strategy_registry=_registry(BuyOnlyStrategy),
+        base_config=BacktestConfig(initial_capital=100_000.0),
+        paper_config=PaperTradingConfig(enabled=True, use_next_bar_fill=False, persist_state=False),
+        portfolio_plan_overrides={"RELIANCE.NS": {"recommended_quantity": 1}},
+        cost_model=CostModel(CostConfig(commission_per_trade=0.0, commission_bps=0.0, slippage_bps=0.0)),
+    )
+    result = engine.run({"RELIANCE.NS": DataHandler(_make_ohlcv())}, persist=False)
+    assert result.state is not None
+    assert len(result.state.orders) >= 1
+    buy_order = result.state.orders[0]
+    assert buy_order.quantity == 1
+    assert buy_order.metadata.get("portfolio_override_applied") is True
