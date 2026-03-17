@@ -33,6 +33,7 @@ This platform is currently constrained to:
 - Artifact contracts are centralized in `src/runtime/artifact_contracts.py`.
 - Contract compliance checks are centralized in `src/runtime/contract_validation.py`.
 - Release smoke workflows validate research/paper/live-safe output bundles before future releases.
+- Daily dry-run orchestration validates scanner/monitoring/decision contracts without enabling execution.
 
 ## Documentation Integrity
 

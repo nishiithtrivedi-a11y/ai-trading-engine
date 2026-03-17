@@ -9,7 +9,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from src.runtime.artifact_contracts import ArtifactContract, get_artifact_contract
+from src.runtime.artifact_contracts import (
+    ArtifactContract,
+    get_artifact_contract,
+    get_artifact_contract_by_id,
+)
 from src.runtime.run_profiles import RunMode
 
 
@@ -55,13 +59,14 @@ class ContractValidationResult:
 
 def validate_artifact_contract(
     *,
-    run_mode: RunMode | str,
+    run_mode: RunMode | str | None = None,
+    contract_id: str | None = None,
     output_dir: str | Path,
     manifest_path: str | Path | None = None,
     require_manifest: bool = True,
     required_overrides: Iterable[str] | None = None,
 ) -> ContractValidationResult:
-    contract = get_artifact_contract(run_mode)
+    contract = _resolve_contract(run_mode=run_mode, contract_id=contract_id)
     out_dir = Path(output_dir)
     manifest = Path(manifest_path) if manifest_path else (out_dir / "run_manifest.json")
     result = ContractValidationResult(
@@ -109,7 +114,8 @@ def validate_artifact_contract(
 
 def assert_artifact_contract(
     *,
-    run_mode: RunMode | str,
+    run_mode: RunMode | str | None = None,
+    contract_id: str | None = None,
     output_dir: str | Path,
     manifest_path: str | Path | None = None,
     require_manifest: bool = True,
@@ -117,6 +123,7 @@ def assert_artifact_contract(
 ) -> ContractValidationResult:
     result = validate_artifact_contract(
         run_mode=run_mode,
+        contract_id=contract_id,
         output_dir=output_dir,
         manifest_path=manifest_path,
         require_manifest=require_manifest,
@@ -128,6 +135,20 @@ def assert_artifact_contract(
             f"{result.to_dict()}"
         )
     return result
+
+
+def _resolve_contract(
+    *,
+    run_mode: RunMode | str | None,
+    contract_id: str | None,
+) -> ArtifactContract:
+    if contract_id is not None:
+        return get_artifact_contract_by_id(contract_id)
+    if run_mode is None:
+        raise ArtifactContractValidationError(
+            "Either run_mode or contract_id must be provided for contract validation"
+        )
+    return get_artifact_contract(run_mode)
 
 
 def _validate_manifest_shape(
