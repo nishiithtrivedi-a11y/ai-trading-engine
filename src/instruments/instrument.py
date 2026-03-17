@@ -86,7 +86,10 @@ class Instrument:
                 self.instrument_type.strip().lower()
             )
         if isinstance(self.option_type, str) and self.option_type:
-            self.option_type = OptionType(self.option_type.strip().lower())
+            _ot = self.option_type.strip().lower()
+            # Accept canonical CE/PE aliases in addition to native 'call'/'put'
+            _ot = {"ce": "call", "pe": "put"}.get(_ot, _ot)
+            self.option_type = OptionType(_ot)
 
         # Infer segment from exchange if not provided
         if self.segment is None:

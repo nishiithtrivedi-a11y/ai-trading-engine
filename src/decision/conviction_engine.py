@@ -35,6 +35,7 @@ class ConvictionEngine:
         config: DecisionConfig,
         regime_result: Optional[RegimeFilterResult] = None,
         relative_strength: Optional[RelativeStrengthSnapshot] = None,
+        analysis_context: Optional[dict] = None,  # reserved for Phase 2 — accepted but not used
     ) -> ConvictionBreakdown:
         if trade_plan.risk_reward <= 0:
             raise ConvictionEngineError("trade_plan.risk_reward must be > 0")

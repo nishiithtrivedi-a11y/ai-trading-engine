@@ -5,6 +5,7 @@ Opportunity scoring and ranking.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional
 
 import pandas as pd
 
@@ -12,6 +13,9 @@ from src.core.data_handler import DataHandler
 from src.scanners.config import ScannerConfig
 from src.scanners.models import Opportunity, SignalSnapshot, TradeSetup
 from src.strategies.base_strategy import BaseStrategy
+
+if TYPE_CHECKING:
+    from src.analysis.registry import AnalysisRegistry
 
 
 class OpportunityScorerError(Exception):
@@ -35,6 +39,7 @@ class OpportunityScorer:
         setup: TradeSetup,
         data_handler: DataHandler,
         scanner_config: ScannerConfig,
+        analysis_registry: Optional["AnalysisRegistry"] = None,
     ) -> dict[str, float]:
         if not signal.is_actionable:
             raise OpportunityScorerError("Cannot score a non-actionable signal")
@@ -63,7 +68,7 @@ class OpportunityScorer:
 
         final_score = _clamp(weighted_sum / total_weight, 0.0, 1.0) * 100.0
 
-        return {
+        result: dict[str, float] = {
             "score": final_score,
             "signal": _clamp(components["signal"]),
             "risk_reward": _clamp(components["risk_reward"]),
@@ -71,6 +76,21 @@ class OpportunityScorer:
             "liquidity": _clamp(components["liquidity"]),
             "freshness": _clamp(components["freshness"]),
         }
+
+        if analysis_registry is not None:
+            try:
+                from src.analysis.feature_schema import FeatureOutput  # noqa: PLC0415
+
+                features = FeatureOutput.from_modules(
+                    analysis_registry.enabled_modules(),
+                    data_handler.data,
+                    {"signal": signal, "setup": setup},
+                )
+                result["analysis_features"] = features.to_dict()  # type: ignore[assignment]
+            except Exception:  # noqa: BLE001
+                result["analysis_features"] = {}  # type: ignore[assignment]
+
+        return result
 
     @staticmethod
     def rank(opportunities: list[Opportunity]) -> list[Opportunity]:

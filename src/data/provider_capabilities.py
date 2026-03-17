@@ -48,6 +48,13 @@ class ProviderFeatureSet:
     )
     implementation_status: ImplementationStatus = ImplementationStatus.STABLE
     notes: str = ""
+    # --- Segment and derivatives capability flags (Phase 1 modular foundation) ---
+    supported_segments: tuple[str, ...] = ("NSE",)
+    supports_derivatives: bool = False
+
+    def supports_segment(self, segment: str) -> bool:
+        """Return True if this provider supports the given market segment."""
+        return str(segment).upper() in (s.upper() for s in self.supported_segments)
 
     def supports_feature(self, feature: ProviderFeature) -> bool:
         feature_map = {
@@ -87,6 +94,8 @@ _PROVIDER_CAPABILITIES: dict[str, ProviderFeatureSet] = {
         supported_instrument_types=_DEFAULT_INSTRUMENTS,
         implementation_status=ImplementationStatus.STABLE,
         notes="File-based provider with deterministic local data.",
+        supported_segments=("NSE",),
+        supports_derivatives=False,
     ),
     "indian_csv": ProviderFeatureSet(
         provider_name="indian_csv",
@@ -100,6 +109,8 @@ _PROVIDER_CAPABILITIES: dict[str, ProviderFeatureSet] = {
         supported_instrument_types=_DEFAULT_INSTRUMENTS,
         implementation_status=ImplementationStatus.STABLE,
         notes="Indian market CSV loader with timezone/session normalization.",
+        supported_segments=("NSE", "BSE"),
+        supports_derivatives=False,
     ),
     "zerodha": ProviderFeatureSet(
         provider_name="zerodha",
@@ -113,6 +124,8 @@ _PROVIDER_CAPABILITIES: dict[str, ProviderFeatureSet] = {
         supported_instrument_types=_DEFAULT_INSTRUMENTS,
         implementation_status=ImplementationStatus.PARTIAL,
         notes="Data provider + broker adapter paths exist; runtime execution remains disabled.",
+        supported_segments=("NSE", "BSE", "NFO", "MCX", "CDS"),
+        supports_derivatives=True,
     ),
     "upstox": ProviderFeatureSet(
         provider_name="upstox",
@@ -129,6 +142,8 @@ _PROVIDER_CAPABILITIES: dict[str, ProviderFeatureSet] = {
             "Safe data-only integration with CSV fallback. "
             "SDK/API path remains integration-ready and health-checks report degradation explicitly."
         ),
+        supported_segments=("NSE", "NFO"),
+        supports_derivatives=False,
     ),
 }
 
