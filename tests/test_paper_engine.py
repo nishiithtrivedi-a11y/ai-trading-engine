@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -210,8 +211,15 @@ def test_persistence_and_summary_are_written(tmp_path: Path) -> None:
     assert (tmp_path / "paper_positions.csv").exists()
     assert (tmp_path / "paper_pnl.csv").exists()
     assert (tmp_path / "paper_session_summary.md").exists()
+    assert (tmp_path / "paper_artifacts_meta.json").exists()
     summary = (tmp_path / "paper_session_summary.md").read_text(encoding="utf-8")
     assert "Paper Trading Session Summary" in summary
+    artifacts_meta = json.loads((tmp_path / "paper_artifacts_meta.json").read_text(encoding="utf-8"))
+    assert artifacts_meta["schema_version"] == "v1"
+    assert artifacts_meta["source"] == "paper.paper_state_store"
+    state_payload = json.loads((tmp_path / "paper_state.json").read_text(encoding="utf-8"))
+    assert state_payload["schema_version"] == "v1"
+    assert state_payload["source"] == "paper.paper_portfolio_state"
     reloaded = state_store.load()
     assert len(reloaded.orders) == len(result.state.orders)
 

@@ -9,6 +9,8 @@ from typing import Any, Optional
 
 import pandas as pd
 
+LIVE_SIGNAL_SCHEMA_VERSION = "v1"
+
 
 def _now_utc() -> pd.Timestamp:
     return pd.Timestamp.now(tz="UTC")
@@ -91,6 +93,8 @@ class WatchlistState:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": LIVE_SIGNAL_SCHEMA_VERSION,
+            "source": "live.watchlist_state",
             "session_label": self.session_label,
             "provider_name": self.provider_name,
             "universe_name": self.universe_name,
@@ -140,6 +144,8 @@ class SessionSignalReport:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": LIVE_SIGNAL_SCHEMA_VERSION,
+            "source": "live.session_signal_report",
             "enabled": self.enabled,
             "provider_name": self.provider_name,
             "timeframe": self.timeframe,

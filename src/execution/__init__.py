@@ -46,6 +46,15 @@ import pandas as pd
 
 from .cost_model import CostConfig, CostModel, TradeCost
 from .fill_model import FillConfig, FillModel, FillResult
+from .safety_gate import (
+    ExecutionMode,
+    ExecutionSafetyError,
+    SafetyGateConfig,
+    assert_execution_allowed,
+    assert_live_execution_allowed,
+    get_execution_mode,
+    is_live_execution_allowed,
+)
 
 from src.utils.logger import setup_logger
 
@@ -64,6 +73,13 @@ __all__ = [
     "GrossNetRecord",
     "ExecutionCostAnalyzer",
     "generate_execution_report",
+    "ExecutionMode",
+    "ExecutionSafetyError",
+    "SafetyGateConfig",
+    "assert_execution_allowed",
+    "assert_live_execution_allowed",
+    "get_execution_mode",
+    "is_live_execution_allowed",
 ]
 
 

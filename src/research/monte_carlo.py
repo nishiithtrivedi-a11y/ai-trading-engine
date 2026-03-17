@@ -269,9 +269,16 @@ class MonteCarloAnalyzer:
         drawdown_pct = np.where(peak > 0, (peak - equity) / peak, 0.0)
         max_dd_pct = float(np.max(drawdown_pct))
 
-        # Sharpe from trade PnLs
-        if len(pnls) > 1 and np.std(pnls) > 0:
-            sharpe = float(np.mean(pnls) / np.std(pnls) * np.sqrt(252))
+        # Sharpe from equity-return series (explicit annualization order):
+        # sharpe = sqrt(252) * (mean(return) / std(return))
+        returns = pd.Series(equity, dtype=float).pct_change().dropna().to_numpy()
+        if len(returns) > 1:
+            ret_std = float(np.std(returns))
+            ret_mean = float(np.mean(returns))
+            if np.isfinite(ret_std) and ret_std > 0.0 and np.isfinite(ret_mean):
+                sharpe = float((ret_mean / ret_std) * np.sqrt(252.0))
+            else:
+                sharpe = 0.0
         else:
             sharpe = 0.0
 

@@ -134,6 +134,44 @@ class TestZerodhaBroker:
         with pytest.raises(BrokerError, match="Not authenticated"):
             broker.get_account_summary()
 
+    def test_place_order_blocked_when_not_live_even_if_authenticated(self):
+        broker = self._make_broker()
+        broker._authenticated = True
+
+        class FakeKite:
+            TRANSACTION_TYPE_BUY = "BUY"
+            TRANSACTION_TYPE_SELL = "SELL"
+
+            @staticmethod
+            def place_order(**_kwargs):
+                return "OID-1"
+
+        broker._kite = FakeKite()
+
+        with pytest.raises(BrokerError, match="blocked"):
+            broker.place_order("RELIANCE", "buy", 10)
+
+    def test_place_order_allowed_when_explicit_live_enabled(self):
+        broker = ZerodhaBroker(
+            api_key="test_key",
+            api_secret="test_secret",
+            execution_mode="live",
+            enable_live_execution=True,
+        )
+        broker._authenticated = True
+
+        class FakeKite:
+            TRANSACTION_TYPE_BUY = "BUY"
+            TRANSACTION_TYPE_SELL = "SELL"
+
+            @staticmethod
+            def place_order(**_kwargs):
+                return "OID-LIVE-1"
+
+        broker._kite = FakeKite()
+        response = broker.place_order("RELIANCE", "buy", 1)
+        assert response.order_id == "OID-LIVE-1"
+
 
 # ---------------------------------------------------------------------------
 # Tests — UpstoxBroker stub

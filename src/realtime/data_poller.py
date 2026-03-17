@@ -170,6 +170,35 @@ class DataPoller:
     @staticmethod
     def _call_fetch_live(fetch_live, symbol: str, timeframe: str):
         """Call provider fetch_live with a normalized scanner contract."""
+        errors: list[Exception] = []
+
+        def _try_call(*args, **kwargs):
+            try:
+                return fetch_live(*args, **kwargs)
+            except TypeError as exc:
+                errors.append(exc)
+                return None
+
+        # Preferred explicit keyword contract.
+        result = _try_call(symbol=symbol, timeframe=timeframe)
+        if result is not None:
+            return result
+
+        # Common symbol-only keyword signature.
+        result = _try_call(symbol=symbol)
+        if result is not None:
+            return result
+
+        # Positional contracts for sources with non-standard parameter names.
+        result = _try_call(symbol, timeframe)
+        if result is not None:
+            return result
+
+        result = _try_call(symbol)
+        if result is not None:
+            return result
+
+        # Signature inspection fallback for custom callables.
         try:
             signature = inspect.signature(fetch_live)
             params = signature.parameters
@@ -179,6 +208,9 @@ class DataPoller:
                 return fetch_live(symbol=symbol)
         except (TypeError, ValueError):
             pass
+
+        if errors:
+            raise errors[-1]
         return fetch_live(symbol)
 
     @staticmethod

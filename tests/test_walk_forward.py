@@ -1,6 +1,7 @@
 """Tests for the walk-forward testing engine (Step 9)."""
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -349,3 +350,16 @@ class TestWalkForwardCloneConfig:
 
         assert original.values == [1, 2, 3]
         assert cloned.values == [1, 2, 3, 4]
+
+    def test_clone_config_supports_dataclass_replace_path(self):
+        @dataclass
+        class DataclassConfig:
+            value: int
+            flags: tuple[str, ...] = ("a",)
+
+        original = DataclassConfig(value=7, flags=("x",))
+        cloned = WalkForwardTester._clone_config(original)  # type: ignore[arg-type]
+        cloned.value = 9
+
+        assert original.value == 7
+        assert cloned.value == 9

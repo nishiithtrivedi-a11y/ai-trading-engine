@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,9 @@ def test_state_store_save_is_atomic_and_cleans_lock(tmp_path: Path) -> None:
     assert saved == target
     assert target.exists()
     assert not (tmp_path / "paper_state.json.lock").exists()
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "v1"
+    assert payload["source"] == "paper.paper_portfolio_state"
 
 
 def test_state_store_load_defaults_when_file_missing(tmp_path: Path) -> None:

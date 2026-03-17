@@ -11,7 +11,7 @@ from typing import Optional
 
 import pandas as pd
 
-from src.live.models import SessionSignalReport
+from src.live.models import LIVE_SIGNAL_SCHEMA_VERSION, SessionSignalReport
 
 
 @dataclass
@@ -55,6 +55,10 @@ class LiveSessionStore:
             handoff_path = self.output_dir / "paper_handoff_signals.csv"
             self._write_paper_handoff_csv(report, handoff_path)
             exports["paper_handoff"] = handoff_path
+
+        meta_path = self.output_dir / "live_artifacts_meta.json"
+        self._write_artifacts_meta(report, exports, meta_path)
+        exports["artifacts_meta"] = meta_path
 
         return exports
 
@@ -234,3 +238,25 @@ class LiveSessionStore:
         ]
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _write_artifacts_meta(
+        report: SessionSignalReport,
+        exports: dict[str, Path],
+        path: Path,
+    ) -> None:
+        payload = {
+            "schema_version": LIVE_SIGNAL_SCHEMA_VERSION,
+            "generated_at": report.generated_at.isoformat(),
+            "source": "live.market_session_store",
+            "provider_name": report.provider_name,
+            "timeframe": report.timeframe,
+            "artifacts": {
+                name: {
+                    "path": str(file_path),
+                    "format": file_path.suffix.lstrip("."),
+                }
+                for name, file_path in exports.items()
+            },
+        }
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

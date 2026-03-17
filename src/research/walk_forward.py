@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, is_dataclass, replace
 from pathlib import Path
 from typing import Any, Optional
 
@@ -396,4 +396,9 @@ class WalkForwardTester:
                 return config.copy(deep=True)
             except TypeError:
                 return config.copy()
+        if is_dataclass(config):
+            try:
+                return replace(config)
+            except TypeError:
+                pass
         return copy.deepcopy(config)
