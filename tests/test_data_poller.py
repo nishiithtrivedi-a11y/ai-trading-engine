@@ -95,6 +95,25 @@ class _LiveFactoryPositionalNames:
         return _LiveSourcePositionalNames()
 
 
+class _LiveSourceSeriesPayload:
+    def load(self):
+        return pd.DataFrame()
+
+    def fetch_live(self, symbol: str):
+        series = pd.Series({"close": 444.44, "open": 440.0, "high": 445.0, "low": 439.0})
+        series.attrs["data_quality"] = {
+            "provider": "zerodha",
+            "source": "series_test",
+            "stale_data": False,
+        }
+        return series
+
+
+class _LiveFactorySeriesPayload:
+    def create(self, *_args, **_kwargs):
+        return _LiveSourceSeriesPayload()
+
+
 def test_off_mode_skips_polling() -> None:
     poller = DataPoller(provider_name="csv", provider_factory=_csv_factory())
     cfg = RealtimeConfig(enabled=False, mode=RealTimeMode.OFF)
@@ -122,6 +141,7 @@ def test_simulated_csv_polling_reads_latest_bar(tmp_path: Path) -> None:
     assert out.records[0].success is True
     assert out.records[0].bars == 20
     assert out.records[0].close_price is not None
+    assert "data_quality" in out.records[0].metadata
 
 
 def test_polling_mode_live_create_failure_falls_back_to_historical(tmp_path: Path) -> None:
@@ -214,6 +234,30 @@ def test_polling_mode_supports_positional_fetch_live_signature(tmp_path: Path) -
     assert len(out.records) == 1
     assert out.records[0].source == "live_poll"
     assert out.records[0].close_price == 333.33
+
+
+def test_polling_mode_supports_series_fetch_live_signature(tmp_path: Path) -> None:
+    _write_ohlcv_csv(tmp_path / "RELIANCE_1D.csv")
+    gateway = DataGateway(
+        provider_name="csv",
+        data_dir=str(tmp_path),
+        provider_factory=_csv_factory(),
+    )
+    poller = DataPoller(
+        provider_name="zerodha",
+        data_gateway=gateway,
+        provider_factory=_LiveFactorySeriesPayload(),  # type: ignore[arg-type]
+    )
+    cfg = RealtimeConfig(
+        enabled=True,
+        mode=RealTimeMode.POLLING,
+        enable_live_provider=True,
+    )
+    out = poller.poll(["RELIANCE.NS"], ["1D"], cfg)
+    assert len(out.records) == 1
+    assert out.records[0].source == "live_poll"
+    assert out.records[0].close_price == 444.44
+    assert out.records[0].metadata["data_quality"]["source"] == "series_test"
 
 
 def test_polling_mode_capability_guard_falls_back_when_provider_has_no_live_quotes(

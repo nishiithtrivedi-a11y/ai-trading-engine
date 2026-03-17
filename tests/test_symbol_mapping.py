@@ -30,6 +30,9 @@ class TestSymbolMapper:
     def test_normalize_upstox_fo(self):
         assert self.mapper.normalize("NSE_FO|NIFTY") == "NIFTY"
 
+    def test_normalize_exchange_prefixed_symbol(self):
+        assert self.mapper.normalize("NSE:RELIANCE") == "RELIANCE"
+
     def test_normalize_whitespace(self):
         assert self.mapper.normalize("  INFY  ") == "INFY"
 
@@ -62,6 +65,23 @@ class TestSymbolMapper:
 
     def test_to_upstox_from_yahoo(self):
         assert self.mapper.to_upstox("TCS.NS") == "NSE_EQ|TCS"
+
+    # --- canonical / provider mapping ---
+
+    def test_to_canonical_from_bare(self):
+        assert self.mapper.to_canonical("RELIANCE") == "RELIANCE.NS"
+
+    def test_to_canonical_from_exchange_prefixed(self):
+        assert self.mapper.to_canonical("NSE:RELIANCE") == "RELIANCE.NS"
+
+    def test_to_provider_symbol_zerodha(self):
+        assert self.mapper.to_provider_symbol("zerodha", "RELIANCE.NS") == "RELIANCE"
+
+    def test_to_provider_symbol_upstox(self):
+        assert self.mapper.to_provider_symbol("upstox", "RELIANCE.NS") == "NSE_EQ|RELIANCE"
+
+    def test_from_provider_symbol_returns_canonical(self):
+        assert self.mapper.from_provider_symbol("upstox", "NSE_EQ|TCS") == "TCS.NS"
 
     # --- from_filename ---
 

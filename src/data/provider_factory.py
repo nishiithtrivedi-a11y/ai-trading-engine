@@ -169,21 +169,21 @@ class ProviderFactory:
         )
 
     def _build_upstox(self, entry: ProviderEntry, **kwargs) -> BaseDataSource:
-        """Build an Upstox data source with credential injection."""
+        """Build an Upstox data source with credential + safe fallback support."""
         from src.data.sources import UpstoxDataSource
 
         creds = entry.get_credentials()
         if not creds.is_configured:
-            raise ProviderError(
-                "Upstox credentials not configured. "
-                "Set UPSTOX_API_KEY, UPSTOX_API_SECRET, UPSTOX_ACCESS_TOKEN "
-                "environment variables or fill in config/data_providers.yaml."
+            logger.warning(
+                "Upstox credentials are not configured. "
+                "Provider will run in degraded CSV-fallback mode when data files are available."
             )
 
         return UpstoxDataSource(
             api_key=creds.api_key,
             api_secret=creds.api_secret,
             access_token=creds.access_token,
+            data_dir=kwargs.get("data_dir", entry.data_dir),
         )
 
     @classmethod

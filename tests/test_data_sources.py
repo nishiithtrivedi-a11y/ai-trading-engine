@@ -110,7 +110,7 @@ class TestZerodhaDataSource:
     def test_health_check_missing_credentials(self):
         source = ZerodhaDataSource("", "", "")
         result = source.health_check()
-        assert result["status"] == "error"
+        assert result["status"] == "degraded"
         assert result["provider"] == "zerodha"
         assert "credentials" in result["message"].lower() or "Missing" in result["message"]
 
@@ -119,7 +119,77 @@ class TestZerodhaDataSource:
         result = source.health_check()
         assert result["provider"] == "zerodha"
         # Will fail to connect with invalid creds
-        assert result["status"] == "error"
+        assert result["status"] in {"degraded", "error"}
+
+    def test_fetch_historical_retries_transient_errors(self):
+        class _StubMapper:
+            @staticmethod
+            def get_instrument_token(_symbol, _exchange):
+                return 123456
+
+            @staticmethod
+            def normalize_symbol_for_kite(symbol):
+                return symbol.replace(".NS", "")
+
+        class _StubKite:
+            def __init__(self):
+                self.calls = 0
+
+            def historical_data(self, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("temporary timeout")
+                return [
+                    {
+                        "date": datetime(2025, 1, 1, 9, 15),
+                        "open": 100,
+                        "high": 101,
+                        "low": 99,
+                        "close": 100.5,
+                        "volume": 1000,
+                    }
+                ]
+
+        source = ZerodhaDataSource("key", "secret", "token", request_retries=2)
+        source._kite = _StubKite()  # type: ignore[attr-defined]
+        source._instrument_mapper = _StubMapper()  # type: ignore[attr-defined]
+        frame = source.fetch_historical(
+            symbol="RELIANCE.NS",
+            timeframe=Timeframe.DAILY,
+            start=datetime(2025, 1, 1),
+            end=datetime(2025, 1, 2),
+        )
+        assert len(frame) == 1
+        assert source._kite.calls == 2  # type: ignore[attr-defined]
+        quality = frame.attrs.get("data_quality", {})
+        assert quality.get("provider") == "zerodha"
+
+    def test_fetch_live_returns_series_with_quality_metadata(self):
+        class _StubMapper:
+            @staticmethod
+            def get_instrument_token(_symbol, _exchange):
+                return 123456
+
+            @staticmethod
+            def normalize_symbol_for_kite(symbol):
+                return symbol.replace(".NS", "")
+
+        class _StubKite:
+            def quote(self, _symbols):
+                return {
+                    "NSE:RELIANCE": {
+                        "ohlc": {"open": 100.0, "high": 102.0, "low": 99.0, "close": 101.0},
+                        "volume": 1500,
+                    }
+                }
+
+        source = ZerodhaDataSource("key", "secret", "token")
+        source._kite = _StubKite()  # type: ignore[attr-defined]
+        source._instrument_mapper = _StubMapper()  # type: ignore[attr-defined]
+        series = source.fetch_live("RELIANCE.NS")
+        assert float(series["close"]) == 101.0
+        quality = series.attrs.get("data_quality", {})
+        assert quality.get("provider") == "zerodha"
 
 
 # ---------------------------------------------------------------------------
@@ -128,41 +198,40 @@ class TestZerodhaDataSource:
 
 class TestUpstoxDataSource:
 
-    def test_load_raises_not_implemented(self):
-        source = UpstoxDataSource("key", "secret", "token")
-        with pytest.raises(NotImplementedError, match="upstox-python-sdk"):
+    def test_load_raises_not_implemented(self, tmp_path):
+        source = UpstoxDataSource("key", "secret", "token", data_dir=str(tmp_path))
+        with pytest.raises(NotImplementedError, match="Upstox historical API path"):
             source.load()
 
-    def test_fetch_historical_raises_not_implemented(self):
-        source = UpstoxDataSource("key", "secret", "token")
+    def test_fetch_historical_raises_not_implemented(self, tmp_path):
+        source = UpstoxDataSource("key", "secret", "token", data_dir=str(tmp_path))
         with pytest.raises(NotImplementedError):
             source.fetch_historical(
                 "RELIANCE", Timeframe.DAILY,
                 datetime(2023, 1, 1), datetime(2023, 12, 31),
             )
 
-    def test_fetch_live_raises_not_implemented(self):
-        source = UpstoxDataSource("key", "secret", "token")
+    def test_fetch_live_raises_not_implemented(self, tmp_path):
+        source = UpstoxDataSource("key", "secret", "token", data_dir=str(tmp_path))
         with pytest.raises(NotImplementedError):
             source.fetch_live("NIFTY50")
 
-    def test_list_instruments_raises_not_implemented(self):
-        source = UpstoxDataSource("key", "secret", "token")
-        with pytest.raises(NotImplementedError):
-            source.list_instruments()
+    def test_list_instruments_returns_empty_when_no_fallback_data(self, tmp_path):
+        source = UpstoxDataSource("key", "secret", "token", data_dir=str(tmp_path))
+        assert source.list_instruments() == []
 
-    def test_health_check_missing_package(self):
-        source = UpstoxDataSource("key", "secret", "token")
+    def test_health_check_missing_package(self, tmp_path):
+        source = UpstoxDataSource("key", "secret", "token", data_dir=str(tmp_path))
         result = source.health_check()
         assert result["provider"] == "upstox"
-        assert result["status"] == "error"
+        assert result["status"] in {"not_implemented", "degraded"}
 
-    def test_health_check_missing_credentials(self):
-        source = UpstoxDataSource("", "", "")
+    def test_health_check_missing_credentials(self, tmp_path):
+        source = UpstoxDataSource("", "", "", data_dir=str(tmp_path))
         result = source.health_check()
-        assert result["status"] == "error"
+        assert result["status"] in {"not_implemented", "degraded"}
 
-    def test_health_check_reports_error_when_package_and_credentials_present(self, monkeypatch):
+    def test_health_check_reports_degraded_when_package_and_credentials_present(self, monkeypatch, tmp_path):
         real_import = builtins.__import__
 
         def fake_import(name, *args, **kwargs):
@@ -174,7 +243,40 @@ class TestUpstoxDataSource:
 
         monkeypatch.setattr(builtins, "__import__", fake_import)
 
-        source = UpstoxDataSource("key", "secret", "token")
+        source = UpstoxDataSource("key", "secret", "token", data_dir=str(tmp_path))
         result = source.health_check()
-        assert result["status"] == "error"
-        assert "not implemented" in result["message"].lower()
+        assert result["status"] == "degraded"
+        assert "configured" in result["message"].lower()
+
+    def test_upstox_csv_fallback_historical_and_live(self, tmp_path):
+        file_path = tmp_path / "RELIANCE_1D.csv"
+        pd.DataFrame(
+            {
+                "timestamp": pd.date_range("2025-01-01", periods=10, freq="D"),
+                "open": [100 + i for i in range(10)],
+                "high": [101 + i for i in range(10)],
+                "low": [99 + i for i in range(10)],
+                "close": [100.5 + i for i in range(10)],
+                "volume": [1000 + i * 10 for i in range(10)],
+            }
+        ).to_csv(file_path, index=False)
+
+        source = UpstoxDataSource(
+            api_key="",
+            api_secret="",
+            access_token="",
+            data_dir=str(tmp_path),
+        )
+        frame = source.fetch_historical(
+            symbol="RELIANCE.NS",
+            timeframe=Timeframe.DAILY,
+            start=datetime(2025, 1, 1),
+            end=datetime(2025, 1, 31),
+        )
+        assert len(frame) == 10
+        quality = frame.attrs.get("data_quality", {})
+        assert quality.get("fallback_provider") == "csv"
+
+        live_payload = source.fetch_live("RELIANCE.NS")
+        assert float(live_payload["close"]) > 0
+        assert live_payload["data_quality"]["fallback_provider"] == "csv"

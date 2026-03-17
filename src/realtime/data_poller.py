@@ -89,14 +89,29 @@ class DataPoller:
                     message="no data returned",
                 )
             last = frame.iloc[-1]
+            timestamp = pd.Timestamp(frame.index[-1])
+            freshness_seconds = self._freshness_seconds(timestamp)
+            stale_data = freshness_seconds > self._stale_threshold_seconds(timeframe)
+            quality = {
+                "schema_version": "v1",
+                "provider": self.provider_name,
+                "source": "historical_snapshot",
+                "freshness_seconds": freshness_seconds,
+                "stale_data": stale_data,
+                "partial_data": len(frame) < 2,
+                "missing_bars_count": 0,
+                "fallback_provider": None,
+                "auth_degraded": False,
+            }
             return PolledSymbolData(
                 symbol=symbol,
                 timeframe=timeframe,
-                timestamp=frame.index[-1],
+                timestamp=timestamp,
                 close_price=float(last["close"]),
                 bars=len(frame),
                 source="historical_snapshot",
                 success=True,
+                metadata={"data_quality": quality},
             )
         except Exception as exc:  # noqa: BLE001
             return PolledSymbolData(
@@ -241,17 +256,85 @@ class DataPoller:
                 bars=len(payload),
                 source="live_poll",
                 success=True,
+                metadata={
+                    "data_quality": {
+                        "schema_version": "v1",
+                        "provider": "unknown",
+                        "source": "live_dataframe",
+                        "freshness_seconds": (
+                            DataPoller._freshness_seconds(pd.Timestamp(ts))
+                            if ts is not None
+                            else None
+                        ),
+                        "stale_data": False,
+                        "partial_data": len(payload) < 2,
+                        "missing_bars_count": 0,
+                        "fallback_provider": None,
+                        "auth_degraded": False,
+                    }
+                },
             )
 
-        if isinstance(payload, dict):
+        if isinstance(payload, pd.Series):
+            timestamp = payload.get("timestamp")
+            ts_value = pd.Timestamp(timestamp) if timestamp is not None else None
+            freshness = DataPoller._freshness_seconds(ts_value) if ts_value is not None else None
+            quality = payload.attrs.get("data_quality", {}) if hasattr(payload, "attrs") else {}
             return PolledSymbolData(
                 symbol=symbol,
                 timeframe=timeframe,
-                timestamp=(
-                    pd.Timestamp(payload["timestamp"])
-                    if payload.get("timestamp") is not None
-                    else None
-                ),
+                timestamp=ts_value,
+                close_price=(float(payload.get("close")) if payload.get("close") is not None else None),
+                bars=1,
+                source="live_poll",
+                success=payload.get("close") is not None,
+                message="" if payload.get("close") is not None else "missing close in payload",
+                metadata={
+                    "data_quality": (
+                        quality
+                        if quality
+                        else {
+                            "schema_version": "v1",
+                            "provider": "unknown",
+                            "source": "live_series",
+                            "freshness_seconds": freshness,
+                            "stale_data": False,
+                            "partial_data": False,
+                            "missing_bars_count": 0,
+                            "fallback_provider": None,
+                            "auth_degraded": False,
+                        }
+                    )
+                },
+            )
+
+        if isinstance(payload, dict):
+            ts_value = (
+                pd.Timestamp(payload["timestamp"])
+                if payload.get("timestamp") is not None
+                else None
+            )
+            quality = dict(payload.get("data_quality", {})) if isinstance(payload.get("data_quality"), dict) else {}
+            if not quality:
+                quality = {
+                    "schema_version": "v1",
+                    "provider": "unknown",
+                    "source": "live_dict",
+                    "freshness_seconds": (
+                        DataPoller._freshness_seconds(ts_value)
+                        if ts_value is not None
+                        else None
+                    ),
+                    "stale_data": False,
+                    "partial_data": False,
+                    "missing_bars_count": 0,
+                    "fallback_provider": None,
+                    "auth_degraded": False,
+                }
+            return PolledSymbolData(
+                symbol=symbol,
+                timeframe=timeframe,
+                timestamp=ts_value,
                 close_price=(
                     float(payload["close"]) if payload.get("close") is not None else None
                 ),
@@ -259,7 +342,10 @@ class DataPoller:
                 source="live_poll",
                 success=payload.get("close") is not None,
                 message="" if payload.get("close") is not None else "missing close in payload",
-                metadata={k: v for k, v in payload.items() if k not in {"timestamp", "close", "bars"}},
+                metadata={
+                    **{k: v for k, v in payload.items() if k not in {"timestamp", "close", "bars", "data_quality"}},
+                    "data_quality": quality,
+                },
             )
 
         return PolledSymbolData(
@@ -272,3 +358,26 @@ class DataPoller:
             success=False,
             message=f"unsupported live payload type: {type(payload).__name__}",
         )
+
+    @staticmethod
+    def _freshness_seconds(timestamp: pd.Timestamp | None) -> float:
+        if timestamp is None:
+            return 0.0
+        ts = pd.Timestamp(timestamp)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        else:
+            ts = ts.tz_convert("UTC")
+        now = pd.Timestamp.now(tz="UTC")
+        return max(0.0, float((now - ts).total_seconds()))
+
+    @staticmethod
+    def _stale_threshold_seconds(timeframe: str) -> float:
+        mapping = {
+            "1m": 3 * 60.0,
+            "5m": 20 * 60.0,
+            "15m": 45 * 60.0,
+            "1h": 3 * 3600.0,
+            "1D": 3 * 24 * 3600.0,
+        }
+        return mapping.get(str(timeframe).strip(), 24 * 3600.0)
