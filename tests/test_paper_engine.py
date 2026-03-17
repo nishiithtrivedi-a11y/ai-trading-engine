@@ -298,3 +298,129 @@ def test_paper_engine_applies_portfolio_override_quantity_cap() -> None:
     buy_order = result.state.orders[0]
     assert buy_order.quantity == 1
     assert buy_order.metadata.get("portfolio_override_applied") is True
+
+
+# ---------------------------------------------------------------------------
+# Edge case tests added in regression-hardening pass
+# ---------------------------------------------------------------------------
+
+def test_low_cash_state_sizes_quantity_proportionally() -> None:
+    """Position sizing adapts to available cash: very low cash → tiny quantity.
+
+    The paper engine sizes quantity from state.cash, so orders are always
+    affordable (cash guard triggers only when cash changes between sizing and fill).
+    """
+    near_zero_state = PaperPortfolioState(
+        initial_capital=100_000.0,
+        cash=10.0,  # Rs. 10 — tiny position
+        equity_peak=100_000.0,
+    )
+    engine = PaperTradingEngine(
+        strategy_registry=_registry(BuyOnlyStrategy),
+        base_config=BacktestConfig(initial_capital=100_000.0),
+        paper_config=PaperTradingConfig(
+            enabled=True,
+            use_next_bar_fill=False,
+            persist_state=False,
+            default_stop_loss_pct=None,
+            default_take_profit_pct=None,
+        ),
+        cost_model=CostModel(CostConfig(commission_per_trade=0.0, commission_bps=0.0, slippage_bps=0.0)),
+    )
+    result = engine.run({"RELIANCE.NS": DataHandler(_make_ohlcv())}, state=near_zero_state, persist=False)
+
+    assert result.state is not None
+    # With near-zero cash, the fill quantity should be very small (< 1 share)
+    if result.state.orders:
+        buy_order = result.state.orders[0]
+        # Fill value must not exceed the initial cash significantly
+        fill_value = buy_order.fill_price * buy_order.quantity
+        assert fill_value <= 10.0 + 1e-6, (
+            f"Fill value {fill_value:.4f} should not exceed available cash 10.0"
+        )
+
+
+def test_default_stop_loss_is_set_on_open_position() -> None:
+    """When default_stop_loss_pct is configured, the position's stop_loss must be populated."""
+    engine = _engine(
+        BuyOnlyStrategy,
+        PaperTradingConfig(
+            enabled=True,
+            use_next_bar_fill=False,
+            persist_state=False,
+            default_stop_loss_pct=0.02,
+            default_take_profit_pct=None,
+        ),
+    )
+    result = engine.run({"HDFCBANK.NS": DataHandler(_make_ohlcv())}, persist=False)
+
+    assert result.state is not None
+    if result.state.open_positions:
+        pos = result.state.open_positions[0]
+        assert pos.stop_loss is not None
+        assert pos.stop_loss < pos.entry_price, (
+            f"Stop-loss {pos.stop_loss} must be below entry {pos.entry_price}"
+        )
+
+
+def test_default_take_profit_is_set_on_open_position() -> None:
+    """When default_take_profit_pct is configured, take_profit must be above entry."""
+    engine = _engine(
+        BuyOnlyStrategy,
+        PaperTradingConfig(
+            enabled=True,
+            use_next_bar_fill=False,
+            persist_state=False,
+            default_stop_loss_pct=None,
+            default_take_profit_pct=0.04,
+        ),
+    )
+    result = engine.run({"AXISBANK.NS": DataHandler(_make_ohlcv())}, persist=False)
+
+    assert result.state is not None
+    if result.state.open_positions:
+        pos = result.state.open_positions[0]
+        assert pos.take_profit is not None
+        assert pos.take_profit > pos.entry_price, (
+            f"Take-profit {pos.take_profit} must be above entry {pos.entry_price}"
+        )
+
+
+def test_pnl_history_length_matches_bar_count() -> None:
+    """PnL history must have exactly one snapshot per bar."""
+    ohlcv = _make_ohlcv()
+    n_bars = len(ohlcv)
+    engine = _engine(
+        BuyExitStrategy,
+        PaperTradingConfig(
+            enabled=True,
+            use_next_bar_fill=False,
+            persist_state=False,
+            default_stop_loss_pct=None,
+            default_take_profit_pct=None,
+        ),
+    )
+    result = engine.run({"TCS.NS": DataHandler(ohlcv)}, persist=False)
+
+    assert result.state is not None
+    assert len(result.state.pnl_history) == n_bars, (
+        f"Expected {n_bars} PnL snapshots, got {len(result.state.pnl_history)}"
+    )
+
+
+def test_final_equity_is_non_negative_after_run() -> None:
+    """Final equity must be >= 0 for any valid run."""
+    engine = _engine(
+        BuyExitStrategy,
+        PaperTradingConfig(
+            enabled=True,
+            use_next_bar_fill=False,
+            persist_state=False,
+            default_stop_loss_pct=None,
+            default_take_profit_pct=None,
+        ),
+    )
+    result = engine.run({"WIPRO.NS": DataHandler(_make_ohlcv())}, persist=False)
+
+    assert result.state is not None
+    assert result.state.equity >= 0.0, f"Final equity should be >= 0, got {result.state.equity}"

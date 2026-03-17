@@ -9,6 +9,9 @@ from typing import Optional
 
 from src.decision.models import DecisionHorizon, TradePlan
 from src.scanners.models import Opportunity, OpportunityClass
+from src.utils.logger import setup_logger
+
+logger = setup_logger("trade_plan_builder")
 
 
 class TradePlanBuilderError(Exception):
@@ -37,11 +40,23 @@ class TradePlanBuilder:
         risk = entry - stop
         reward = target - entry
         if risk <= 0:
+            logger.warning(
+                "Rejecting %s: stop_loss %.2f >= entry_price %.2f",
+                opportunity.symbol, stop, entry,
+            )
             raise TradePlanBuilderError("Invalid long setup: stop must be below entry")
         if reward <= 0:
+            logger.warning(
+                "Rejecting %s: target_price %.2f <= entry_price %.2f",
+                opportunity.symbol, target, entry,
+            )
             raise TradePlanBuilderError("Invalid long setup: target must be above entry")
 
         rr = reward / risk
+        logger.debug(
+            "Building trade plan: %s entry=%.2f stop=%.2f target=%.2f rr=%.2f",
+            opportunity.symbol, entry, stop, target, rr,
+        )
         horizon = _horizon_from_classification(opportunity.classification)
         hold_policy = self._default_hold_policy(horizon)
 

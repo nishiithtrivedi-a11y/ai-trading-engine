@@ -11,6 +11,9 @@ from src.decision.config import DecisionConfig
 from src.decision.models import ConvictionBreakdown, RegimeFilterResult, TradePlan
 from src.monitoring.models import RelativeStrengthSnapshot
 from src.scanners.models import Opportunity
+from src.utils.logger import setup_logger
+
+logger = setup_logger("conviction_engine")
 
 
 class ConvictionEngineError(Exception):
@@ -36,10 +39,20 @@ class ConvictionEngine:
         if trade_plan.risk_reward <= 0:
             raise ConvictionEngineError("trade_plan.risk_reward must be > 0")
 
+        logger.debug(
+            "Scoring conviction for %s rr=%.2f",
+            opportunity.symbol,
+            trade_plan.risk_reward,
+        )
+
         scanner_score = _clamp(float(opportunity.score))
 
         rr_score = _clamp((float(trade_plan.risk_reward) / self.rr_cap) * 100.0)
 
+        # setup_quality: prefer the scanner's own RR quality score (score_rr is a
+        # [0, 1] fraction representing the scanner's setup assessment).  When the
+        # scanner does not populate score_rr, fall back to rr_score so this
+        # component always has a valid value.
         setup_quality = rr_score
         if opportunity.score_rr is not None:
             setup_quality = _clamp(float(opportunity.score_rr) * 100.0)
@@ -92,6 +105,7 @@ class ConvictionEngine:
             raise ConvictionEngineError("conviction weights produced zero effective total")
 
         final_score = _clamp(weighted / total)
+        logger.debug("Conviction final_score=%.1f for %s", final_score, opportunity.symbol)
 
         notes = []
         notes.extend(regime_notes)
