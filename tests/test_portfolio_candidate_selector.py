@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src.decision.config import DecisionConfig, DecisionThresholdsConfig, SelectionPolicyConfig
 from src.decision.models import ConvictionBreakdown, DecisionHorizon, RankedPick, TradePlan
 from src.decision.portfolio_candidate_selector import PortfolioCandidateSelector
@@ -111,3 +113,25 @@ def test_selector_enforces_unique_setup_tuple() -> None:
     assert len(selected) == 1
     assert len(rejected) == 1
     assert rejected[0].rejection_reasons[0].value == "duplicate_setup"
+
+
+def test_selector_logs_rejections_and_summary(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="decision_selector")
+    cfg = DecisionConfig(
+        thresholds=DecisionThresholdsConfig(
+            max_picks_by_horizon={
+                DecisionHorizon.INTRADAY: 1,
+                DecisionHorizon.SWING: 5,
+                DecisionHorizon.POSITIONAL: 5,
+            }
+        )
+    )
+    candidates = [
+        _pick("A.NS", DecisionHorizon.INTRADAY, 90, 2.0),
+        _pick("B.NS", DecisionHorizon.INTRADAY, 80, 2.0),
+    ]
+    selected, rejected = PortfolioCandidateSelector().select(candidates, cfg)
+    assert len(selected) == 1
+    assert len(rejected) == 1
+    assert "Rejected B.NS" in caplog.text
+    assert "Selection complete" in caplog.text

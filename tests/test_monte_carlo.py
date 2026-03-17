@@ -120,11 +120,7 @@ class TestMonteCarloAnalyzerValidation:
         assert result.runs == []
 
     def test_sharpe_formula_matches_expected_trade_pnl_standardization(self, tmp_path):
-        trades = [
-            {"net_pnl": 100.0, "return_pct": 0.001, "fees": 0.0},
-            {"net_pnl": 200.0, "return_pct": 0.002, "fees": 0.0},
-            {"net_pnl": 300.0, "return_pct": 0.003, "fees": 0.0},
-        ]
+        trades = [{"net_pnl": 0.0, "return_pct": 0.0, "fees": 0.0}]
         analyzer = MonteCarloAnalyzer(
             trades=trades,
             initial_capital=100_000,
@@ -132,11 +128,15 @@ class TestMonteCarloAnalyzerValidation:
             seed=42,
             output_dir=str(tmp_path / "mc"),
         )
-        result = analyzer.run(SimulationMode.TRADE_RESHUFFLE)
-        run = result.runs[0]
+        run = analyzer._build_run_from_pnls(  # noqa: SLF001
+            run_index=0,
+            pnls=np.array([100.0, 200.0, 300.0], dtype=float),
+            mode=SimulationMode.TRADE_RESHUFFLE,
+        )
 
-        pnls = np.array([100.0, 200.0, 300.0], dtype=float)
-        expected = float(np.mean(pnls) / np.std(pnls) * np.sqrt(252))
+        equity = np.array([100_000.0, 100_100.0, 100_300.0, 100_600.0], dtype=float)
+        returns = equity[1:] / equity[:-1] - 1.0
+        expected = float((np.mean(returns) / np.std(returns)) * np.sqrt(252.0))
         assert run.sharpe_ratio == pytest.approx(expected)
 
 

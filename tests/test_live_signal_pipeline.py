@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -88,9 +89,19 @@ def test_live_pipeline_generates_signals_and_artifacts(tmp_path: Path) -> None:
     assert "session_state" in report.exports
     assert "session_summary" in report.exports
     assert "paper_handoff" in report.exports
+    assert "artifacts_meta" in report.exports
 
     for path in report.exports.values():
         assert Path(path).exists()
+
+    state_payload = json.loads(Path(report.exports["session_state"]).read_text(encoding="utf-8"))
+    assert state_payload["schema_version"] == "v1"
+    assert state_payload["source"] == "live.session_signal_report"
+
+    meta_payload = json.loads(Path(report.exports["artifacts_meta"]).read_text(encoding="utf-8"))
+    assert meta_payload["schema_version"] == "v1"
+    assert meta_payload["source"] == "live.market_session_store"
+    assert "signals" in meta_payload["artifacts"]
 
     summary_path = Path(report.exports["session_summary"])
     summary_text = summary_path.read_text(encoding="utf-8")

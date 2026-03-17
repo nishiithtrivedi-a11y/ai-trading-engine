@@ -11,6 +11,9 @@ from src.decision.config import DecisionConfig, RegimePolicyConfig
 from src.decision.models import DecisionHorizon, RegimeFilterResult, RejectionReason
 from src.monitoring.models import RegimeAssessment, RegimeState
 from src.scanners.models import Opportunity, OpportunityClass
+from src.utils.logger import setup_logger
+
+logger = setup_logger("decision_regime_filter")
 
 
 class RegimeFilterError(Exception):
@@ -37,6 +40,11 @@ class RegimeFilter:
         horizon = _horizon_from_classification(opportunity.classification)
 
         if regime_assessment is None:
+            logger.info(
+                "Regime context unavailable for %s/%s; applying neutral decision.",
+                opportunity.symbol,
+                opportunity.strategy_name,
+            )
             return RegimeFilterResult(
                 allowed=True,
                 penalty=0.0,
@@ -57,6 +65,13 @@ class RegimeFilter:
             )
             if policy.hard_block_on_mismatch:
                 rejection_reasons.append(RejectionReason.REGIME_BLOCKED)
+                logger.info(
+                    "Regime blocked %s/%s (%s): %s",
+                    opportunity.symbol,
+                    opportunity.strategy_name,
+                    horizon.value,
+                    reasons,
+                )
                 return RegimeFilterResult(
                     allowed=False,
                     penalty=min(100.0, penalty),
@@ -73,6 +88,15 @@ class RegimeFilter:
         if regime == RegimeState.BEARISH:
             penalty += float(policy.bearish_extra_penalty)
             reasons.append("bearish_regime_penalty_applied")
+
+        logger.debug(
+            "Regime filter decision for %s/%s: allowed=%s penalty=%.2f reasons=%s",
+            opportunity.symbol,
+            opportunity.strategy_name,
+            True,
+            min(100.0, penalty),
+            reasons or ["regime_aligned"],
+        )
 
         return RegimeFilterResult(
             allowed=True,

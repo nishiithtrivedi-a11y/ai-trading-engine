@@ -20,6 +20,12 @@ from typing import Any, Optional
 import pandas as pd
 
 from src.brokers.base import BaseBroker, BrokerError, OrderResponse, OrderStatus
+from src.execution.safety_gate import (
+    ExecutionMode,
+    ExecutionSafetyError,
+    SafetyGateConfig,
+    assert_live_execution_allowed,
+)
 from src.utils.logger import setup_logger
 
 logger = setup_logger("zerodha_broker")
@@ -56,12 +62,19 @@ class ZerodhaBroker(BaseBroker):
         default_exchange: str = "NSE",
         default_product: str = "CNC",
         default_variety: str = "REGULAR",
+        execution_mode: str | ExecutionMode = ExecutionMode.LIVE_SAFE,
+        enable_live_execution: bool = False,
     ) -> None:
         super().__init__(api_key, api_secret)
         self._kite = None  # KiteConnect instance
         self.default_exchange = str(default_exchange).strip().upper()
         self.default_product = str(default_product).strip().upper()
         self.default_variety = str(default_variety).strip().upper()
+        self._safety_config = SafetyGateConfig(
+            execution_mode=execution_mode,
+            live_execution_enabled=bool(enable_live_execution),
+            source="zerodha_broker",
+        )
 
     # ------------------------------------------------------------------
     # Authentication
@@ -115,6 +128,12 @@ class ZerodhaBroker(BaseBroker):
             raise BrokerError(
                 "Not authenticated. Call broker.authenticate(access_token) first."
             )
+
+    def _assert_live_execution_allowed(self, action: str) -> None:
+        try:
+            assert_live_execution_allowed(self._safety_config, action=action)
+        except ExecutionSafetyError as exc:
+            raise BrokerError(str(exc)) from exc
 
     # ------------------------------------------------------------------
     # Order management
@@ -180,6 +199,7 @@ class ZerodhaBroker(BaseBroker):
             BrokerError: If order placement fails.
         """
         self._require_auth()
+        self._assert_live_execution_allowed("place_order")
 
         kite_order_type = _ORDER_TYPE_MAP.get(
             order_type.lower(), "MARKET"
@@ -238,6 +258,7 @@ class ZerodhaBroker(BaseBroker):
             BrokerError: If cancellation fails.
         """
         self._require_auth()
+        self._assert_live_execution_allowed("cancel_order")
         try:
             self._kite.cancel_order(
                 variety=self._kite_constant("VARIETY", self.default_variety),

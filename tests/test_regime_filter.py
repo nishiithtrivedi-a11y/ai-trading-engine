@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from src.decision.config import DecisionConfig, RegimePolicyConfig
 from src.decision.models import DecisionHorizon, RejectionReason
@@ -74,3 +75,20 @@ def test_regime_filter_with_missing_regime_context_is_neutral() -> None:
     result = RegimeFilter().evaluate(_opportunity(), None, DecisionConfig())
     assert result.allowed is True
     assert result.penalty == 0.0
+
+
+def test_regime_filter_logs_when_hard_blocked(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="decision_regime_filter")
+    policy = RegimePolicyConfig(
+        allowed_regimes_by_horizon={
+            DecisionHorizon.INTRADAY: {RegimeState.BULLISH},
+            DecisionHorizon.SWING: {RegimeState.BULLISH},
+            DecisionHorizon.POSITIONAL: {RegimeState.BULLISH},
+        },
+        hard_block_on_mismatch=True,
+    )
+    regime = RegimeAssessment(regime=RegimeState.BEARISH)
+    result = RegimeFilter().evaluate(_opportunity(), regime, policy)
+
+    assert result.allowed is False
+    assert "Regime blocked" in caplog.text

@@ -16,6 +16,7 @@ from typing import Any, Iterator, Optional
 import pandas as pd
 
 from src.paper_trading.models import (
+    PAPER_TRADING_SCHEMA_VERSION,
     PaperFill,
     PaperJournalEntry,
     PaperOrder,
@@ -119,6 +120,11 @@ class PaperStateStore:
         exports["paper_session_summary"] = self.write_summary(
             result,
             root / "paper_session_summary.md",
+        )
+        exports["paper_artifacts_meta"] = self._write_artifacts_meta(
+            result,
+            exports,
+            root / "paper_artifacts_meta.json",
         )
         return exports
 
@@ -249,6 +255,32 @@ class PaperStateStore:
     def _write_dataframe(df: pd.DataFrame, path: Path) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(path, index=False)
+        return path
+
+    @staticmethod
+    def _write_artifacts_meta(
+        result: PaperTradingResult,
+        exports: dict[str, Path],
+        path: Path,
+    ) -> Path:
+        payload = {
+            "schema_version": PAPER_TRADING_SCHEMA_VERSION,
+            "generated_at": (
+                result.completed_at.isoformat()
+                if result.completed_at is not None
+                else pd.Timestamp.now(tz="UTC").isoformat()
+            ),
+            "source": "paper.paper_state_store",
+            "session_enabled": result.enabled,
+            "artifacts": {
+                name: {
+                    "path": str(file_path),
+                    "format": file_path.suffix.lstrip("."),
+                }
+                for name, file_path in exports.items()
+            },
+        }
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
         return path
 
     @staticmethod

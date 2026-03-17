@@ -11,6 +11,8 @@ from typing import Any, Optional
 
 import pandas as pd
 
+PAPER_TRADING_SCHEMA_VERSION = "v1"
+
 
 def _now_utc() -> pd.Timestamp:
     return pd.Timestamp.now(tz="UTC")
@@ -472,6 +474,8 @@ class PaperPortfolioState:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": PAPER_TRADING_SCHEMA_VERSION,
+            "source": "paper.paper_portfolio_state",
             "initial_capital": self.initial_capital,
             "cash": self.cash,
             "created_at": _ts_to_str(self.created_at),
@@ -510,6 +514,8 @@ class PaperTradingResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": PAPER_TRADING_SCHEMA_VERSION,
+            "source": "paper.paper_trading_result",
             "started_at": _ts_to_str(self.started_at),
             "completed_at": _ts_to_str(self.completed_at),
             "enabled": self.enabled,

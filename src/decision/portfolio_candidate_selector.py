@@ -8,6 +8,9 @@ from dataclasses import dataclass
 
 from src.decision.config import DecisionConfig
 from src.decision.models import RankedPick, RejectedOpportunity, RejectionReason
+from src.utils.logger import setup_logger
+
+logger = setup_logger("decision_selector")
 
 
 class PortfolioCandidateSelectorError(Exception):
@@ -36,6 +39,13 @@ class PortfolioCandidateSelector:
             current_horizon_count = horizon_counts.get(horizon_key, 0)
 
             if current_horizon_count >= horizon_cap:
+                logger.info(
+                    "Rejected %s/%s/%s due to horizon cap (%s)",
+                    pick.symbol,
+                    pick.trade_plan.timeframe,
+                    pick.trade_plan.strategy_name,
+                    horizon_cap,
+                )
                 rejected.append(
                     self._to_rejected(
                         pick,
@@ -49,6 +59,14 @@ class PortfolioCandidateSelector:
             if sector:
                 sector_count = sector_counts.get(sector, 0)
                 if sector_count >= config.thresholds.max_picks_per_sector:
+                    logger.info(
+                        "Rejected %s/%s/%s due to sector cap for %s (%s)",
+                        pick.symbol,
+                        pick.trade_plan.timeframe,
+                        pick.trade_plan.strategy_name,
+                        sector,
+                        config.thresholds.max_picks_per_sector,
+                    )
                     rejected.append(
                         self._to_rejected(
                             pick,
@@ -63,6 +81,12 @@ class PortfolioCandidateSelector:
 
             symbol = pick.symbol
             if config.selection_policy.enforce_unique_symbol and symbol_counts.get(symbol, 0) > 0:
+                logger.info(
+                    "Rejected %s/%s/%s due to duplicate symbol",
+                    pick.symbol,
+                    pick.trade_plan.timeframe,
+                    pick.trade_plan.strategy_name,
+                )
                 rejected.append(
                     self._to_rejected(
                         pick,
@@ -81,6 +105,12 @@ class PortfolioCandidateSelector:
                 config.selection_policy.enforce_unique_symbol_timeframe_strategy
                 and setup_key in setup_keys
             ):
+                logger.info(
+                    "Rejected %s/%s/%s due to duplicate setup key",
+                    pick.symbol,
+                    pick.trade_plan.timeframe,
+                    pick.trade_plan.strategy_name,
+                )
                 rejected.append(
                     self._to_rejected(
                         pick,
@@ -94,6 +124,14 @@ class PortfolioCandidateSelector:
             if cluster:
                 cluster_count = cluster_counts.get(cluster, 0)
                 if cluster_count >= config.thresholds.max_correlated_picks:
+                    logger.info(
+                        "Rejected %s/%s/%s due to cluster cap for %s (%s)",
+                        pick.symbol,
+                        pick.trade_plan.timeframe,
+                        pick.trade_plan.strategy_name,
+                        cluster,
+                        config.thresholds.max_correlated_picks,
+                    )
                     rejected.append(
                         self._to_rejected(
                             pick,
@@ -115,6 +153,11 @@ class PortfolioCandidateSelector:
             if cluster:
                 cluster_counts[cluster] = cluster_counts.get(cluster, 0) + 1
 
+        logger.info(
+            "Selection complete: selected=%s rejected=%s",
+            len(selected),
+            len(rejected),
+        )
         return selected, rejected
 
     @staticmethod

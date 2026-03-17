@@ -13,6 +13,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.execution.safety_gate import (
+    ExecutionMode,
+    ExecutionSafetyError,
+    SafetyGateConfig,
+    assert_live_execution_allowed,
+)
+
 
 @dataclass
 class ExecutionIntent:
@@ -43,11 +50,28 @@ class ExecutionAdapter(ABC):
 class PlaceholderExecutionAdapter(ExecutionAdapter):
     """Non-operational adapter that blocks execution by design."""
 
+    def __init__(self, safety_config: SafetyGateConfig | None = None) -> None:
+        # Safe default: explicit non-live mode.
+        self.safety_config = safety_config or SafetyGateConfig(
+            execution_mode=ExecutionMode.LIVE_SAFE,
+            live_execution_enabled=False,
+            source="placeholder_execution_adapter",
+        )
+
+    def _block(self, action: str) -> None:
+        try:
+            assert_live_execution_allowed(self.safety_config, action=action)
+        except ExecutionSafetyError as exc:
+            raise NotImplementedError(str(exc)) from exc
+        raise NotImplementedError(
+            "Execution adapter is a placeholder and has no live broker integration."
+        )
+
     def submit_order(self, intent: ExecutionIntent) -> str:
-        raise NotImplementedError("Live execution is disabled in Phase 9. Use paper trading only.")
+        self._block("submit_order")
 
     def modify_order(self, order_id: str, **changes: Any) -> None:
-        raise NotImplementedError("Live execution is disabled in Phase 9. Use paper trading only.")
+        self._block("modify_order")
 
     def cancel_order(self, order_id: str) -> None:
-        raise NotImplementedError("Live execution is disabled in Phase 9. Use paper trading only.")
+        self._block("cancel_order")
