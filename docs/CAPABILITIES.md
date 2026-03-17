@@ -24,6 +24,15 @@
 | Workflow orchestration smoke paths | supported | `src/runtime/workflow_orchestrator.py`, `scripts/run_release_smoke.py` | release smoke summary + validated bundles | stable |
 | Scanner/monitoring/decision contract bundles | supported | `src/runtime/artifact_contracts.py` + `src/runtime/daily_dry_run.py` | stage-level manifests + contract validation | stable |
 | Daily dry-run orchestration | supported | `scripts/run_daily_dry_run.py` | scanner/monitoring/decision chain summary | stable |
+| Modular analysis plugin framework | supported | `src/analysis/` | per-module feature dicts merged into FeatureOutput | stable |
+| Analysis profiles (YAML-driven) | supported | `src/config/analysis_profiles.yaml`, `src/config/analysis_profiles.py` | enable/disable module sets by named profile | stable |
+| Instrument master | supported | `src/instruments/` | Instrument model, canonical symbols, expiry calendar | stable |
+| Symbol normalisation (canonical) | supported | `src/instruments/normalization.py` | `EXCHANGE:SYMBOL[-EXPIRY-SUFFIX]` round-trip | stable |
+| Multi-segment provider capabilities | supported | `src/data/provider_capabilities.py` | supported_segments, supports_derivatives flags | stable |
+| Technical analysis module | supported | `src/analysis/technical/module.py` | RSI/SMA/EMA/ATR/Donchian features | stable |
+| Quant analysis module | supported | `src/analysis/quant/module.py` | volatility/momentum/z-score/Sharpe features | stable |
+| Fundamental / macro / sentiment / intermarket modules | stub (disabled) | `src/analysis/{fundamental,macro,sentiment,intermarket}/` | placeholder — returns `{}` | future scope |
+| Derivatives modules (futures, options, commodities, forex, crypto) | stub (disabled) | `src/analysis/derivatives/*/` | placeholder — returns `{}` | future scope |
 
 ## Phase 18 Notes
 
