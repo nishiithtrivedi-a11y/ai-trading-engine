@@ -143,6 +143,11 @@ def test_run_decision_standalone_writes_artifacts(tmp_path: Path, monkeypatch) -
     assert (out_dir / "decision_rejected.json").exists()
     assert (out_dir / "decision_summary.md").exists()
     assert (out_dir / "decision_artifacts_meta.json").exists()
+    assert (out_dir / "portfolio_plan.json").exists()
+    assert (out_dir / "portfolio_plan.csv").exists()
+    assert (out_dir / "portfolio_risk_summary.json").exists()
+    assert (out_dir / "allocation_summary.md").exists()
+    assert (out_dir / "portfolio_artifacts_meta.json").exists()
     assert (out_dir / "run_manifest.json").exists()
     assert (out_dir / "paper_handoff_candidates.csv").exists()
 
@@ -223,10 +228,12 @@ def test_scanner_to_monitoring_to_decision_chain(tmp_path: Path, monkeypatch) ->
     )
     assert run_decision.main() == 0
     assert (decision_out / "decision_selected.json").exists()
+    assert (decision_out / "portfolio_plan.json").exists()
     assert (decision_out / "run_manifest.json").exists()
 
     decision_manifest = json.loads((decision_out / "run_manifest.json").read_text(encoding="utf-8"))
     assert decision_manifest["contract_id"] == "decision_runner_v1"
+    assert "portfolio_plan_json" in decision_manifest["expected_artifacts"]
 
 
 def test_monitoring_chain_fails_clearly_when_scanner_artifacts_missing(tmp_path: Path) -> None:

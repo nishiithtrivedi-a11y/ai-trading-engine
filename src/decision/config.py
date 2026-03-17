@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.decision.models import DecisionHorizon
+from src.decision.portfolio_config import PortfolioPlanningConfig
 from src.monitoring.models import RegimeState
 
 
@@ -224,6 +225,7 @@ class DecisionConfig:
     regime_policy: RegimePolicyConfig = field(default_factory=RegimePolicyConfig)
     conviction_weights: ConvictionWeightsConfig = field(default_factory=ConvictionWeightsConfig)
     selection_policy: SelectionPolicyConfig = field(default_factory=SelectionPolicyConfig)
+    portfolio: PortfolioPlanningConfig = field(default_factory=PortfolioPlanningConfig)
     export: DecisionExportConfig = field(default_factory=DecisionExportConfig)
     include_rejections: bool = True
     continue_on_error: bool = True

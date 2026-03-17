@@ -21,7 +21,16 @@ sys.path.insert(0, str(ROOT))
 import pandas as pd  # noqa: E402
 
 from src.data.nse_universe import NSEUniverseLoader  # noqa: E402
-from src.decision import DecisionConfig, DecisionExporter, PickEngine  # noqa: E402
+from src.decision import (  # noqa: E402
+    DecisionConfig,
+    DecisionExporter,
+    DrawdownContext,
+    PickEngine,
+    PortfolioPlanningConfig,
+    PortfolioRiskEngine,
+    normalize_allocation_model,
+    normalize_sizing_method,
+)
 from src.monitoring import (  # noqa: E402
     MarketMonitor,
     MonitoringConfig,
@@ -97,6 +106,114 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-symbols", type=int, default=0, help="Optional max symbols.")
     parser.add_argument("--data-dir", default="data", help="CSV data directory.")
     parser.add_argument("--paper-handoff", action="store_true", help="Write paper_handoff_candidates.csv.")
+    parser.add_argument(
+        "--portfolio-capital",
+        type=float,
+        default=100_000.0,
+        help="Total capital used for portfolio allocation and sizing recommendations.",
+    )
+    parser.add_argument(
+        "--allocation-model",
+        default="conviction_weighted",
+        choices=["equal_weight", "volatility_weighted", "conviction_weighted"],
+        help="Portfolio allocation model.",
+    )
+    parser.add_argument(
+        "--sizing-method",
+        default="risk_per_trade",
+        choices=["fixed_fractional", "risk_per_trade", "atr_based"],
+        help="Position sizing method.",
+    )
+    parser.add_argument(
+        "--reserve-cash-pct",
+        type=float,
+        default=0.10,
+        help="Fraction of capital to keep as reserve cash.",
+    )
+    parser.add_argument(
+        "--max-capital-deployed-pct",
+        type=float,
+        default=0.90,
+        help="Maximum fraction of capital to deploy.",
+    )
+    parser.add_argument(
+        "--max-portfolio-positions",
+        type=int,
+        default=8,
+        help="Maximum positions in the portfolio plan.",
+    )
+    parser.add_argument(
+        "--max-per-position-allocation-pct",
+        type=float,
+        default=0.25,
+        help="Maximum per-position allocation as a fraction of total capital.",
+    )
+    parser.add_argument(
+        "--risk-per-trade-pct",
+        type=float,
+        default=0.01,
+        help="Risk budget per trade as a fraction of total capital.",
+    )
+    parser.add_argument(
+        "--max-per-trade-risk-pct",
+        type=float,
+        default=0.02,
+        help="Hard cap for estimated per-trade risk as fraction of capital.",
+    )
+    parser.add_argument(
+        "--max-sector-exposure-pct",
+        type=float,
+        default=0.40,
+        help="Maximum sector exposure as fraction of total capital.",
+    )
+    parser.add_argument(
+        "--max-correlated-positions",
+        type=int,
+        default=2,
+        help="Maximum selected positions within a correlation bucket.",
+    )
+    parser.add_argument(
+        "--drawdown-daily-pct",
+        type=float,
+        default=0.0,
+        help="Current daily drawdown context as a fraction (for drawdown overlays).",
+    )
+    parser.add_argument(
+        "--drawdown-rolling-pct",
+        type=float,
+        default=0.0,
+        help="Current rolling drawdown context as a fraction (for drawdown overlays).",
+    )
+    parser.add_argument(
+        "--max-daily-drawdown-pct",
+        type=float,
+        default=0.04,
+        help="Severe daily drawdown threshold that can pause new risk.",
+    )
+    parser.add_argument(
+        "--max-rolling-drawdown-pct",
+        type=float,
+        default=0.12,
+        help="Severe rolling drawdown threshold that can pause new risk.",
+    )
+    parser.add_argument(
+        "--reduce-risk-daily-drawdown-pct",
+        type=float,
+        default=0.02,
+        help="Daily drawdown threshold for reduced-risk mode.",
+    )
+    parser.add_argument(
+        "--reduce-risk-rolling-drawdown-pct",
+        type=float,
+        default=0.07,
+        help="Rolling drawdown threshold for reduced-risk mode.",
+    )
+    parser.add_argument(
+        "--reduce-risk-multiplier",
+        type=float,
+        default=0.50,
+        help="Allocation/risk multiplier applied in reduced-risk mode.",
+    )
     parser.add_argument("--log-level", default="INFO", help="Reserved for future logging control.")
     parser.add_argument(
         "--no-timestamped-output",
@@ -112,6 +229,30 @@ def parse_args() -> argparse.Namespace:
     )
     if args.max_symbols < 0:
         parser.error("--max-symbols must be >= 0")
+    if args.portfolio_capital <= 0:
+        parser.error("--portfolio-capital must be > 0")
+    if args.max_portfolio_positions < 1:
+        parser.error("--max-portfolio-positions must be >= 1")
+    if args.max_correlated_positions < 1:
+        parser.error("--max-correlated-positions must be >= 1")
+    for pct_name in (
+        "reserve_cash_pct",
+        "max_capital_deployed_pct",
+        "max_per_position_allocation_pct",
+        "risk_per_trade_pct",
+        "max_per_trade_risk_pct",
+        "max_sector_exposure_pct",
+        "drawdown_daily_pct",
+        "drawdown_rolling_pct",
+        "max_daily_drawdown_pct",
+        "max_rolling_drawdown_pct",
+        "reduce_risk_daily_drawdown_pct",
+        "reduce_risk_rolling_drawdown_pct",
+        "reduce_risk_multiplier",
+    ):
+        value = float(getattr(args, pct_name))
+        if not 0 <= value <= 1:
+            parser.error(f"--{pct_name.replace('_', '-')} must be in [0, 1]")
     return args
 
 
@@ -305,7 +446,15 @@ def _build_monitoring_from_symbols(
     return monitor.run(export=False, watchlist_names=["operational"])
 
 
-def _write_summary(path: Path, *, profile: str, timeframe: str, input_source: str, result) -> None:
+def _write_summary(
+    path: Path,
+    *,
+    profile: str,
+    timeframe: str,
+    input_source: str,
+    result,
+    portfolio_result=None,  # noqa: ANN001
+) -> None:
     lines = [
         "# Decision Runner Summary",
         "",
@@ -331,6 +480,20 @@ def _write_summary(path: Path, *, profile: str, timeframe: str, input_source: st
                 f"- `{plan.symbol}` `{plan.strategy_name}` horizon={plan.horizon.value} "
                 f"conviction={pick.conviction_score:.2f} rr={plan.risk_reward:.2f}"
             )
+    if portfolio_result is not None:
+        summary = portfolio_result.summary
+        lines += [
+            "",
+            "## Portfolio Plan",
+            "",
+            f"- Drawdown mode: {summary.drawdown_mode.value}",
+            f"- Allocation model: {summary.allocation_model}",
+            f"- Sizing method: {summary.sizing_method}",
+            f"- Portfolio selected: {summary.selected_count}",
+            f"- Portfolio rejected: {summary.rejected_count}",
+            f"- Deployed capital: {summary.deployed_capital:.2f} ({summary.deployed_capital_pct:.2%})",
+            f"- Estimated portfolio risk: {summary.estimated_total_risk_amount:.2f} ({summary.estimated_total_risk_pct:.2%})",
+        ]
     lines += [
         "",
         "## Safety",
@@ -368,10 +531,18 @@ def _write_candidates_csv(result, output_path: Path) -> Path:
     return output_path
 
 
-def _write_paper_handoff_csv(result, output_path: Path) -> Path:
+def _write_paper_handoff_csv(
+    result,
+    output_path: Path,
+    *,
+    portfolio_by_symbol: Optional[dict[str, Any]] = None,
+    drawdown_mode: str = "normal",
+) -> Path:
+    portfolio_by_symbol = portfolio_by_symbol or {}
     rows: list[dict[str, Any]] = []
     for pick in result.selected_picks:
         plan = pick.trade_plan
+        portfolio_row = portfolio_by_symbol.get(plan.symbol)
         rows.append(
             {
                 "symbol": plan.symbol,
@@ -383,9 +554,168 @@ def _write_paper_handoff_csv(result, output_path: Path) -> Path:
                 "risk_reward": plan.risk_reward,
                 "horizon": plan.horizon.value,
                 "conviction_score": pick.conviction_score,
+                "allocation_amount": (
+                    float(portfolio_row.allocation_amount)
+                    if portfolio_row is not None
+                    else None
+                ),
+                "allocation_percent": (
+                    float(portfolio_row.allocation_percent)
+                    if portfolio_row is not None
+                    else None
+                ),
+                "recommended_quantity": (
+                    int(portfolio_row.quantity)
+                    if portfolio_row is not None
+                    else None
+                ),
+                "sizing_method": (
+                    str(portfolio_row.sizing_method)
+                    if portfolio_row is not None
+                    else None
+                ),
+                "drawdown_mode": drawdown_mode,
             }
         )
     pd.DataFrame(rows).to_csv(output_path, index=False)
+    return output_path
+
+
+def _portfolio_config_from_args(args: argparse.Namespace) -> PortfolioPlanningConfig:
+    return PortfolioPlanningConfig(
+        enabled=True,
+        total_capital=float(args.portfolio_capital),
+        reserve_cash_pct=float(args.reserve_cash_pct),
+        allocation_model=normalize_allocation_model(args.allocation_model),
+        sizing_method=normalize_sizing_method(args.sizing_method),
+        risk_per_trade_pct=float(args.risk_per_trade_pct),
+        max_capital_deployed_pct=float(args.max_capital_deployed_pct),
+        max_positions=int(args.max_portfolio_positions),
+        max_per_position_allocation_pct=float(args.max_per_position_allocation_pct),
+        max_per_trade_risk_pct=float(args.max_per_trade_risk_pct),
+        max_sector_exposure_pct=float(args.max_sector_exposure_pct),
+        max_correlated_positions=int(args.max_correlated_positions),
+        drawdown_daily_reduce_risk_pct=float(args.reduce_risk_daily_drawdown_pct),
+        drawdown_rolling_reduce_risk_pct=float(args.reduce_risk_rolling_drawdown_pct),
+        max_daily_drawdown_pct=float(args.max_daily_drawdown_pct),
+        max_rolling_drawdown_pct=float(args.max_rolling_drawdown_pct),
+        reduce_risk_multiplier=float(args.reduce_risk_multiplier),
+    )
+
+
+def _write_portfolio_plan_json(plan_result, output_path: Path) -> Path:  # noqa: ANN001
+    payload = {
+        "schema_version": "v1",
+        "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        "source": "scripts.run_decision.portfolio",
+        "portfolio_plan": plan_result.to_dict(),
+    }
+    output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+    return output_path
+
+
+def _write_portfolio_plan_csv(plan_result, output_path: Path) -> Path:  # noqa: ANN001
+    rows = [item.to_dict() for item in plan_result.items]
+    pd.DataFrame(rows).to_csv(output_path, index=False)
+    return output_path
+
+
+def _write_portfolio_risk_summary_json(plan_result, output_path: Path) -> Path:  # noqa: ANN001
+    payload = {
+        "schema_version": "v1",
+        "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        "source": "scripts.run_decision.portfolio",
+        "summary": plan_result.summary.to_dict(),
+        "warnings": list(plan_result.warnings),
+        "errors": list(plan_result.errors),
+    }
+    output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+    return output_path
+
+
+def _write_allocation_summary_md(
+    plan_result,  # noqa: ANN001
+    *,
+    output_path: Path,
+    profile: str,
+    timeframe: str,
+) -> Path:
+    summary = plan_result.summary
+    lines = [
+        "# Portfolio Allocation Summary",
+        "",
+        f"- Generated at: {pd.Timestamp.now(tz='UTC').isoformat()}",
+        f"- Profile: {profile}",
+        f"- Timeframe: {timeframe}",
+        f"- Drawdown mode: {summary.drawdown_mode.value}",
+        f"- Allocation model: {summary.allocation_model}",
+        f"- Sizing method: {summary.sizing_method}",
+        f"- Total candidates: {summary.total_candidates}",
+        f"- Selected: {summary.selected_count}",
+        f"- Resized: {summary.resized_count}",
+        f"- Rejected: {summary.rejected_count}",
+        f"- Deployed capital: {summary.deployed_capital:.2f} ({summary.deployed_capital_pct:.2%})",
+        f"- Reserved cash: {summary.reserved_cash:.2f}",
+        f"- Estimated portfolio risk: {summary.estimated_total_risk_amount:.2f} ({summary.estimated_total_risk_pct:.2%})",
+        "",
+        "## Selected Portfolio Plan",
+        "",
+    ]
+    selected = [item for item in plan_result.items if item.selection_status.value != "rejected"]
+    if not selected:
+        lines.append("- No positions selected.")
+    else:
+        for item in selected[:20]:
+            lines.append(
+                f"- `{item.symbol}` qty={item.quantity} alloc={item.allocation_amount:.2f} "
+                f"risk={item.estimated_risk_amount:.2f} status={item.selection_status.value}"
+            )
+    if plan_result.warnings:
+        lines += ["", "## Warnings", ""]
+        for warning in plan_result.warnings:
+            lines.append(f"- {warning}")
+
+    lines += [
+        "",
+        "## Safety",
+        "- Portfolio plan is recommendation-only.",
+        "- No live orders were placed.",
+    ]
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+    return output_path
+
+
+def _write_portfolio_artifacts_meta(
+    *,
+    output_path: Path,
+    profile: str,
+    provider: str,
+    interval: str,
+    drawdown_mode: str,
+    artifacts: dict[str, str | Path],
+    selected_count: int,
+    rejected_count: int,
+) -> Path:
+    payload = {
+        "schema_version": "v1",
+        "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        "source": "scripts.run_decision.portfolio",
+        "runner_name": "decision",
+        "profile": profile,
+        "provider": provider,
+        "interval": interval,
+        "execution_mode": "research",
+        "drawdown_mode": drawdown_mode,
+        "artifacts": {
+            name: {"path": str(path), "format": Path(path).suffix.lstrip(".").lower()}
+            for name, path in artifacts.items()
+        },
+        "metadata": {
+            "selected_count": selected_count,
+            "rejected_count": rejected_count,
+        },
+    }
+    output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
     return output_path
 
 
@@ -430,6 +760,7 @@ def main() -> int:
     decision_cfg.thresholds.max_picks_by_horizon = {
         key: cap for key in decision_cfg.thresholds.max_picks_by_horizon
     }
+    decision_cfg.portfolio = _portfolio_config_from_args(args)
 
     out_dir = resolve_runner_output_dir(
         output_dir=args.output_dir,
@@ -442,11 +773,44 @@ def main() -> int:
     exports = DecisionExporter().export_all(result, decision_cfg.export)
     result.exports = {name: str(path) for name, path in exports.items()}
 
+    drawdown_context = DrawdownContext(
+        daily_drawdown_pct=float(args.drawdown_daily_pct),
+        rolling_drawdown_pct=float(args.drawdown_rolling_pct),
+    )
+    portfolio_result = PortfolioRiskEngine(config=decision_cfg.portfolio).build_plan(
+        result.selected_picks,
+        drawdown_context=drawdown_context,
+    )
+    result.metadata["portfolio_plan_summary"] = portfolio_result.summary.to_dict()
+    result.metadata["portfolio_selected_symbols"] = [
+        row.symbol for row in portfolio_result.selected_items
+    ]
+
     selected_json = _write_selected_json(result, out_dir / "decision_selected.json")
     rejected_json = _write_rejected_json(result, out_dir / "decision_rejected.json")
     candidates_csv = _write_candidates_csv(result, out_dir / "decision_candidates.csv")
     summary_md = out_dir / "decision_summary.md"
-    _write_summary(summary_md, profile=args.profile, timeframe=timeframe, input_source=input_source, result=result)
+    _write_summary(
+        summary_md,
+        profile=args.profile,
+        timeframe=timeframe,
+        input_source=input_source,
+        result=result,
+        portfolio_result=portfolio_result,
+    )
+
+    portfolio_plan_json = _write_portfolio_plan_json(portfolio_result, out_dir / "portfolio_plan.json")
+    portfolio_plan_csv = _write_portfolio_plan_csv(portfolio_result, out_dir / "portfolio_plan.csv")
+    portfolio_risk_summary_json = _write_portfolio_risk_summary_json(
+        portfolio_result,
+        out_dir / "portfolio_risk_summary.json",
+    )
+    allocation_summary_md = _write_allocation_summary_md(
+        portfolio_result,
+        output_path=out_dir / "allocation_summary.md",
+        profile=args.profile,
+        timeframe=timeframe,
+    )
 
     artifacts: dict[str, str | Path] = {
         "decision_candidates_csv": candidates_csv,
@@ -454,10 +818,37 @@ def main() -> int:
         "decision_rejected_json": rejected_json,
         "decision_summary_md": summary_md,
         "decision_summary_json": exports.get("summary_json", out_dir / "decision_summary.json"),
+        "portfolio_plan_json": portfolio_plan_json,
+        "portfolio_plan_csv": portfolio_plan_csv,
+        "portfolio_risk_summary_json": portfolio_risk_summary_json,
+        "allocation_summary_md": allocation_summary_md,
     }
+
+    portfolio_meta = _write_portfolio_artifacts_meta(
+        output_path=out_dir / "portfolio_artifacts_meta.json",
+        profile=args.profile,
+        provider=args.provider,
+        interval=timeframe,
+        drawdown_mode=portfolio_result.summary.drawdown_mode.value,
+        artifacts={
+            "portfolio_plan_json": portfolio_plan_json,
+            "portfolio_plan_csv": portfolio_plan_csv,
+            "portfolio_risk_summary_json": portfolio_risk_summary_json,
+            "allocation_summary_md": allocation_summary_md,
+        },
+        selected_count=portfolio_result.summary.selected_count,
+        rejected_count=portfolio_result.summary.rejected_count,
+    )
+    artifacts["portfolio_artifacts_meta"] = portfolio_meta
     if args.paper_handoff:
+        portfolio_by_symbol = {
+            row.symbol: row for row in portfolio_result.selected_items
+        }
         artifacts["paper_handoff_candidates"] = _write_paper_handoff_csv(
-            result, out_dir / "paper_handoff_candidates.csv"
+            result,
+            out_dir / "paper_handoff_candidates.csv",
+            portfolio_by_symbol=portfolio_by_symbol,
+            drawdown_mode=portfolio_result.summary.drawdown_mode.value,
         )
 
     meta_path = write_runner_artifacts_meta(
@@ -473,6 +864,9 @@ def main() -> int:
             "input_source": input_source,
             "selected_total": len(result.selected_picks),
             "rejected_total": len(result.rejected_opportunities),
+            "portfolio_selected_total": portfolio_result.summary.selected_count,
+            "portfolio_rejected_total": portfolio_result.summary.rejected_count,
+            "drawdown_mode": portfolio_result.summary.drawdown_mode.value,
             "paper_handoff": bool(args.paper_handoff),
         },
     )

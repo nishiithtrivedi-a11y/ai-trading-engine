@@ -49,3 +49,4 @@ def test_mid_pipeline_contracts_are_registered_by_id() -> None:
 
     decision_runner_contract = get_artifact_contract_by_id("decision_runner_v1")
     assert "decision_selected_json" in decision_runner_contract.required_names
+    assert "portfolio_plan_json" in decision_runner_contract.required_names

@@ -84,3 +84,4 @@ def test_decision_config_defaults_construct() -> None:
     cfg = DecisionConfig()
     assert cfg.thresholds.max_picks("intraday") >= 0
     assert cfg.selection_policy.enforce_unique_symbol is True
+    assert cfg.portfolio.enabled is True

@@ -213,6 +213,19 @@ _OPERATIONAL_RUNNER_CONTRACTS: dict[str, ArtifactContract] = {
             ArtifactSpec("decision_rejected_json", "decision_rejected.json", ArtifactType.JSON),
             ArtifactSpec("decision_summary_md", "decision_summary.md", ArtifactType.MARKDOWN),
             ArtifactSpec("decision_artifacts_meta", "decision_artifacts_meta.json", ArtifactType.JSON),
+            ArtifactSpec("portfolio_plan_json", "portfolio_plan.json", ArtifactType.JSON),
+            ArtifactSpec("portfolio_plan_csv", "portfolio_plan.csv", ArtifactType.CSV),
+            ArtifactSpec(
+                "portfolio_risk_summary_json",
+                "portfolio_risk_summary.json",
+                ArtifactType.JSON,
+            ),
+            ArtifactSpec("allocation_summary_md", "allocation_summary.md", ArtifactType.MARKDOWN),
+            ArtifactSpec(
+                "portfolio_artifacts_meta",
+                "portfolio_artifacts_meta.json",
+                ArtifactType.JSON,
+            ),
             ArtifactSpec("run_manifest", "run_manifest.json", ArtifactType.MANIFEST),
         ),
         optional=(
