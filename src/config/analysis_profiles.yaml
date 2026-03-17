@@ -1,0 +1,106 @@
+# Analysis Profiles — named sets of enabled analysis modules
+#
+# Each profile defines which analysis modules are active.
+# Profiles are applied to an AnalysisRegistry via
+# AnalysisProfileLoader.apply_to_registry().
+#
+# Module names must match the `name` attribute of a registered
+# BaseAnalysisModule subclass.
+#
+# Stub modules (fundamental, macro, sentiment, intermarket, futures,
+# options, commodities, forex, crypto) are registered in the default
+# registry but disabled. Enable them in a profile when the required
+# data feeds are available.
+
+default:
+  description: "Default profile — technical and quantitative analysis only"
+  enabled:
+    - technical
+    - quant
+
+intraday_equity:
+  description: >
+    Intraday equity trading profile. Uses technical indicators and
+    quantitative return features on short-horizon bar data.
+  enabled:
+    - technical
+    - quant
+
+swing_equity:
+  description: >
+    Swing trading profile (multi-day). Adds fundamental and sentiment
+    modules to the technical + quant baseline when feeds are available.
+  enabled:
+    - technical
+    - quant
+    - fundamental
+    - sentiment
+
+positional_equity:
+  description: >
+    Positional / multi-week equity profile. Incorporates macro and
+    intermarket context in addition to swing-equity modules.
+  enabled:
+    - technical
+    - quant
+    - fundamental
+    - macro
+    - intermarket
+    - sentiment
+
+index_options:
+  description: >
+    Index options profile. Adds options-specific module (OI, PCR, IV skew)
+    alongside technical and quantitative analysis.
+  enabled:
+    - technical
+    - quant
+    - options
+    - sentiment
+
+commodity_futures:
+  description: >
+    Commodity futures profile (MCX). Adds futures and commodities modules
+    alongside technical analysis.
+  enabled:
+    - technical
+    - quant
+    - futures
+    - commodities
+
+forex_futures:
+  description: >
+    Currency derivatives profile (CDS). Adds forex-specific analysis
+    alongside technical and macro modules.
+  enabled:
+    - technical
+    - quant
+    - forex
+    - macro
+
+macro_swing:
+  description: >
+    Macro-driven swing trading. Relies heavily on macro and intermarket
+    context with technical filters.
+  enabled:
+    - macro
+    - intermarket
+    - technical
+    - quant
+
+full:
+  description: >
+    All modules enabled. Intended for future use when all data feeds
+    are wired. Currently most modules are stubs.
+  enabled:
+    - technical
+    - quant
+    - fundamental
+    - macro
+    - sentiment
+    - intermarket
+    - futures
+    - options
+    - commodities
+    - forex
+    - crypto
