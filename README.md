@@ -12,6 +12,7 @@ The platform currently supports:
 - Walk-forward validation and Monte Carlo robustness testing
 - Portfolio-level research and relative-strength analysis
 - Scanner + decision pipeline for ranked opportunities and picks
+- Portfolio-aware decision planning (allocation, sizing, and risk overlays)
 - Paper trading simulation with fills, positions, and PnL tracking
 - Live-safe signal pipeline on fresh/latest bars (no execution)
 
@@ -29,7 +30,7 @@ Not yet in scope:
 
 Layer flow:
 
-`Data Providers -> Research Engine -> Strategy Engine -> Decision Layer -> Paper Trading Engine -> Live Signal Pipeline -> (future) Execution Layer`
+`Data Providers -> Research Engine -> Strategy Engine -> Scanner/Monitoring/Decision -> Portfolio & Risk Engine -> Paper Trading Engine -> Live Signal Pipeline -> (future) Execution Layer`
 
 Current layers:
 
@@ -37,11 +38,12 @@ Current layers:
 2. Research / Backtesting (`src/core/`, `src/research/`)
 3. Strategy Layer (`src/strategies/`)
 4. Decision and Picking (`src/scanners/`, `src/monitoring/`, `src/decision/`)
-5. Paper Trading (`src/paper_trading/`)
-6. Live-safe Signals (`src/live/`, `src/realtime/`)
-7. Broker Adapters (integration-oriented, no live execution path enabled)
-8. Runtime Guardrails (`src/runtime/`)
-9. Artifact Contracts + Workflow Smoke Paths (`src/runtime/artifact_contracts.py`, `src/runtime/workflow_orchestrator.py`)
+5. Portfolio & Risk Planning (`src/decision/portfolio_engine.py`)
+6. Paper Trading (`src/paper_trading/`)
+7. Live-safe Signals (`src/live/`, `src/realtime/`)
+8. Broker Adapters (integration-oriented, no live execution path enabled)
+9. Runtime Guardrails (`src/runtime/`)
+10. Artifact Contracts + Workflow Smoke Paths (`src/runtime/artifact_contracts.py`, `src/runtime/workflow_orchestrator.py`)
 
 See detailed architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
@@ -53,6 +55,7 @@ See detailed architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 | Walk-forward testing | yes | Research validation |
 | Monte Carlo analysis | yes | Robustness testing |
 | Portfolio simulation | yes | Active-allocation corrected behavior |
+| Portfolio-aware planning | yes | Allocation/sizing/risk overlays for decision outputs |
 | Paper trading | yes | Simulated fills only |
 | Live signal generation | yes | Fresh/latest-bar pipeline |
 | Live order execution | no | Placeholder interface only |
@@ -65,7 +68,7 @@ Expanded matrix: [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md)
 | --- | --- | --- | --- |
 | CSV | yes | simulated reload | stable |
 | Zerodha | partial | partial | provider + broker integration paths, execution disabled |
-| Upstox | placeholder | placeholder | future integration |
+| Upstox | partial | partial (safe fallback) | safe data-only partial integration |
 
 Provider details: [`docs/PROVIDERS.md`](docs/PROVIDERS.md)
 
@@ -127,6 +130,28 @@ python scripts/run_live_signal_pipeline.py \
 Outputs include `signals.csv`, `regime_snapshot.csv`, `session_state.json`, and optional `paper_handoff_signals.csv`.
 Each cycle writes `run_manifest.json` with mode/provider/artifact metadata.
 
+### Decision + portfolio workflow
+
+```bash
+python scripts/run_decision.py \
+  --provider indian_csv \
+  --symbols RELIANCE.NS TCS.NS INFY.NS \
+  --interval day \
+  --profile eod \
+  --allocation-model conviction_weighted \
+  --sizing-method risk_per_trade \
+  --output-dir output/decision_portfolio_run
+```
+
+Outputs include decision artifacts plus portfolio-aware artifacts:
+
+- `portfolio_plan.json`
+- `portfolio_plan.csv`
+- `portfolio_risk_summary.json`
+- `allocation_summary.md`
+- `portfolio_artifacts_meta.json`
+- `run_manifest.json`
+
 ### Release smoke workflow
 
 ```bash
@@ -154,6 +179,7 @@ manifests, validates scanner/monitoring/decision artifact contracts, and writes
 - Shared runtime guardrails and mode profiles are centralized in `src/runtime/`.
 - Artifact contracts and validation are centralized in `src/runtime/artifact_contracts.py` and `src/runtime/contract_validation.py`.
 - Mid-pipeline scanner/monitoring/decision contract validation is available via the daily dry-run orchestrator.
+- Portfolio planning outputs are recommendation-only and do not route broker orders.
 
 Safety details: [`docs/SAFETY.md`](docs/SAFETY.md)
 
@@ -170,6 +196,19 @@ Run one command per mode:
 - Research: `python scripts/run_nifty50_zerodha_research.py --symbols-limit 5 --regime-analysis --build-regime-policy`
 - Paper trading: `python scripts/run_paper_trading.py --paper-trading --provider indian_csv --symbols RELIANCE.NS TCS.NS INFY.NS --interval day --paper-output-dir output/paper_trading_run --paper-max-orders 10`
 - Live-safe signals: `python scripts/run_live_signal_pipeline.py --live-signals --provider indian_csv --symbols RELIANCE.NS TCS.NS INFY.NS --interval day --run-once --output-dir output/live_signals_run`
+- Decision + portfolio plan: `python scripts/run_decision.py --provider indian_csv --symbols RELIANCE.NS TCS.NS INFY.NS --interval day --profile eod --output-dir output/decision_run`
+
+## What Changed in Phase 18
+
+- Added portfolio and risk planning to decision outputs:
+  - allocation models: `equal_weight`, `volatility_weighted`, `conviction_weighted`
+  - sizing methods: `fixed_fractional`, `risk_per_trade`, `atr_based` (with fallback)
+  - portfolio constraints: capital, position caps, per-position cap, sector/correlation controls
+  - drawdown overlays: `normal`, `reduced_risk`, `no_new_risk`
+- `run_decision.py` now emits portfolio-aware artifacts and metadata manifests.
+- `run_paper_trading.py` can optionally consume `portfolio_plan.json` quantity/drawdown overlays.
+- Live-safe paper handoff artifacts now include portfolio recommendation metadata fields.
+- Live execution remains disabled.
 
 ## Testing
 

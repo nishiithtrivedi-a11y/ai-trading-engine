@@ -3,6 +3,7 @@ from .config import (
     DecisionConfig,
     DecisionExportConfig,
     DecisionThresholdsConfig,
+    PortfolioPlanningConfig,
     RegimePolicyConfig,
     SelectionPolicyConfig,
     normalize_decision_horizon,
@@ -20,7 +21,22 @@ from .models import (
     TradePlan,
 )
 from .pick_engine import PickEngine, PickEngineError
+from .portfolio_config import (
+    normalize_allocation_model,
+    normalize_sizing_method,
+)
 from .portfolio_candidate_selector import PortfolioCandidateSelector, PortfolioCandidateSelectorError
+from .portfolio_engine import PortfolioPlanningError, PortfolioRiskEngine
+from .portfolio_models import (
+    AllocationModel,
+    DrawdownContext,
+    DrawdownMode,
+    PortfolioPlanItem,
+    PortfolioPlanResult,
+    PortfolioRiskSummary,
+    SelectionStatus,
+    SizingMethod,
+)
 from .ranking_engine import RankingEngine
 from .regime_filter import RegimeFilter, RegimeFilterError
 from .regime_policy import (
@@ -43,8 +59,21 @@ __all__ = [
     "DecisionExportConfig",
     "DecisionHorizon",
     "DecisionThresholdsConfig",
+    "PortfolioPlanningConfig",
     "PickEngine",
     "PickEngineError",
+    "PortfolioRiskEngine",
+    "PortfolioPlanningError",
+    "AllocationModel",
+    "SizingMethod",
+    "DrawdownMode",
+    "SelectionStatus",
+    "DrawdownContext",
+    "PortfolioPlanItem",
+    "PortfolioPlanResult",
+    "PortfolioRiskSummary",
+    "normalize_allocation_model",
+    "normalize_sizing_method",
     "PickRunResult",
     "PortfolioCandidateSelector",
     "PortfolioCandidateSelectorError",

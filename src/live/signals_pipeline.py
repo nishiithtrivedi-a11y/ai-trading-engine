@@ -330,10 +330,13 @@ class LiveSignalPipeline:
 
         open_positions_estimate = int(self.config.risk_context_open_positions_count)
         deployed_capital_estimate = float(self.config.risk_context_deployed_capital)
+        drawdown_mode = self._drawdown_mode()
+        risk_multiplier = 0.5 if drawdown_mode == "reduced_risk" else 1.0
         slot_capital = self.config.risk_context_portfolio_equity / max(
             1,
             self.risk_manager.config.max_concurrent_positions,
         )
+        slot_capital *= risk_multiplier
 
         for symbol in ranked_symbols:
             df = frames[symbol]
@@ -378,12 +381,16 @@ class LiveSignalPipeline:
                         reason="Strategy did not produce actionable BUY signal on latest bar",
                         regime_label=regime_label,
                         risk_allowed=None,
+                        metadata={"drawdown_mode": drawdown_mode},
                     )
                 )
                 continue
 
             risk_allowed = True
             risk_reason = "risk_checks_passed"
+            if drawdown_mode == "no_new_risk":
+                risk_allowed = False
+                risk_reason = "drawdown overlay set to no_new_risk"
             if self.config.apply_risk_precheck:
                 risk_decision = self.risk_manager.check_entry(
                     portfolio_equity=float(self.config.risk_context_portfolio_equity),
@@ -409,6 +416,7 @@ class LiveSignalPipeline:
                         regime_label=regime_label,
                         risk_allowed=False,
                         paper_handoff_eligible=False,
+                        metadata={"drawdown_mode": drawdown_mode},
                     )
                 )
                 continue
@@ -437,6 +445,10 @@ class LiveSignalPipeline:
                     risk_allowed=True,
                     paper_handoff_eligible=bool(self.config.paper_handoff),
                     metadata={
+                        "drawdown_mode": drawdown_mode,
+                        "estimated_allocation_amount": slot_capital,
+                        "estimated_quantity": float(estimated_quantity),
+                        "estimated_notional": float(estimated_notional),
                         "estimated_deployed_capital": deployed_capital_estimate,
                         "estimated_open_positions": open_positions_estimate,
                     },
@@ -502,6 +514,15 @@ class LiveSignalPipeline:
             "1D": 3 * 24 * 3600.0,
         }
         return mapping.get(str(timeframe).strip(), 24 * 3600.0)
+
+    def _drawdown_mode(self) -> str:
+        current = float(self.config.risk_context_current_drawdown_pct)
+        max_dd = float(self.risk_manager.config.max_drawdown_pct)
+        if current >= max_dd:
+            return "no_new_risk"
+        if current >= max_dd * 0.7:
+            return "reduced_risk"
+        return "normal"
 
 
 def _interval_to_timeframe(interval: str) -> str:

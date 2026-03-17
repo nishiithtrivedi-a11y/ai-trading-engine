@@ -138,6 +138,7 @@ class LiveSessionStore:
     def _write_paper_handoff_csv(report: SessionSignalReport, path: Path) -> None:
         rows = []
         for decision in report.paper_handoff_decisions:
+            metadata = decision.metadata if isinstance(decision.metadata, dict) else {}
             rows.append(
                 {
                     "symbol": decision.symbol,
@@ -148,6 +149,10 @@ class LiveSessionStore:
                     "close_price": decision.close_price,
                     "regime_label": decision.regime_label,
                     "reason": decision.reason,
+                    "drawdown_mode": metadata.get("drawdown_mode"),
+                    "estimated_allocation_amount": metadata.get("estimated_allocation_amount"),
+                    "estimated_quantity": metadata.get("estimated_quantity"),
+                    "estimated_notional": metadata.get("estimated_notional"),
                 }
             )
 
@@ -162,6 +167,10 @@ class LiveSessionStore:
                     "close_price": "",
                     "regime_label": "",
                     "reason": "",
+                    "drawdown_mode": "",
+                    "estimated_allocation_amount": "",
+                    "estimated_quantity": "",
+                    "estimated_notional": "",
                 }
             ]
 

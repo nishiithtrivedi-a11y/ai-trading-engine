@@ -12,6 +12,7 @@
 | Scanner engine | supported | `src/scanners/engine.py` | ranked opportunities CSV/JSON | stable |
 | Monitoring snapshots | supported | `src/monitoring/market_monitor.py` | alerts/snapshots/regime outputs | stable |
 | Decision picks | supported | `src/decision/pick_engine.py` | intraday/swing/positional picks | stable |
+| Portfolio & risk planning | supported | `src/decision/portfolio_engine.py`, `scripts/run_decision.py` | portfolio plan, allocation summary, risk summary | stable |
 | Market intelligence | supported | `src/market_intelligence/market_state_engine.py` | breadth/sector/volatility outputs | stable |
 | Strategy research lab | supported | `src/research_lab/strategy_discovery_engine.py` | strategy score/cluster artifacts | stable |
 | Paper trading | supported | `scripts/run_paper_trading.py` | orders/fills/positions/PnL/session summary | stable |
@@ -23,6 +24,20 @@
 | Workflow orchestration smoke paths | supported | `src/runtime/workflow_orchestrator.py`, `scripts/run_release_smoke.py` | release smoke summary + validated bundles | stable |
 | Scanner/monitoring/decision contract bundles | supported | `src/runtime/artifact_contracts.py` + `src/runtime/daily_dry_run.py` | stage-level manifests + contract validation | stable |
 | Daily dry-run orchestration | supported | `scripts/run_daily_dry_run.py` | scanner/monitoring/decision chain summary | stable |
+
+## Phase 18 Notes
+
+- Decision runner now emits portfolio-aware artifacts:
+  - `portfolio_plan.json`
+  - `portfolio_plan.csv`
+  - `portfolio_risk_summary.json`
+  - `allocation_summary.md`
+  - `portfolio_artifacts_meta.json`
+- Portfolio planning is recommendation-only and does not place broker orders.
+- Drawdown overlays can move recommendation mode between:
+  - `normal`
+  - `reduced_risk`
+  - `no_new_risk`
 
 ## Notes
 

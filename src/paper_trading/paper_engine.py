@@ -47,6 +47,8 @@ class PaperTradingEngine:
     regime_engine: Optional[MarketRegimeEngine] = None
     regime_policy: Optional[Any] = None
     state_store: Optional[PaperStateStore] = None
+    portfolio_plan_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    allow_new_risk: bool = True
 
     def __post_init__(self) -> None:
         if not self.strategy_registry:
@@ -255,6 +257,15 @@ class PaperTradingEngine:
         )
 
         if signal == Signal.BUY:
+            if not self.allow_new_risk:
+                state.add_journal(
+                    timestamp=timestamp,
+                    symbol=symbol,
+                    event_type="no_trade",
+                    message="BUY signal blocked by portfolio drawdown overlay (no_new_risk mode)",
+                    strategy_name=strategy_name,
+                )
+                return 0
             if open_position is not None:
                 state.add_journal(
                     timestamp=timestamp,
@@ -304,6 +315,12 @@ class PaperTradingEngine:
                 portfolio_equity=self._current_equity(state),
                 stop_loss_pct=stop_loss_pct,
             )
+            override = self.portfolio_plan_overrides.get(symbol, {})
+            override_qty = self._safe_int(override.get("recommended_quantity"))
+            if override_qty is None:
+                override_qty = self._safe_int(override.get("quantity"))
+            if override_qty is not None:
+                quantity = min(float(quantity), float(override_qty))
             if quantity <= 0:
                 state.add_journal(
                     timestamp=timestamp,
@@ -330,6 +347,9 @@ class PaperTradingEngine:
                 reason="strategy_buy_signal",
                 metadata={"signal": signal.value, "selection_reason": selection["reason"]},
             )
+            if override_qty is not None:
+                order.metadata["portfolio_override_quantity"] = override_qty
+                order.metadata["portfolio_override_applied"] = True
             state.orders.append(order)
             state.add_journal(
                 timestamp=timestamp,
@@ -393,6 +413,16 @@ class PaperTradingEngine:
             return 1
 
         return 0
+
+    @staticmethod
+    def _safe_int(value: Any) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            parsed = int(float(value))
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0 else None
 
     def _select_strategy(self, symbol: str, data_slice: pd.DataFrame) -> dict[str, Any]:
         fallback = self._fallback_strategy_name(self.strategy_registry)
