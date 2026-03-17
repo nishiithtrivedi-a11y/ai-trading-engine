@@ -7,11 +7,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.decision.models import DecisionHorizon, RankedPick
+from src.utils.logger import setup_logger
+
+logger = setup_logger("ranking_engine")
 
 
 @dataclass
 class RankingEngine:
     def rank(self, picks: list[RankedPick]) -> list[RankedPick]:
+        logger.debug("Ranking %d picks", len(picks))
         ranked = sorted(picks, key=self._sort_key)
 
         horizon_counters: dict[DecisionHorizon, int] = {

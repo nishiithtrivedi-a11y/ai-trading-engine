@@ -210,6 +210,18 @@ Run one command per mode:
 - Live-safe paper handoff artifacts now include portfolio recommendation metadata fields.
 - Live execution remains disabled.
 
+## Regression Hardening Pass (post-Phase 18)
+
+A maintenance and regression-hardening pass verified all previously fixed research correctness behaviors and added tests locking in:
+
+- **Portfolio backtester allocation**: both `reserve_full_capacity=False` (default, divides by active symbol count) and `reserve_full_capacity=True` (conservative, divides by `max_positions`) modes.
+- **Walk-forward config clone chain**: all three fallback paths (`model_copy` → `copy` → `deepcopy`) are exercised.
+- **RSI edge cases**: pure-gain series → RSI=100, pure-loss → RSI=0, flat → RSI≈50.
+- **Monte Carlo Sharpe formula**: equity-curve return–based annualized Sharpe `(mean/std)*sqrt(252)` is locked in via regression tests across all three simulation modes.
+- **Paper trading edge cases**: zero-cash entry rejection, stop-loss/take-profit defaults, PnL history bar count, final equity non-negative.
+- **Decision modules**: `conviction_engine`, `ranking_engine`, and `trade_plan_builder` now all emit structured debug/warning logs.
+- **Upstox health_check**: all three status paths (`not_implemented`, `csv_fallback_only`, `sdk_present_auth_configured`) are tested with their specific `state` keys.
+
 ## Testing
 
 Run all tests:

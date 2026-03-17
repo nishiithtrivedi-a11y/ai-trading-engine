@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from src.decision.config import ConvictionWeightsConfig, DecisionConfig
 from src.decision.conviction_engine import ConvictionEngine
@@ -104,3 +105,113 @@ def test_missing_optional_context_is_graceful() -> None:
     )
     assert 0.0 <= breakdown.final_score <= 100.0
     assert "regime_context_missing_neutral" in breakdown.notes
+
+
+# ---------------------------------------------------------------------------
+# Additional tests added in regression-hardening pass
+# ---------------------------------------------------------------------------
+
+def test_zero_rr_plan_rejected_at_construction() -> None:
+    """TradePlan itself refuses rr=0 (target == entry for long-side plans)."""
+    with pytest.raises(ValueError):
+        _plan(0.0)
+
+
+def test_negative_rr_plan_rejected_at_construction() -> None:
+    """TradePlan itself refuses rr<0 (target below entry for long-side plans)."""
+    with pytest.raises(ValueError):
+        _plan(-1.0)
+
+
+def test_score_rr_present_overrides_fallback_setup_quality() -> None:
+    """When opportunity.score_rr is set, setup_quality must use it, not rr_score."""
+    cfg = DecisionConfig(
+        conviction_weights=ConvictionWeightsConfig(weights={"setup_quality": 1.0})
+    )
+    engine = ConvictionEngine()
+    opp_with_score_rr = _opportunity()
+    opp_with_score_rr.score_rr = 0.9   # 90/100 setup quality
+
+    opp_without_score_rr = _opportunity()
+    opp_without_score_rr.score_rr = None
+
+    plan = _plan(1.0)  # rr=1.0 → rr_score = 1.0/3.0*100 ≈ 33.3
+
+    with_score_rr = engine.score(opp_with_score_rr, plan, cfg)
+    without_score_rr = engine.score(opp_without_score_rr, plan, cfg)
+
+    # With score_rr=0.9 → setup_quality=90; without → setup_quality ≈ 33.3
+    assert with_score_rr.setup_quality == pytest.approx(90.0)
+    assert with_score_rr.final_score > without_score_rr.final_score
+
+
+def test_score_rr_absent_falls_back_to_rr_score() -> None:
+    """When score_rr is None, setup_quality must equal rr_score."""
+    engine = ConvictionEngine()
+    opp = _opportunity()
+    opp.score_rr = None
+    plan = _plan(2.0)
+    breakdown = engine.score(opp, plan, DecisionConfig())
+
+    # rr_score = (2.0 / 3.0) * 100 ≈ 66.67; setup_quality should match
+    assert breakdown.setup_quality == pytest.approx(breakdown.risk_reward, abs=0.01)
+
+
+def test_relative_strength_improves_score_when_weight_dominant() -> None:
+    cfg = DecisionConfig(
+        conviction_weights=ConvictionWeightsConfig(weights={"relative_strength": 1.0})
+    )
+    engine = ConvictionEngine()
+    opp = _opportunity()
+    plan = _plan(2.0)
+
+    low_rs = engine.score(
+        opp, plan, cfg,
+        relative_strength=RelativeStrengthSnapshot(symbol="RELIANCE.NS", score=-0.2),
+    ).final_score
+    high_rs = engine.score(
+        opp, plan, cfg,
+        relative_strength=RelativeStrengthSnapshot(symbol="RELIANCE.NS", score=0.2),
+    ).final_score
+
+    assert high_rs > low_rs
+
+
+def test_conviction_breakdown_metadata_contains_weights() -> None:
+    cfg = DecisionConfig()
+    engine = ConvictionEngine()
+    breakdown = engine.score(_opportunity(), _plan(2.0), cfg)
+    assert "weights" in breakdown.metadata
+    assert isinstance(breakdown.metadata["weights"], dict)
+
+
+def test_conviction_breakdown_notes_mention_missing_rs_when_absent() -> None:
+    cfg = DecisionConfig()
+    engine = ConvictionEngine()
+    breakdown = engine.score(
+        _opportunity(), _plan(2.0), cfg,
+        relative_strength=None,
+    )
+    assert "relative_strength_missing_neutral" in breakdown.notes
+
+
+def test_conviction_breakdown_notes_clean_when_all_context_provided() -> None:
+    cfg = DecisionConfig()
+    engine = ConvictionEngine()
+    breakdown = engine.score(
+        _opportunity(),
+        _plan(2.0),
+        cfg,
+        regime_result=RegimeFilterResult(allowed=True, penalty=0.0),
+        relative_strength=RelativeStrengthSnapshot(symbol="RELIANCE.NS", score=0.05),
+    )
+    assert "regime_context_missing_neutral" not in breakdown.notes
+    assert "relative_strength_missing_neutral" not in breakdown.notes
+
+
+def test_all_zero_weights_raises() -> None:
+    """Setting all weights to zero must raise — normalizer catches it at config construction."""
+    with pytest.raises(Exception):  # ValueError from ConvictionWeightsConfig normalizer
+        DecisionConfig(
+            conviction_weights=ConvictionWeightsConfig(weights={"scanner_score": 0.0})
+        )

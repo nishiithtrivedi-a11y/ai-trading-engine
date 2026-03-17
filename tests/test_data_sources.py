@@ -248,6 +248,47 @@ class TestUpstoxDataSource:
         assert result["status"] == "degraded"
         assert "configured" in result["message"].lower()
 
+    def test_health_check_not_implemented_path_has_state_key(self, tmp_path):
+        """No SDK, no CSV fallback → not_implemented with state key locked in."""
+        source = UpstoxDataSource("", "", "", data_dir=str(tmp_path))
+        result = source.health_check()
+        assert result["status"] == "not_implemented"
+        assert result["state"] == "sdk_and_fallback_unavailable"
+        assert result["fallback_available"] is False
+        assert result["supports_historical_data"] is False
+
+    def test_health_check_csv_fallback_path_has_state_key(self, tmp_path):
+        """CSV files present without SDK → csv_fallback_only state."""
+        # Create at least one CSV file so _csv_fallback_available() returns True
+        (tmp_path / "RELIANCE_1D.csv").write_text(
+            "timestamp,open,high,low,close,volume\n2025-01-01,100,101,99,100.5,1000\n"
+        )
+        source = UpstoxDataSource("", "", "", data_dir=str(tmp_path))
+        result = source.health_check()
+        assert result["status"] == "degraded"
+        assert result["state"] == "csv_fallback_only"
+        assert result["fallback_available"] is True
+        assert result["supports_live_quotes"] is True
+
+    def test_health_check_sdk_configured_state_reports_degraded(self, monkeypatch, tmp_path):
+        """SDK + credentials present → sdk_present_auth_configured state."""
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "upstox_client":
+                class _DummyModule:
+                    pass
+                return _DummyModule()
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        source = UpstoxDataSource("key", "secret", "token", data_dir=str(tmp_path))
+        result = source.health_check()
+        assert result["status"] == "degraded"
+        assert result["state"] == "sdk_present_auth_configured"
+        assert result["auth_degraded"] is False
+
     def test_upstox_csv_fallback_historical_and_live(self, tmp_path):
         file_path = tmp_path / "RELIANCE_1D.csv"
         pd.DataFrame(
