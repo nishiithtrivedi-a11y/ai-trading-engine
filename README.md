@@ -210,6 +210,49 @@ Run one command per mode:
 - Live-safe paper handoff artifacts now include portfolio recommendation metadata fields.
 - Live execution remains disabled.
 
+## Modular Analysis Framework (Phase 1 — Modular Foundation)
+
+A pluggable, multi-asset analysis architecture has been layered on top of the existing engine.
+All additions are backward-compatible — no existing behaviour was altered.
+
+### Analysis Plugin Framework (`src/analysis/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `BaseAnalysisModule` ABC | Plugin contract: `name`, `is_enabled()`, `supports()`, `build_features()`, `build_signals()`, `build_context()`, `health_check()` |
+| `FeatureOutput` | Standardised multi-domain output dataclass with slots `technical`, `quant`, `fundamental`, `macro`, `sentiment`, `intermarket`, `derivatives` |
+| `AnalysisRegistry` | Central hub: register/enable/disable/resolve modules; `create_default()` wires technical+quant and registers 9 disabled stubs |
+| `TechnicalAnalysisModule` | Delegates entirely to `BaseStrategy` static methods — zero indicator duplication |
+| `QuantAnalysisModule` | Rolling volatility (annualised), momentum, return z-score, Sharpe, volume z-score |
+| Stub modules (×9) | `fundamental`, `macro`, `sentiment`, `intermarket`, `futures`, `options`, `commodities`, `forex`, `crypto` — `is_enabled()=False`, `build_features()={}` |
+
+### Instrument Master (`src/instruments/`)
+
+- **`Exchange` enum**: NSE, BSE, NFO, MCX, CDS
+- **`Segment` enum**: CASH, FO, COMM, CURR with `from_exchange()` inference
+- **`Instrument` dataclass**: factory helpers `.equity()`, `.future()`, `.option()`; validates all type-specific fields
+- **Symbol normalisation**: `format_canonical()` / `parse_canonical()` with round-trip guarantee for all asset classes
+- **Canonical format**: `EXCHANGE:SYMBOL[-EXPIRY-SUFFIX]` e.g. `NSE:RELIANCE-EQ`, `NFO:NIFTY-2026-04-30-FUT`, `NFO:NIFTY-2026-04-30-24500-CE`
+- **`TradingCalendar`**: NSE monthly/weekly expiry calculation, trading-day detection, holiday overlay stub
+- **`InstrumentRegistry`**: canonical-keyed store with lookup by type/exchange/segment
+
+### Analysis Profiles (`src/config/`)
+
+Nine named profiles defined in `analysis_profiles.yaml` (default, intraday_equity, swing_equity, positional_equity, index_options, commodity_futures, forex_futures, macro_swing, full).
+`AnalysisProfileLoader.apply_profile_by_name()` enables exactly the listed modules and disables all others.
+
+### Provider Capability Extension
+
+`ProviderFeatureSet` now carries `supported_segments: tuple[str, ...]` and `supports_derivatives: bool`
+with backward-compatible defaults plus a `supports_segment()` helper.
+
+### Integration
+
+- `StockScannerEngine` accepts optional `analysis_registry`; forwards to `OpportunityScorer.score()` which calls `FeatureOutput.from_modules()` and stores results under `score_components["analysis_features"]`.
+- `ConvictionEngine.score()` accepts optional `analysis_context` (reserved for Phase 2).
+
+---
+
 ## Regression Hardening Pass (post-Phase 18)
 
 A maintenance and regression-hardening pass verified all previously fixed research correctness behaviors and added tests locking in:

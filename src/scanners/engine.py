@@ -4,8 +4,8 @@ Main scanner orchestrator for Phase 3 signal research.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Optional
 
 from src.scanners.classifier import OpportunityClassifier
 from src.scanners.config import ScannerConfig
@@ -15,6 +15,9 @@ from src.scanners.scorer import OpportunityScorer
 from src.scanners.setup_engine import SetupEngine
 from src.scanners.signal_runner import SignalRunner
 from src.scanners.universe_resolver import UniverseResolver
+
+if TYPE_CHECKING:
+    from src.analysis.registry import AnalysisRegistry
 
 
 class StockScannerEngineError(Exception):
@@ -30,6 +33,7 @@ class StockScannerEngine:
     setup_engine: Optional[SetupEngine] = None
     classifier: Optional[OpportunityClassifier] = None
     scorer: Optional[OpportunityScorer] = None
+    analysis_registry: Optional["AnalysisRegistry"] = None
 
     def __post_init__(self) -> None:
         self.universe_resolver = self.universe_resolver or UniverseResolver()
@@ -91,6 +95,7 @@ class StockScannerEngine:
                             setup=setup,
                             data_handler=data_handler,
                             scanner_config=self.scanner_config,
+                            analysis_registry=self.analysis_registry,
                         )
 
                         opportunity = Opportunity.from_parts(

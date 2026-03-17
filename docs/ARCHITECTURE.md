@@ -46,9 +46,24 @@ It is not a live execution system today.
    - Cost/fill realism models used for simulation
    - Placeholder execution interface reserved for future live phase
 
+9. **Analysis Plugin Layer** (`src/analysis/`)
+   - `BaseAnalysisModule` ABC — pluggable feature/signal/context contract
+   - `FeatureOutput` — standardised multi-domain output schema (technical, quant, fundamental, macro, sentiment, intermarket, derivatives)
+   - `AnalysisRegistry` — module registry with enable/disable/resolve/health_check; `create_default()` wires technical+quant, registers 9 stub modules disabled
+   - Active modules: `TechnicalAnalysisModule` (RSI/SMA/EMA/ATR/Donchian via BaseStrategy), `QuantAnalysisModule` (volatility/momentum/Sharpe)
+   - Stub modules: fundamental, macro, sentiment, intermarket, futures, options, commodities, forex, crypto
+   - `AnalysisProfileLoader` — YAML-driven named profiles; `apply_profile_by_name()` enables exactly the listed modules
+
+10. **Instrument Master Layer** (`src/instruments/`)
+    - `Exchange` enum (NSE/BSE/NFO/MCX/CDS) + `Segment` enum (CASH/FO/COMM/CURR)
+    - `Instrument` dataclass with factory helpers `.equity()`, `.future()`, `.option()` and full validation
+    - Symbol normalisation: canonical format `EXCHANGE:SYMBOL[-EXPIRY-SUFFIX]` with `format_canonical()` / `parse_canonical()` round-trip
+    - `TradingCalendar` — NSE monthly/weekly expiry calculation, trading-day detection, holiday overlay stub
+    - `InstrumentRegistry` — canonical-keyed store with lookup by type/exchange/segment
+
 ## Flow Overview
 
-`Provider data -> Strategy logic -> Research filtering -> Scanner/Monitoring/Decision -> Portfolio & Risk Planning -> Paper/live-safe artifacts`
+`Provider data -> Strategy logic -> Research filtering -> Scanner/Monitoring/Decision (+ Analysis Plugin Layer) -> Portfolio & Risk Planning -> Paper/live-safe artifacts`
 
 ## Main CLI Entry Points
 
