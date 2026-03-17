@@ -135,6 +135,16 @@ python scripts/run_release_smoke.py --output-dir output/release_smoke --symbols-
 
 This runs a minimal research/paper/live-safe path and validates artifact bundles against runtime contracts.
 
+### Daily dry-run workflow
+
+```bash
+python scripts/run_daily_dry_run.py --output-dir output/daily_dry_run --symbols-limit 3
+```
+
+This runs scanner -> monitoring -> decision in one safe chain, writes stage-level
+manifests, validates scanner/monitoring/decision artifact contracts, and writes
+`daily_dry_run_summary.json` + `daily_dry_run_summary.md`.
+
 ## Safety Boundaries
 
 - No live execution occurs in current architecture.
@@ -143,6 +153,7 @@ This runs a minimal research/paper/live-safe path and validates artifact bundles
 - Paper trading and live-signal flows are explicit opt-in CLI paths with safe defaults.
 - Shared runtime guardrails and mode profiles are centralized in `src/runtime/`.
 - Artifact contracts and validation are centralized in `src/runtime/artifact_contracts.py` and `src/runtime/contract_validation.py`.
+- Mid-pipeline scanner/monitoring/decision contract validation is available via the daily dry-run orchestrator.
 
 Safety details: [`docs/SAFETY.md`](docs/SAFETY.md)
 

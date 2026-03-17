@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from src.runtime.artifact_contracts import get_artifact_contract, list_artifact_contracts
+from src.runtime.artifact_contracts import (
+    get_artifact_contract,
+    get_artifact_contract_by_id,
+    list_artifact_contracts,
+    list_artifact_contracts_by_id,
+)
 from src.runtime.run_profiles import RunMode
 
 
@@ -27,3 +32,14 @@ def test_paper_contract_required_outputs_are_explicit() -> None:
         "run_manifest",
     }
     assert set(contract.required_names) == expected
+
+
+def test_mid_pipeline_contracts_are_registered_by_id() -> None:
+    contracts = list_artifact_contracts_by_id()
+    assert "scanner_bundle_v1" in contracts
+    assert "monitoring_bundle_v1" in contracts
+    assert "decision_bundle_v1" in contracts
+
+    scanner_contract = get_artifact_contract_by_id("scanner_bundle_v1")
+    assert scanner_contract.run_mode == RunMode.RESEARCH
+    assert "run_manifest" in scanner_contract.required_names

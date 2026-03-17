@@ -21,6 +21,8 @@
 | Output manifest metadata | supported | `src/runtime/output_manifest.py` | `run_manifest.json` | stable |
 | Artifact contracts | supported | `src/runtime/artifact_contracts.py` | explicit required/optional output bundles | stable |
 | Workflow orchestration smoke paths | supported | `src/runtime/workflow_orchestrator.py`, `scripts/run_release_smoke.py` | release smoke summary + validated bundles | stable |
+| Scanner/monitoring/decision contract bundles | supported | `src/runtime/artifact_contracts.py` + `src/runtime/daily_dry_run.py` | stage-level manifests + contract validation | stable |
+| Daily dry-run orchestration | supported | `scripts/run_daily_dry_run.py` | scanner/monitoring/decision chain summary | stable |
 
 ## Notes
 

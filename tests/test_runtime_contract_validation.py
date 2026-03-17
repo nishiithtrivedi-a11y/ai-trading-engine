@@ -96,3 +96,33 @@ def test_validate_contract_detects_manifest_run_mode_mismatch(tmp_path: Path) ->
 def test_assert_contract_raises_for_invalid_bundle(tmp_path: Path) -> None:
     with pytest.raises(ArtifactContractValidationError):
         assert_artifact_contract(run_mode="paper", output_dir=tmp_path)
+
+
+def test_validate_contract_by_contract_id_without_run_mode(tmp_path: Path) -> None:
+    contract = get_artifact_contract("research")
+    artifacts = {
+        "all_results": tmp_path / "all_results.csv",
+        "top_ranked": tmp_path / "top_ranked.csv",
+        "summary": tmp_path / "summary.md",
+        "run_manifest": tmp_path / "run_manifest.json",
+    }
+    for name, path in artifacts.items():
+        if name != "run_manifest":
+            _write_artifact(path)
+
+    manifest_path = write_output_manifest(
+        output_dir=tmp_path,
+        run_mode=contract.run_mode,
+        provider_name="indian_csv",
+        artifacts=artifacts,
+        contract_id=contract.contract_id,
+        expected_artifacts=contract.required_names,
+        schema_version=contract.schema_version,
+        safety_mode=contract.safety_mode,
+    )
+    result = validate_artifact_contract(
+        contract_id=contract.contract_id,
+        output_dir=tmp_path,
+        manifest_path=manifest_path,
+    )
+    assert result.is_valid is True

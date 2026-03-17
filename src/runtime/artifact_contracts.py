@@ -114,6 +114,68 @@ _CONTRACTS: dict[RunMode, ArtifactContract] = {
     ),
 }
 
+_MID_PIPELINE_CONTRACTS: dict[str, ArtifactContract] = {
+    "scanner_bundle_v1": ArtifactContract(
+        contract_id="scanner_bundle_v1",
+        run_mode=RunMode.RESEARCH,
+        producer="src/scanners/exporter.py",
+        required=(
+            ArtifactSpec("opportunities_csv", "opportunities.csv", ArtifactType.CSV),
+            ArtifactSpec("opportunities_json", "opportunities.json", ArtifactType.JSON),
+            ArtifactSpec("run_manifest", "run_manifest.json", ArtifactType.MANIFEST),
+        ),
+    ),
+    "monitoring_bundle_v1": ArtifactContract(
+        contract_id="monitoring_bundle_v1",
+        run_mode=RunMode.RESEARCH,
+        producer="src/monitoring/exporter.py",
+        required=(
+            ArtifactSpec("alerts_csv", "alerts.csv", ArtifactType.CSV),
+            ArtifactSpec("top_picks_csv", "top_picks.csv", ArtifactType.CSV),
+            ArtifactSpec("relative_strength_csv", "relative_strength.csv", ArtifactType.CSV),
+            ArtifactSpec("alerts_json", "alerts.json", ArtifactType.JSON),
+            ArtifactSpec("market_snapshot_json", "market_snapshot.json", ArtifactType.JSON),
+            ArtifactSpec("relative_strength_json", "relative_strength.json", ArtifactType.JSON),
+            ArtifactSpec("regime_summary_json", "regime_summary.json", ArtifactType.JSON),
+            ArtifactSpec(
+                "monitoring_run_manifest",
+                "monitoring_run_manifest.json",
+                ArtifactType.JSON,
+            ),
+            ArtifactSpec("run_manifest", "run_manifest.json", ArtifactType.MANIFEST),
+        ),
+    ),
+    "decision_bundle_v1": ArtifactContract(
+        contract_id="decision_bundle_v1",
+        run_mode=RunMode.RESEARCH,
+        producer="src/decision/exporter.py",
+        required=(
+            ArtifactSpec("intraday_csv", "decision_top_intraday.csv", ArtifactType.CSV),
+            ArtifactSpec("swing_csv", "decision_top_swing.csv", ArtifactType.CSV),
+            ArtifactSpec("positional_csv", "decision_top_positional.csv", ArtifactType.CSV),
+            ArtifactSpec("rejected_csv", "decision_rejected.csv", ArtifactType.CSV),
+            ArtifactSpec("summary_json", "decision_summary.json", ArtifactType.JSON),
+            ArtifactSpec("decision_manifest", "decision_manifest.json", ArtifactType.JSON),
+            ArtifactSpec("run_manifest", "run_manifest.json", ArtifactType.MANIFEST),
+        ),
+        optional=(
+            ArtifactSpec(
+                "paper_handoff_candidates",
+                "paper_handoff_candidates.csv",
+                ArtifactType.CSV,
+            ),
+        ),
+    ),
+}
+
+_CONTRACTS_BY_ID: dict[str, ArtifactContract] = {
+    contract.contract_id: contract
+    for contract in (
+        *tuple(_CONTRACTS.values()),
+        *tuple(_MID_PIPELINE_CONTRACTS.values()),
+    )
+}
+
 
 def get_artifact_contract(run_mode: RunMode | str) -> ArtifactContract:
     if isinstance(run_mode, RunMode):
@@ -127,5 +189,19 @@ def get_artifact_contract(run_mode: RunMode | str) -> ArtifactContract:
     return contract
 
 
+def get_artifact_contract_by_id(contract_id: str) -> ArtifactContract:
+    clean_id = str(contract_id).strip()
+    if not clean_id:
+        raise ArtifactContractError("contract_id cannot be empty")
+    contract = _CONTRACTS_BY_ID.get(clean_id)
+    if contract is None:
+        raise ArtifactContractError(f"No artifact contract configured for id '{clean_id}'")
+    return contract
+
+
 def list_artifact_contracts() -> dict[str, ArtifactContract]:
     return {mode.value: contract for mode, contract in _CONTRACTS.items()}
+
+
+def list_artifact_contracts_by_id() -> dict[str, ArtifactContract]:
+    return dict(_CONTRACTS_BY_ID)
