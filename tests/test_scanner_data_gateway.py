@@ -35,7 +35,7 @@ def _factory_for_csv() -> ProviderFactory:
     return ProviderFactory(config)
 
 
-def _factory_for_upstox() -> ProviderFactory:
+def _factory_for_upstox(data_dir: str = "data") -> ProviderFactory:
     config = DataProvidersConfig(
         default_provider="upstox",
         providers={
@@ -44,6 +44,7 @@ def _factory_for_upstox() -> ProviderFactory:
                 api_key="k",
                 api_secret="s",
                 access_token="t",
+                data_dir=data_dir,
             )
         },
     )
@@ -98,16 +99,16 @@ def test_missing_csv_file_raises_scanner_error(tmp_path: Path) -> None:
         gateway.load_data("RELIANCE.NS", "1D")
 
 
-def test_unsupported_provider_historical_fetch_is_graceful() -> None:
+def test_unsupported_provider_historical_fetch_is_graceful(tmp_path: Path) -> None:
     gateway = DataGateway(
         provider_name="upstox",
-        data_dir="data",
-        provider_factory=_factory_for_upstox(),
+        data_dir=str(tmp_path),
+        provider_factory=_factory_for_upstox(str(tmp_path)),
     )
 
     with pytest.raises(
         ScannerDataGatewayError,
-        match="historical_data",
+        match="does not support historical fetch yet|Historical fetch failed",
     ):
         gateway.load_data("RELIANCE.NS", "1D")
 

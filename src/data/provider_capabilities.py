@@ -116,16 +116,19 @@ _PROVIDER_CAPABILITIES: dict[str, ProviderFeatureSet] = {
     ),
     "upstox": ProviderFeatureSet(
         provider_name="upstox",
-        supports_historical_data=False,
+        supports_historical_data=True,
         supports_live_quotes=False,
-        supports_intraday_bars=False,
-        supports_daily_bars=False,
-        supports_instrument_lookup=False,
+        supports_intraday_bars=True,
+        supports_daily_bars=True,
+        supports_instrument_lookup=True,
         supports_order_execution=False,
-        supports_snapshot_polling=False,
+        supports_snapshot_polling=True,
         supported_instrument_types=_DEFAULT_INSTRUMENTS,
-        implementation_status=ImplementationStatus.PLACEHOLDER,
-        notes="Scaffolding present; data integration methods are not implemented.",
+        implementation_status=ImplementationStatus.PARTIAL,
+        notes=(
+            "Safe data-only integration with CSV fallback. "
+            "SDK/API path remains integration-ready and health-checks report degradation explicitly."
+        ),
     ),
 }
 

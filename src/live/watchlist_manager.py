@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from src.data.nse_universe import NSEUniverseLoader
+from src.data.symbol_mapping import SymbolMapper
 
 
 class LiveWatchlistError(Exception):
@@ -17,9 +18,11 @@ class LiveWatchlistError(Exception):
 @dataclass
 class LiveWatchlistManager:
     loader: Optional[NSEUniverseLoader] = None
+    symbol_mapper: Optional[SymbolMapper] = None
 
     def __post_init__(self) -> None:
         self.loader = self.loader or NSEUniverseLoader()
+        self.symbol_mapper = self.symbol_mapper or SymbolMapper()
 
     def resolve(
         self,
@@ -30,7 +33,8 @@ class LiveWatchlistManager:
         symbols_limit: Optional[int] = None,
     ) -> list[str]:
         if symbols:
-            resolved = self.loader.normalize_symbols(symbols)
+            rows = [self.symbol_mapper.to_canonical(symbol) for symbol in symbols if str(symbol).strip()]
+            resolved = list(dict.fromkeys(rows))
         else:
             try:
                 resolved = self.loader.get_universe(

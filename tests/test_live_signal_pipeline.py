@@ -77,6 +77,9 @@ def test_live_pipeline_generates_signals_and_artifacts(tmp_path: Path) -> None:
     report = pipeline.run()
 
     assert len(report.market_snapshots) == 2
+    for snapshot in report.market_snapshots:
+        assert "data_quality" in snapshot.metadata
+        assert snapshot.metadata["data_quality"]["schema_version"] == "v1"
     assert len(report.regime_snapshots) == 2
     assert len(report.decisions) == 2
     assert len(report.actionable_signals) >= 1
@@ -179,7 +182,7 @@ def test_live_pipeline_keeps_execution_inert_metadata(tmp_path: Path) -> None:
     assert report.metadata.get("safety") == "no_live_orders"
 
 
-def test_live_pipeline_rejects_provider_without_historical_capability(tmp_path: Path) -> None:
+def test_live_pipeline_handles_upstox_without_backing_data_gracefully(tmp_path: Path) -> None:
     cfg = LiveSignalPipelineConfig(
         enabled=True,
         provider_name="upstox",
@@ -192,4 +195,23 @@ def test_live_pipeline_rejects_provider_without_historical_capability(tmp_path: 
 
     assert report.decisions == []
     assert report.market_snapshots == []
-    assert any("historical_data" in error for error in report.errors)
+    assert any("No symbol data was available" in error for error in report.errors)
+
+
+def test_live_pipeline_normalizes_symbols_to_canonical(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    _write_symbol_csv(data_dir / "RELIANCE_1D.csv", base=100.0, slope=0.4, breakout_boost=4.0)
+
+    cfg = LiveSignalPipelineConfig(
+        enabled=True,
+        provider_name="csv",
+        symbols=["NSE:RELIANCE"],
+        output_dir=str(tmp_path / "canonical"),
+        data_dir=str(data_dir),
+    )
+    pipeline = LiveSignalPipeline(config=cfg, strategy_registry=_strategy_registry())
+    report = pipeline.run()
+
+    assert report.market_snapshots
+    assert report.market_snapshots[0].symbol == "RELIANCE.NS"

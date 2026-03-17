@@ -11,7 +11,7 @@ Responsibilities:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -162,6 +162,19 @@ class DataGateway:
                 f"{provider_symbol} [{timeframe}]"
             )
 
+        if hasattr(df, "attrs"):
+            quality = dict(getattr(df, "attrs", {}).get("data_quality", {}))
+            quality.setdefault("schema_version", "v1")
+            quality.setdefault("provider", self.provider_name)
+            quality.setdefault("source", "historical_fetch")
+            quality.setdefault("generated_at", datetime.now(UTC).isoformat())
+            quality.setdefault("fallback_provider", None)
+            quality.setdefault("partial_data", False)
+            quality.setdefault("stale_data", False)
+            quality.setdefault("missing_bars_count", 0)
+            quality.setdefault("auth_degraded", False)
+            df.attrs["data_quality"] = quality
+
         try:
             return DataHandler(df)
         except Exception as exc:  # noqa: BLE001
@@ -170,8 +183,4 @@ class DataGateway:
             ) from exc
 
     def _to_provider_symbol(self, symbol: str) -> str:
-        if self.provider_name == "zerodha":
-            return self._symbol_mapper.to_zerodha(symbol)
-        if self.provider_name == "upstox":
-            return self._symbol_mapper.to_upstox(symbol)
-        return symbol
+        return self._symbol_mapper.to_provider_symbol(self.provider_name, symbol)

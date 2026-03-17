@@ -168,11 +168,66 @@ _MID_PIPELINE_CONTRACTS: dict[str, ArtifactContract] = {
     ),
 }
 
+_OPERATIONAL_RUNNER_CONTRACTS: dict[str, ArtifactContract] = {
+    "scanner_runner_v1": ArtifactContract(
+        contract_id="scanner_runner_v1",
+        run_mode=RunMode.RESEARCH,
+        producer="scripts/run_scanner.py",
+        required=(
+            ArtifactSpec("scanner_candidates_csv", "scanner_candidates.csv", ArtifactType.CSV),
+            ArtifactSpec("scanner_candidates_json", "scanner_candidates.json", ArtifactType.JSON),
+            ArtifactSpec("scanner_summary_md", "scanner_summary.md", ArtifactType.MARKDOWN),
+            ArtifactSpec("scanner_artifacts_meta", "scanner_artifacts_meta.json", ArtifactType.JSON),
+            ArtifactSpec("run_manifest", "run_manifest.json", ArtifactType.MANIFEST),
+        ),
+        optional=(
+            ArtifactSpec("scanner_input_universe", "scanner_input_universe.csv", ArtifactType.CSV),
+        ),
+    ),
+    "monitoring_runner_v1": ArtifactContract(
+        contract_id="monitoring_runner_v1",
+        run_mode=RunMode.RESEARCH,
+        producer="scripts/run_monitoring.py",
+        required=(
+            ArtifactSpec("monitored_setups_csv", "monitored_setups.csv", ArtifactType.CSV),
+            ArtifactSpec("monitored_setups_json", "monitored_setups.json", ArtifactType.JSON),
+            ArtifactSpec("monitoring_summary_md", "monitoring_summary.md", ArtifactType.MARKDOWN),
+            ArtifactSpec("monitoring_artifacts_meta", "monitoring_artifacts_meta.json", ArtifactType.JSON),
+            ArtifactSpec("monitoring_decision_input", "monitoring_decision_input.json", ArtifactType.JSON),
+            ArtifactSpec("run_manifest", "run_manifest.json", ArtifactType.MANIFEST),
+        ),
+        optional=(
+            ArtifactSpec("alerts_csv", "alerts.csv", ArtifactType.CSV),
+            ArtifactSpec("alerts_json", "alerts.json", ArtifactType.JSON),
+            ArtifactSpec("relative_strength_csv", "relative_strength.csv", ArtifactType.CSV),
+            ArtifactSpec("regime_summary_json", "regime_summary.json", ArtifactType.JSON),
+        ),
+    ),
+    "decision_runner_v1": ArtifactContract(
+        contract_id="decision_runner_v1",
+        run_mode=RunMode.RESEARCH,
+        producer="scripts/run_decision.py",
+        required=(
+            ArtifactSpec("decision_candidates_csv", "decision_candidates.csv", ArtifactType.CSV),
+            ArtifactSpec("decision_selected_json", "decision_selected.json", ArtifactType.JSON),
+            ArtifactSpec("decision_rejected_json", "decision_rejected.json", ArtifactType.JSON),
+            ArtifactSpec("decision_summary_md", "decision_summary.md", ArtifactType.MARKDOWN),
+            ArtifactSpec("decision_artifacts_meta", "decision_artifacts_meta.json", ArtifactType.JSON),
+            ArtifactSpec("run_manifest", "run_manifest.json", ArtifactType.MANIFEST),
+        ),
+        optional=(
+            ArtifactSpec("paper_handoff_candidates", "paper_handoff_candidates.csv", ArtifactType.CSV),
+            ArtifactSpec("decision_summary_json", "decision_summary.json", ArtifactType.JSON),
+        ),
+    ),
+}
+
 _CONTRACTS_BY_ID: dict[str, ArtifactContract] = {
     contract.contract_id: contract
     for contract in (
         *tuple(_CONTRACTS.values()),
         *tuple(_MID_PIPELINE_CONTRACTS.values()),
+        *tuple(_OPERATIONAL_RUNNER_CONTRACTS.values()),
     )
 }
 

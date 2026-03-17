@@ -1,13 +1,13 @@
 """
 NSE symbol normalization and mapping layer.
 
-Handles the various symbol formats used across Indian market data providers:
-- Yahoo Finance:  RELIANCE.NS
-- Zerodha:        RELIANCE (exchange prefix via instrument token)
-- Upstox:         NSE_EQ|RELIANCE
-- CSV filenames:  RELIANCE_1D.csv, RELIANCE_5m.csv
+Canonical internal representation:
+- Yahoo/NSE style exchange suffix (default): ``RELIANCE.NS``
 
-This module provides bidirectional mapping between these formats.
+Provider adapters translate canonical symbols at boundaries:
+- Zerodha: ``RELIANCE``
+- Upstox: ``NSE_EQ|RELIANCE``
+- CSV filename stems: ``RELIANCE``
 """
 
 from __future__ import annotations
@@ -21,6 +21,9 @@ _EXCHANGE_SUFFIXES = {".NS", ".BO", ".NFO"}
 
 # Upstox exchange prefixes
 _UPSTOX_PREFIXES = {"NSE_EQ", "BSE_EQ", "NSE_FO", "NSE_INDEX"}
+
+# Exchange-prefixed symbols
+_EXCHANGE_COLON_PREFIXES = {"NSE", "BSE", "NFO", "NSE_EQ", "BSE_EQ", "NSE_FO", "NSE_INDEX"}
 
 
 class SymbolMapper:
@@ -64,7 +67,21 @@ class SymbolMapper:
             if parts[0] in _UPSTOX_PREFIXES:
                 return parts[1]
 
+        # Strip exchange-prefixed symbols (NSE:RELIANCE)
+        if ":" in s:
+            parts = s.split(":", 1)
+            if parts[0] in _EXCHANGE_COLON_PREFIXES:
+                return parts[1]
+
         return s
+
+    def to_canonical(self, symbol: str, exchange_suffix: Optional[str] = None) -> str:
+        """Convert any provider/display format into canonical internal symbol."""
+        base = self.normalize(symbol)
+        suffix = str(exchange_suffix or self.default_exchange).strip().upper()
+        if not suffix.startswith("."):
+            suffix = f".{suffix}"
+        return f"{base}{suffix}"
 
     def to_yahoo(self, symbol: str, exchange: Optional[str] = None) -> str:
         """Convert to Yahoo Finance format (e.g. RELIANCE.NS)."""
@@ -82,6 +99,30 @@ class SymbolMapper:
         """Convert to Upstox format (e.g. NSE_EQ|RELIANCE)."""
         base = self.normalize(symbol)
         return f"{segment}|{base}"
+
+    def to_provider_symbol(self, provider_name: str, symbol: str) -> str:
+        """
+        Translate canonical/display symbol into provider boundary format.
+
+        Returns:
+            csv/indian_csv -> base symbol for filename mapping
+            zerodha        -> bare symbol
+            upstox         -> NSE_EQ|<base>
+            default        -> canonical symbol
+        """
+        provider = str(provider_name).strip().lower()
+        if provider in {"csv", "indian_csv"}:
+            return self.normalize(symbol)
+        if provider == "zerodha":
+            return self.to_zerodha(symbol)
+        if provider == "upstox":
+            return self.to_upstox(symbol)
+        return self.to_canonical(symbol)
+
+    def from_provider_symbol(self, provider_name: str, symbol: str) -> str:
+        """Translate provider symbol into canonical internal representation."""
+        _ = str(provider_name).strip().lower()
+        return self.to_canonical(symbol)
 
     def from_filename(self, filename: str) -> str:
         """Extract base symbol from a data filename.

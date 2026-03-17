@@ -39,13 +39,14 @@ class TestProviderFactory:
         with pytest.raises(ProviderError, match="credentials"):
             factory.create("zerodha")
 
-    def test_create_upstox_without_credentials_raises(self):
+    def test_create_upstox_without_credentials_uses_degraded_fallback_mode(self):
         config = self._make_config(
             upstox={"enabled": True, "api_key": "", "api_secret": "", "access_token": ""}
         )
         factory = ProviderFactory(config)
-        with pytest.raises(ProviderError, match="credentials"):
-            factory.create("upstox")
+        source = factory.create("upstox")
+        from src.data.sources import UpstoxDataSource
+        assert isinstance(source, UpstoxDataSource)
 
     def test_create_zerodha_with_credentials(self):
         config = self._make_config(

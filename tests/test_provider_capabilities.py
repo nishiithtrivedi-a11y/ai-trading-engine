@@ -27,14 +27,15 @@ def test_validate_provider_feature_supports_historical_for_zerodha() -> None:
     validate_provider_feature("zerodha", ProviderFeature.HISTORICAL_DATA)
 
 
-def test_validate_provider_workflow_rejects_upstox_historical() -> None:
-    with pytest.raises(ProviderCapabilityError, match="historical_data"):
-        validate_provider_workflow(
-            "upstox",
-            require_historical_data=True,
-            timeframe="1D",
-            instrument_type=InstrumentType.EQUITY,
-        )
+def test_validate_provider_workflow_accepts_upstox_historical() -> None:
+    feature_set = validate_provider_workflow(
+        "upstox",
+        require_historical_data=True,
+        timeframe="1D",
+        instrument_type=InstrumentType.EQUITY,
+    )
+    assert feature_set.provider_name == "upstox"
+    assert feature_set.supports_historical_data is True
 
 
 def test_validate_provider_workflow_rejects_csv_live_quotes() -> None:
@@ -47,9 +48,19 @@ def test_validate_provider_workflow_rejects_csv_live_quotes() -> None:
         )
 
 
-def test_validate_provider_workflow_rejects_unsupported_intraday() -> None:
-    with pytest.raises(ProviderCapabilityError, match="intraday_bars"):
-        validate_provider_workflow("upstox", timeframe="5m")
+def test_validate_provider_workflow_rejects_upstox_live_quotes() -> None:
+    with pytest.raises(ProviderCapabilityError, match="live_quotes"):
+        validate_provider_workflow(
+            "upstox",
+            require_live_quotes=True,
+            timeframe="1D",
+            instrument_type=InstrumentType.EQUITY,
+        )
+
+
+def test_validate_provider_workflow_accepts_upstox_intraday() -> None:
+    feature_set = validate_provider_workflow("upstox", timeframe="5m")
+    assert feature_set.supports_intraday_bars is True
 
 
 def test_validate_provider_workflow_rejects_unsupported_instrument_type() -> None:

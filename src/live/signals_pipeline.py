@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 import pandas as pd
 
+from src.data.symbol_mapping import SymbolMapper
 from src.data.instrument_metadata import InstrumentType
 from src.data.provider_capabilities import (
     ProviderCapabilityError,
@@ -93,6 +94,7 @@ class LiveSignalPipeline:
         if not self.strategy_registry:
             raise ValueError("strategy_registry cannot be empty")
 
+        self._symbol_mapper = SymbolMapper()
         self.watchlist_manager = self.watchlist_manager or LiveWatchlistManager()
         self.data_gateway = self.data_gateway or DataGateway(
             provider_name=self.config.provider_name,
@@ -199,15 +201,35 @@ class LiveSignalPipeline:
                 report.warnings.append(f"{symbol}: fewer than 2 bars after lookback filter")
                 continue
 
-            canonical = str(symbol).strip().upper()
+            canonical = self._symbol_mapper.to_canonical(symbol)
             frames[canonical] = df
 
             last = df.iloc[-1]
+            ts_value = pd.Timestamp(df.index[-1])
+            freshness_seconds = self._freshness_seconds(ts_value)
+            stale_data = freshness_seconds > self._stale_threshold_seconds(self.config.timeframe)
+            quality = dict(df.attrs.get("data_quality", {}))
+            quality.setdefault("schema_version", "v1")
+            quality.setdefault("provider", self.config.provider_name)
+            quality.setdefault("source", "historical_snapshot")
+            quality.setdefault("freshness_seconds", freshness_seconds)
+            quality.setdefault("stale_data", stale_data)
+            quality.setdefault("partial_data", len(df) < 2)
+            quality.setdefault("missing_bars_count", 0)
+            quality.setdefault("fallback_provider", None)
+            quality.setdefault("auth_degraded", False)
+
+            if stale_data:
+                report.warnings.append(
+                    f"{canonical}: latest bar appears stale "
+                    f"(freshness_seconds={freshness_seconds:.0f})"
+                )
+
             snapshots.append(
                 LiveMarketSnapshot(
                     symbol=canonical,
                     timeframe=self.config.timeframe,
-                    timestamp=pd.Timestamp(df.index[-1]),
+                    timestamp=ts_value,
                     open_price=float(last["open"]),
                     high_price=float(last["high"]),
                     low_price=float(last["low"]),
@@ -215,7 +237,10 @@ class LiveSignalPipeline:
                     volume=float(last.get("volume", 0.0)),
                     bars_loaded=len(df),
                     provider_name=self.config.provider_name,
-                    metadata={"lookback_bars": self.config.lookback_bars},
+                    metadata={
+                        "lookback_bars": self.config.lookback_bars,
+                        "data_quality": quality,
+                    },
                 )
             )
 
@@ -456,6 +481,27 @@ class LiveSignalPipeline:
                 f"Strategy '{strategy_name}' returned unsupported signal type: {type(result)}"
             )
         return result
+
+    @staticmethod
+    def _freshness_seconds(timestamp: pd.Timestamp) -> float:
+        ts = pd.Timestamp(timestamp)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        else:
+            ts = ts.tz_convert("UTC")
+        now = pd.Timestamp.now(tz="UTC")
+        return max(0.0, float((now - ts).total_seconds()))
+
+    @staticmethod
+    def _stale_threshold_seconds(timeframe: str) -> float:
+        mapping = {
+            "1m": 3 * 60.0,
+            "5m": 20 * 60.0,
+            "15m": 45 * 60.0,
+            "1h": 3 * 3600.0,
+            "1D": 3 * 24 * 3600.0,
+        }
+        return mapping.get(str(timeframe).strip(), 24 * 3600.0)
 
 
 def _interval_to_timeframe(interval: str) -> str:

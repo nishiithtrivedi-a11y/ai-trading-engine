@@ -26,12 +26,13 @@ def test_validate_symbol_inputs_requires_custom_universe_file_without_symbols() 
         )
 
 
-def test_validate_provider_for_mode_rejects_placeholder_provider() -> None:
+def test_validate_provider_for_mode_rejects_missing_live_quotes_requirement() -> None:
     with pytest.raises(RunnerValidationError):
         validate_provider_for_mode(
             provider_name="upstox",
-            mode="paper",
+            mode="live_safe",
             timeframe="1D",
+            require_live_quotes=True,
         )
 
 

@@ -39,7 +39,13 @@ def test_mid_pipeline_contracts_are_registered_by_id() -> None:
     assert "scanner_bundle_v1" in contracts
     assert "monitoring_bundle_v1" in contracts
     assert "decision_bundle_v1" in contracts
+    assert "scanner_runner_v1" in contracts
+    assert "monitoring_runner_v1" in contracts
+    assert "decision_runner_v1" in contracts
 
     scanner_contract = get_artifact_contract_by_id("scanner_bundle_v1")
     assert scanner_contract.run_mode == RunMode.RESEARCH
     assert "run_manifest" in scanner_contract.required_names
+
+    decision_runner_contract = get_artifact_contract_by_id("decision_runner_v1")
+    assert "decision_selected_json" in decision_runner_contract.required_names
