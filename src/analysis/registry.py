@@ -204,7 +204,7 @@ class AnalysisRegistry:
             - TechnicalAnalysisModule  (name="technical")
             - QuantAnalysisModule      (name="quant")
 
-        Registered but disabled by default (stubs):
+        Registered but disabled by default:
             - FundamentalAnalysisModule
             - MacroAnalysisModule
             - SentimentAnalysisModule
@@ -233,7 +233,7 @@ class AnalysisRegistry:
         registry.register(TechnicalAnalysisModule())
         registry.register(QuantAnalysisModule())
 
-        # Stub modules — registered but disabled
+        # Optional modules -- registered but disabled by default
         for stub in [
             FundamentalAnalysisModule(),
             MacroAnalysisModule(),

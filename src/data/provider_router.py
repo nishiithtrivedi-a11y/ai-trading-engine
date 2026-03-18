@@ -15,6 +15,9 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from src.data.provider_capabilities import (
+    AnalysisFamily,
+    get_analysis_provider_feature_set,
+    validate_analysis_provider_family,
     ProviderCapabilityError,
     ProviderFeatureSet,
     get_provider_feature_set,
@@ -213,4 +216,127 @@ class ProviderRouter:
                 "fallback_order": self._policy.fallback_order,
             },
             "providers": report,
+        }
+
+
+@dataclass
+class AnalysisProviderRoutingPolicy:
+    """Family-specific routing policy for non-technical analysis data."""
+
+    fundamentals_provider: str = "none"
+    macro_provider: str = "none"
+    sentiment_provider: str = "none"
+    intermarket_provider: str = "derived"
+    fallback_order: list[str] = field(
+        default_factory=lambda: ["fmp", "finnhub", "alphavantage", "eodhd", "none"]
+    )
+    allow_degraded: bool = True
+
+    @classmethod
+    def from_config(cls, config: dict) -> "AnalysisProviderRoutingPolicy":
+        return cls(
+            fundamentals_provider=str(config.get("fundamentals_provider", "none")).strip().lower(),
+            macro_provider=str(config.get("macro_provider", "none")).strip().lower(),
+            sentiment_provider=str(config.get("sentiment_provider", "none")).strip().lower(),
+            intermarket_provider=str(config.get("intermarket_provider", "derived")).strip().lower(),
+            fallback_order=[
+                str(provider).strip().lower()
+                for provider in config.get(
+                    "fallback_order",
+                    ["fmp", "finnhub", "alphavantage", "eodhd", "none"],
+                )
+            ],
+            allow_degraded=bool(config.get("allow_degraded", True)),
+        )
+
+    def preferred_for_family(self, family: AnalysisFamily | str) -> str:
+        clean_family = (
+            family.value if isinstance(family, AnalysisFamily) else str(family).strip().lower()
+        )
+        mapping = {
+            AnalysisFamily.FUNDAMENTALS.value: self.fundamentals_provider,
+            AnalysisFamily.MACRO.value: self.macro_provider,
+            AnalysisFamily.SENTIMENT.value: self.sentiment_provider,
+            AnalysisFamily.INTERMARKET.value: self.intermarket_provider,
+        }
+        preferred = str(mapping.get(clean_family, "none")).strip().lower()
+        if clean_family == AnalysisFamily.INTERMARKET.value and preferred == "none":
+            return "derived"
+        return preferred
+
+
+class AnalysisProviderRouter:
+    """Select providers independently for fundamentals/macro/sentiment/intermarket."""
+
+    def __init__(self, policy: Optional[AnalysisProviderRoutingPolicy] = None):
+        self._policy = policy or AnalysisProviderRoutingPolicy()
+
+    @property
+    def policy(self) -> AnalysisProviderRoutingPolicy:
+        return self._policy
+
+    def select_for_family(self, family: AnalysisFamily | str) -> str:
+        clean_family = (
+            family if isinstance(family, AnalysisFamily) else AnalysisFamily(str(family).strip().lower())
+        )
+        preferred = self._policy.preferred_for_family(clean_family)
+        candidates = [preferred] + [
+            provider
+            for provider in self._policy.fallback_order
+            if provider != preferred
+        ]
+        if clean_family == AnalysisFamily.INTERMARKET:
+            candidates.append("derived")
+        if "none" not in candidates:
+            candidates.append("none")
+
+        for candidate in candidates:
+            try:
+                validate_analysis_provider_family(candidate, clean_family)
+                return candidate
+            except ProviderCapabilityError:
+                continue
+        return "none"
+
+    def capability_report(self) -> dict:
+        families = (
+            AnalysisFamily.FUNDAMENTALS,
+            AnalysisFamily.MACRO,
+            AnalysisFamily.SENTIMENT,
+            AnalysisFamily.INTERMARKET,
+        )
+        report: dict[str, dict] = {}
+        for family in families:
+            configured = self._policy.preferred_for_family(family)
+            selected = self.select_for_family(family)
+            try:
+                fs = get_analysis_provider_feature_set(selected)
+                report[family.value] = {
+                    "configured_provider": configured,
+                    "selected_provider": selected,
+                    "supports_fundamentals": fs.supports_fundamentals,
+                    "supports_macro": fs.supports_macro,
+                    "supports_sentiment": fs.supports_sentiment,
+                    "supports_news": fs.supports_news,
+                    "supports_macro_calendar": fs.supports_macro_calendar,
+                    "supports_intermarket_inputs": fs.supports_intermarket_inputs,
+                    "status": fs.implementation_status.value,
+                }
+            except ProviderCapabilityError:
+                report[family.value] = {
+                    "configured_provider": configured,
+                    "selected_provider": selected,
+                    "status": "unknown_provider",
+                }
+
+        return {
+            "policy": {
+                "fundamentals_provider": self._policy.fundamentals_provider,
+                "macro_provider": self._policy.macro_provider,
+                "sentiment_provider": self._policy.sentiment_provider,
+                "intermarket_provider": self._policy.intermarket_provider,
+                "fallback_order": list(self._policy.fallback_order),
+                "allow_degraded": self._policy.allow_degraded,
+            },
+            "families": report,
         }

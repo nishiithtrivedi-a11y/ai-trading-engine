@@ -5,7 +5,7 @@ Opportunity scoring and ranking.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import pandas as pd
 
@@ -40,7 +40,8 @@ class OpportunityScorer:
         data_handler: DataHandler,
         scanner_config: ScannerConfig,
         analysis_registry: Optional["AnalysisRegistry"] = None,
-    ) -> dict[str, float]:
+        analysis_context: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         if not signal.is_actionable:
             raise OpportunityScorerError("Cannot score a non-actionable signal")
 
@@ -68,7 +69,7 @@ class OpportunityScorer:
 
         final_score = _clamp(weighted_sum / total_weight, 0.0, 1.0) * 100.0
 
-        result: dict[str, float] = {
+        result: dict[str, Any] = {
             "score": final_score,
             "signal": _clamp(components["signal"]),
             "risk_reward": _clamp(components["risk_reward"]),
@@ -81,14 +82,36 @@ class OpportunityScorer:
             try:
                 from src.analysis.feature_schema import FeatureOutput  # noqa: PLC0415
 
+                module_context = {
+                    "signal": signal,
+                    "setup": setup,
+                    "symbol": signal.symbol,
+                    "timeframe": signal.timeframe,
+                    "provider_name": scanner_config.provider_name,
+                }
+                if analysis_context:
+                    module_context.update(dict(analysis_context))
+
                 features = FeatureOutput.from_modules(
                     analysis_registry.enabled_modules(),
                     data_handler.data,
-                    {"signal": signal, "setup": setup},
+                    module_context,
                 )
-                result["analysis_features"] = features.to_dict()  # type: ignore[assignment]
+                feature_payload = features.to_dict()
+                result["analysis_features"] = feature_payload
+                result.update(self._analysis_summaries(feature_payload))
+                result["event_risk_flags"] = self._extract_event_risk_flags(feature_payload)
+                if analysis_context and analysis_context.get("analysis_provider_metadata"):
+                    result["analysis_provider_metadata"] = analysis_context.get(
+                        "analysis_provider_metadata", {}
+                    )
             except Exception:  # noqa: BLE001
-                result["analysis_features"] = {}  # type: ignore[assignment]
+                result["analysis_features"] = {}
+                result["event_risk_flags"] = {}
+                if analysis_context and analysis_context.get("analysis_provider_metadata"):
+                    result["analysis_provider_metadata"] = analysis_context.get(
+                        "analysis_provider_metadata", {}
+                    )
 
         return result
 
@@ -235,3 +258,82 @@ class OpportunityScorer:
             delta = latest_ts - signal.timestamp
             days = max(0.0, float(delta.total_seconds()) / 86400.0)
             return _clamp(1.0 - days / float(self.freshness_decay_bars))
+
+    @staticmethod
+    def _analysis_summaries(feature_payload: dict[str, dict]) -> dict[str, dict]:
+        def _summary(domain: str, keys: list[str]) -> dict:
+            row = feature_payload.get(domain, {}) if isinstance(feature_payload, dict) else {}
+            if not isinstance(row, dict):
+                return {}
+            return {
+                key: row.get(key)
+                for key in keys
+                if key in row
+            }
+
+        return {
+            "fundamental_summary": _summary(
+                "fundamental",
+                [
+                    "factor_value",
+                    "factor_quality",
+                    "factor_growth",
+                    "factor_leverage",
+                    "factor_profitability",
+                    "factor_cash_flow_quality",
+                    "fundamental_provider",
+                    "fundamental_stale",
+                ],
+            ),
+            "macro_summary": _summary(
+                "macro",
+                [
+                    "macro_regime",
+                    "macro_inflation_trend",
+                    "macro_growth_trend",
+                    "macro_rate_pressure",
+                    "macro_yield_curve_spread",
+                    "macro_provider",
+                    "macro_stale",
+                ],
+            ),
+            "sentiment_summary": _summary(
+                "sentiment",
+                [
+                    "sentiment_ticker",
+                    "sentiment_market",
+                    "sentiment_macro",
+                    "news_intensity_24h",
+                    "sentiment_provider",
+                    "sentiment_stale",
+                ],
+            ),
+            "intermarket_summary": _summary(
+                "intermarket",
+                [
+                    "intermarket_corr_asset_benchmark",
+                    "intermarket_corr_asset_rates",
+                    "intermarket_confirmation_flag",
+                    "intermarket_contradiction_flag",
+                    "intermarket_provider",
+                    "intermarket_degraded",
+                ],
+            ),
+        }
+
+    @staticmethod
+    def _extract_event_risk_flags(feature_payload: dict[str, dict]) -> dict[str, float]:
+        flags: dict[str, float] = {}
+        if not isinstance(feature_payload, dict):
+            return flags
+        for domain, row in feature_payload.items():
+            if not isinstance(row, dict):
+                continue
+            for key, value in row.items():
+                if "event_risk" not in str(key) and "blackout" not in str(key):
+                    continue
+                try:
+                    flags[f"{domain}.{key}"] = float(value)
+                except (TypeError, ValueError):
+                    continue
+        return flags

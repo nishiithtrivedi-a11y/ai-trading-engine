@@ -47,6 +47,12 @@ class StockScannerEngine:
         self.setup_engine = self.setup_engine or SetupEngine()
         self.classifier = self.classifier or OpportunityClassifier()
         self.scorer = self.scorer or OpportunityScorer()
+        self._analysis_context: dict = {}
+
+        if self.analysis_registry is None and self.scanner_config.enable_analysis_features:
+            self.analysis_registry = self._build_analysis_registry()
+        if self.scanner_config.enable_analysis_features:
+            self._analysis_context = self._build_analysis_context()
 
     def run(self, export: bool = False, exporter=None) -> ScanResult:
         if not self.scanner_config.strategy_specs:
@@ -96,6 +102,7 @@ class StockScannerEngine:
                             data_handler=data_handler,
                             scanner_config=self.scanner_config,
                             analysis_registry=self.analysis_registry,
+                            analysis_context=self._analysis_context,
                         )
 
                         opportunity = Opportunity.from_parts(
@@ -144,3 +151,50 @@ class StockScannerEngine:
             exporter.export_all(result, self.scanner_config.export, top_n=self.scanner_config.top_n)
 
         return result
+
+    def _build_analysis_registry(self):
+        from src.analysis.registry import AnalysisRegistry
+        from src.config.analysis_profiles import AnalysisProfileError, AnalysisProfileLoader
+
+        registry = AnalysisRegistry.create_default()
+        profile_name = self.scanner_config.analysis_profile or "default"
+        loader = AnalysisProfileLoader()
+        try:
+            loader.apply_profile_by_name(profile_name, registry)
+        except AnalysisProfileError:
+            # Fall back to default profile if the requested profile is unavailable.
+            loader.apply_profile_by_name("default", registry)
+        return registry
+
+    def _build_analysis_context(self) -> dict:
+        context = dict(self.scanner_config.analysis_context or {})
+        context.setdefault("analysis_profile", self.scanner_config.analysis_profile or "default")
+
+        if "analysis_provider_metadata" not in context:
+            try:
+                from src.data.provider_factory import ProviderFactory
+
+                factory = ProviderFactory.from_config()
+                provider_report = factory.analysis_capability_report()
+            except Exception:  # noqa: BLE001
+                provider_report = {}
+            context["analysis_provider_metadata"] = provider_report
+
+        if "analysis_provider_selection" not in context:
+            configured = context.get("analysis_provider_metadata", {}).get("configured", {})
+            context["analysis_provider_selection"] = {
+                "fundamentals": configured.get("fundamentals_provider", "none"),
+                "macro": configured.get("macro_provider", "none"),
+                "sentiment": configured.get("sentiment_provider", "none"),
+                "intermarket": configured.get("intermarket_provider", "derived"),
+            }
+
+        if "analysis_provider_settings" not in context:
+            allow_derived = context.get("analysis_provider_metadata", {}).get(
+                "allow_derived_sentiment_fallback", True
+            )
+            context["analysis_provider_settings"] = {
+                "allow_derived_sentiment_fallback": bool(allow_derived)
+            }
+
+        return context

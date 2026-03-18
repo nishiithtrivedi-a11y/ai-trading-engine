@@ -105,6 +105,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-once", action="store_true", help="No-op; accepted for CLI consistency.")
     parser.add_argument("--max-symbols", type=int, default=0, help="Optional max symbols.")
     parser.add_argument("--data-dir", default="data", help="CSV data directory.")
+    parser.add_argument(
+        "--enable-analysis-features",
+        action="store_true",
+        help="Enable profile-driven analysis module features in scanner scoring context.",
+    )
+    parser.add_argument(
+        "--analysis-profile",
+        default="",
+        help="Optional analysis profile name (for example: intraday_equity, swing_equity, macro_swing).",
+    )
     parser.add_argument("--paper-handoff", action="store_true", help="Write paper_handoff_candidates.csv.")
     parser.add_argument(
         "--portfolio-capital",
@@ -407,6 +417,8 @@ def _build_monitoring_from_symbols(
     data_dir: str,
     timeframe: str,
     snapshot_top_n: int,
+    enable_analysis_features: bool = False,
+    analysis_profile: str = "",
 ) -> MonitoringRunResult:
     scanner_cfg = ScannerConfig(
         universe_name="custom",
@@ -425,6 +437,8 @@ def _build_monitoring_from_symbols(
                 timeframes=[timeframe],
             ),
         ],
+        enable_analysis_features=bool(enable_analysis_features),
+        analysis_profile=str(analysis_profile).strip(),
     )
     cfg = MonitoringConfig(
         scanner_config=scanner_cfg,
@@ -753,6 +767,8 @@ def main() -> int:
             data_dir=args.data_dir,
             timeframe=timeframe,
             snapshot_top_n=profile.monitoring_top_picks,
+            enable_analysis_features=bool(args.enable_analysis_features),
+            analysis_profile=str(args.analysis_profile).strip(),
         )
 
     decision_cfg = DecisionConfig()

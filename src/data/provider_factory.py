@@ -12,8 +12,13 @@ from typing import Dict, Optional, Type
 from src.data.base import BaseDataSource
 from src.data.instrument_metadata import InstrumentType
 from src.data.provider_capabilities import (
+    AnalysisFamily,
+    AnalysisProviderFeatureSet,
     ProviderFeatureSet,
+    get_analysis_provider_feature_set,
+    get_analysis_provider_diagnostics,
     get_provider_feature_set,
+    validate_analysis_provider_family,
     validate_provider_workflow,
 )
 from src.data.provider_config import (
@@ -243,3 +248,64 @@ class ProviderFactory:
             timeframe=timeframe,
             instrument_type=instrument_type,
         )
+
+    def get_analysis_provider(self, family: AnalysisFamily | str) -> str:
+        clean_family = (
+            family.value if isinstance(family, AnalysisFamily) else str(family).strip().lower()
+        )
+        provider_name = self.config.analysis_providers.provider_for_family(clean_family)
+        if clean_family == AnalysisFamily.INTERMARKET.value and provider_name == "none":
+            return "derived"
+        return provider_name
+
+    def get_analysis_capabilities(
+        self,
+        family: AnalysisFamily | str,
+    ) -> AnalysisProviderFeatureSet:
+        provider_name = self.get_analysis_provider(family)
+        return get_analysis_provider_feature_set(provider_name)
+
+    def validate_analysis_capabilities(
+        self,
+        family: AnalysisFamily | str,
+    ) -> AnalysisProviderFeatureSet:
+        provider_name = self.get_analysis_provider(family)
+        return validate_analysis_provider_family(provider_name, family)
+
+    def analysis_capability_report(self) -> dict:
+        configured = self.config.analysis_providers.normalized()
+        report: dict[str, dict] = {}
+        for family in (
+            AnalysisFamily.FUNDAMENTALS,
+            AnalysisFamily.MACRO,
+            AnalysisFamily.SENTIMENT,
+            AnalysisFamily.INTERMARKET,
+        ):
+            selected = self.get_analysis_provider(family)
+            payload_available = False
+            try:
+                feature_set = validate_analysis_provider_family(selected, family)
+                report[family.value] = get_analysis_provider_diagnostics(
+                    selected,
+                    configured=selected != "none",
+                    payload_available=payload_available,
+                    stale=False,
+                )
+                report[family.value]["selected_provider"] = feature_set.provider_name
+                report[family.value]["available"] = True
+            except Exception as exc:  # noqa: BLE001
+                diagnostics = get_analysis_provider_diagnostics(
+                    selected if selected else "none",
+                    configured=selected != "none",
+                    payload_available=payload_available,
+                    stale=False,
+                )
+                diagnostics["available"] = False
+                diagnostics["reason"] = str(exc)
+                report[family.value] = diagnostics
+
+        report["allow_derived_sentiment_fallback"] = bool(
+            self.config.analysis_providers.allow_derived_sentiment_fallback
+        )
+        report["configured"] = configured
+        return report

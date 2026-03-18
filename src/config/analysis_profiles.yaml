@@ -7,10 +7,10 @@
 # Module names must match the `name` attribute of a registered
 # BaseAnalysisModule subclass.
 #
-# Stub modules (fundamental, macro, sentiment, intermarket, futures,
+# Optional modules (fundamental, macro, sentiment, intermarket, futures,
 # options, commodities, forex, crypto) are registered in the default
-# registry but disabled. Enable them in a profile when the required
-# data feeds are available.
+# registry but disabled. Profiles can enable them; modules degrade
+# gracefully when provider data is unavailable.
 
 default:
   description: "Default profile — technical and quantitative analysis only"
@@ -60,13 +60,15 @@ index_options:
 
 commodity_futures:
   description: >
-    Commodity futures profile (MCX). Adds futures and commodities modules
-    alongside technical analysis.
+    Commodity futures profile (MCX). Adds futures/commodities modules plus
+    macro and intermarket context.
   enabled:
     - technical
     - quant
     - futures
     - commodities
+    - macro
+    - intermarket
 
 forex_futures:
   description: >
@@ -131,9 +133,12 @@ equity_options:
 
 inr_currency_derivatives:
   description: >
-    INR currency derivatives profile (CDS). Technical + quant + futures + forex context.
+    INR currency derivatives profile (CDS). Adds futures and forex modules
+    with macro and intermarket context overlays.
   enabled:
     - technical
     - quant
     - futures
     - forex
+    - macro
+    - intermarket
