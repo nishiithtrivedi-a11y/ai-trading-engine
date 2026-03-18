@@ -43,6 +43,12 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [validating, setValidating] = useState<string | null>(null);
 
+  // Dhan config modal states
+  const [dhanConfigOpen, setDhanConfigOpen] = useState(false);
+  const [dhanClientId, setDhanClientId] = useState('');
+  const [dhanAccessToken, setDhanAccessToken] = useState('');
+  const [savingDhan, setSavingDhan] = useState(false);
+
   const loadProviders = useCallback(() => {
     setLoading(true);
     axios.get(`${API}/providers/sessions`)
@@ -62,6 +68,45 @@ export function SettingsPage() {
       ));
     } catch { /* ignore */ }
     finally { setValidating(null); }
+  };
+
+  const handleOAuthConnect = async (providerType: string) => {
+    try {
+      const res = await axios.get(`${API}/providers/sessions/${providerType}/login`);
+      const authWindow = window.open(res.data.login_url, `${providerType}_login`, 'width=500,height=700');
+      
+      const timer = setInterval(() => {
+        if (authWindow?.closed) {
+          clearInterval(timer);
+          loadProviders();
+        }
+      }, 1000);
+    } catch (err: any) {
+      alert(`Failed to start ${providerType} connection: ${err.response?.data?.detail || err.message}`);
+    }
+  };
+
+  const handleDhanSave = async () => {
+    if (!dhanClientId || !dhanAccessToken) {
+      alert("Both Client ID and Access Token are required."); return;
+    }
+    setSavingDhan(true);
+    try {
+      await axios.post(`${API}/providers/sessions/dhanhq/credentials`, {
+        credentials: {
+          CLIENT_ID: dhanClientId,
+          ACCESS_TOKEN: dhanAccessToken
+        }
+      });
+      setDhanConfigOpen(false);
+      setDhanClientId('');
+      setDhanAccessToken('');
+      loadProviders();
+    } catch (err: any) {
+      alert(`Failed to save DhanHQ credentials: ${err.message}`);
+    } finally {
+      setSavingDhan(false);
+    }
   };
 
   return (
@@ -206,7 +251,27 @@ export function SettingsPage() {
                       </div>
                     )}
                   </div>
-                  <div className="p-3 border-t border-border bg-muted/10 flex justify-end">
+                  <div className="p-3 border-t border-border bg-muted/10 flex justify-end gap-2">
+                    {p.provider_type === 'zerodha' || p.provider_type === 'upstox' ? (
+                      <button
+                        onClick={() => handleOAuthConnect(p.provider_type)}
+                        title="Open interactive login to safely acquire and save the session token"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-500 rounded text-xs font-bold uppercase tracking-wider hover:bg-indigo-500/20 transition-colors"
+                      >
+                        <Plug className="w-3 h-3" /> Connect
+                      </button>
+                    ) : null}
+                    
+                    {p.provider_type === 'dhanhq' ? (
+                      <button
+                        onClick={() => setDhanConfigOpen(true)}
+                        title="Update fixed API credentials"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-500 rounded text-xs font-bold uppercase tracking-wider hover:bg-indigo-500/20 transition-colors"
+                      >
+                        <Settings2 className="w-3 h-3" /> Config
+                      </button>
+                    ) : null}
+
                     <button
                       onClick={() => validateProvider(p.provider_type)}
                       disabled={validating === p.provider_type}
@@ -282,6 +347,36 @@ export function SettingsPage() {
               </div>
           </div>
       </div>
+
+      {/* Dhan Config Modal */}
+      {dhanConfigOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="bg-card w-full max-w-md border border-border shadow-lg rounded-xl p-6 relative">
+            <button onClick={() => setDhanConfigOpen(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
+              <XCircle className="w-5 h-5" />
+            </button>
+            <h3 className="text-xl font-bold mb-4">Configure DhanHQ</h3>
+            <p className="text-xs text-muted-foreground mb-6">Enter your static API credentials retrieved from web.dhan.co. These will be saved locally without requiring a restart.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold mb-1">CLIENT ID</label>
+                <input value={dhanClientId} onChange={e => setDhanClientId(e.target.value)} type="text" className="w-full bg-background border border-border rounded p-2 text-sm focus:outline-none focus:border-primary" placeholder="100..." />
+              </div>
+              <div>
+                <label className="block text-xs font-bold mb-1">ACCESS TOKEN</label>
+                <input value={dhanAccessToken} onChange={e => setDhanAccessToken(e.target.value)} type="password" className="w-full bg-background border border-border rounded p-2 text-sm focus:outline-none focus:border-primary" placeholder="eyJ..." />
+              </div>
+              <div className="pt-2">
+                <button onClick={handleDhanSave} disabled={savingDhan} className="w-full bg-primary text-primary-foreground py-2 rounded font-bold transition-colors hover:bg-primary/90 disabled:opacity-50 inline-flex items-center justify-center gap-2">
+                  {savingDhan && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {savingDhan ? 'Saving...' : 'Save & Reconnect'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
