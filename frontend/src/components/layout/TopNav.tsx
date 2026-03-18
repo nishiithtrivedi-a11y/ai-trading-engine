@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Bell, Activity, Play, ShieldAlert, AlertTriangle, Crosshair } from 'lucide-react';
+import { Bell, Activity, Play, ShieldAlert, AlertTriangle, Crosshair, Clock } from 'lucide-react';
 
 export function TopNav() {
   const [data, setData] = useState<any>(null);
@@ -11,15 +11,29 @@ export function TopNav() {
       .catch(err => console.error(err));
   }, []);
 
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const drawdownMode = data?.drawdown_mode ?? '—';
-  const isReducedRisk = drawdownMode.toLowerCase() !== 'normal';
+  const isReducedRisk = drawdownMode !== '—' && drawdownMode !== 'N/A' && drawdownMode.toLowerCase() !== 'normal';
 
   return (
     <div className="h-14 border-b border-border flex items-center justify-between px-6 bg-background relative z-20">
       <div className="flex items-center space-x-6">
-        <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-          <Activity className="w-4 h-4 text-green-500" />
-          <span className="font-medium">System Normal</span>
+        <div className="flex items-center space-x-2 text-sm text-foreground">
+          <Activity className="w-4 h-4 text-primary" />
+          <span className="font-medium">Command Center</span>
+        </div>
+
+        {/* Global Date/Time */}
+        <div className="h-4 w-px bg-border"></div>
+        <div className="flex items-center space-x-2 text-xs font-mono text-muted-foreground">
+          <Clock className="w-3.5 h-3.5" />
+          <span>{currentTime.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} • {currentTime.toLocaleTimeString('en-IN', { hour12: false })}</span>
         </div>
         
         {/* Global Risk visibility */}
@@ -55,7 +69,7 @@ export function TopNav() {
 
         <button
           disabled
-          title="Pipeline execution is disabled in this release"
+          title="UI is currently read-only / execution-disabled. Pipeline triggering is deferred to a later controlled phase (Phase 22+)."
           className="flex items-center space-x-2 px-3 py-1.5 bg-muted/40 text-muted-foreground text-sm rounded-md border border-border cursor-not-allowed opacity-60 select-none"
         >
           <Play className="w-4 h-4" />

@@ -9,6 +9,10 @@ export function SettingsPage() {
           <p className="text-muted-foreground mt-1 text-sm">
              Configuration matrices, provider connections, and system limits (Read-Only).
           </p>
+          <div className="mt-2 text-xs font-semibold text-orange-500 bg-orange-500/10 inline-block px-2 py-1 rounded">
+             <Shield className="w-3 h-3 inline mr-1" />
+             Read-Only View: Engine parameters and provider configs are file-driven in Phase 20.
+          </div>
         </div>
       </div>
 
@@ -26,7 +30,7 @@ export function SettingsPage() {
                 </div>
                 <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Max Capital @ Risk</span>
-                    <span className="font-mono">$25,000.00</span>
+                    <span className="font-mono">₹25,000.00</span>
                 </div>
                 <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Artifact Retention</span>
@@ -91,6 +95,72 @@ export function SettingsPage() {
             </div>
             <div className="mt-4 pt-4 border-t border-border flex items-center gap-2">
                 <Server className="w-4 h-4 text-green-500" /> <span className="text-xs text-muted-foreground">Engine API Config checks healthy</span>
+            </div>
+        </div>
+
+        {/* New Phase 21+ Provider Connections Placeholder */}
+        <div className="bg-card border border-border rounded-xl p-6 space-y-4 md:col-span-2 lg:col-span-3 opacity-60">
+            <div className="flex items-center gap-2 font-bold mb-4 border-b border-border pb-2">
+                <Plug className="w-5 h-5 text-indigo-500" /> Provider Authentication & Sessions (Phase 21+)
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Broker Connections */}
+                <div className="space-y-4">
+                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Broker Connectors</h4>
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
+                            <span className="text-sm font-semibold">Zerodha Kite</span>
+                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Unlinked</span>
+                        </div>
+                        <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
+                            <span className="text-sm font-semibold">DhanHQ</span>
+                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Unlinked</span>
+                        </div>
+                        <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
+                            <span className="text-sm font-semibold">Upstox</span>
+                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Unlinked</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* API Keys */}
+                <div className="space-y-4">
+                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Data APIs</h4>
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
+                            <span className="text-sm font-semibold">Financial Modeling Prep</span>
+                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Missing Key</span>
+                        </div>
+                        <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
+                            <span className="text-sm font-semibold">Alpha Vantage</span>
+                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Missing Key</span>
+                        </div>
+                        <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
+                            <span className="text-sm font-semibold">Finnhub / EODHD</span>
+                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Missing Key</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Local & Derived */}
+                <div className="space-y-4">
+                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Local & Static</h4>
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between p-3 border border-border bg-green-500/10 border-green-500/20 rounded-md">
+                            <span className="text-sm font-semibold text-green-500">CSV Local Directory</span>
+                            <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-600 rounded uppercase tracking-wider font-bold cursor-help" title="No Auth Required">Active</span>
+                        </div>
+                        <div className="flex items-center justify-between p-3 border border-border bg-green-500/10 border-green-500/20 rounded-md">
+                            <span className="text-sm font-semibold text-green-500">Indian Option CSV</span>
+                            <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-600 rounded uppercase tracking-wider font-bold cursor-help" title="No Auth Required">Active</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div className="mt-4 pt-4 border-t border-border">
+                <button disabled className="w-full py-2 bg-muted text-muted-foreground/50 rounded text-xs uppercase tracking-widest font-bold cursor-not-allowed">Add Connection (Disabled)</button>
             </div>
         </div>
 

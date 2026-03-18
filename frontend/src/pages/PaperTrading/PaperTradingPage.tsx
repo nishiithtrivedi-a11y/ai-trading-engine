@@ -14,20 +14,26 @@ export function PaperTradingPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Format chart data if journal exists
-  const chartData = data?.journal?.map((entry: any, i: number) => ({
+  // Check if real equity data exists
+  const hasEquityData = data?.journal?.some((entry: any) => entry.equity || entry.balance);
+  
+  // Format chart data if journal exists and has equity values
+  const chartData = hasEquityData ? data.journal.map((entry: any, i: number) => ({
     name: entry.timestamp || `Trade ${i}`,
-    equity: parseFloat(entry.equity || entry.balance || '100000')
-  })) || [];
+    equity: parseFloat(entry.equity || entry.balance || '0')
+  })) : [];
 
-  // Compute session PnL from journal if possible, otherwise null
+  // Compute session PnL from real journal data if possible
   const computedPnl: string | null = (() => {
-    if (!data?.journal || data.journal.length < 2) return null;
-    const first = parseFloat(data.journal[0]?.equity || data.journal[0]?.balance || '0');
-    const last = parseFloat(data.journal[data.journal.length - 1]?.equity || data.journal[data.journal.length - 1]?.balance || '0');
+    if (!hasEquityData || chartData.length < 2) return null;
+    const first = chartData[0].equity;
+    const last = chartData[chartData.length - 1].equity;
     if (!first || first === 0) return null;
     return `${((last - first) / first * 100).toFixed(2)}%`;
   })();
+
+  // Filter positions to only actual open ones
+  const activePositions = data?.positions?.filter((pos: any) => pos.status?.toLowerCase() !== 'closed') || [];
 
   return (
     <div className="space-y-6">
@@ -50,7 +56,7 @@ export function PaperTradingPage() {
                        <DollarSign className="w-5 h-5 text-primary" /> Current Equity
                   </div>
                   <div className="text-2xl font-bold">
-                     ${chartData.length > 0 ? chartData[chartData.length-1].equity.toLocaleString() : '100,000'}
+                     {chartData.length > 0 && chartData[chartData.length-1].equity ? `₹${chartData[chartData.length-1].equity.toLocaleString()}` : 'N/A'}
                   </div>
               </div>
               <div className="bg-card border border-border p-6 rounded-xl">
@@ -65,11 +71,11 @@ export function PaperTradingPage() {
                   <div className="flex items-center gap-2 font-medium text-muted-foreground mb-2">
                        <Briefcase className="w-5 h-5 text-blue-500" /> Open Positions
                   </div>
-                  <div className="text-2xl font-bold">{data?.positions?.length || 0}</div>
+                  <div className="text-2xl font-bold">{activePositions.length}</div>
               </div>
               <div className="bg-card border border-border p-6 rounded-xl">
                   <div className="flex items-center gap-2 font-medium text-muted-foreground mb-2">
-                       <History className="w-5 h-5 text-purple-500" /> Trades Logged
+                       <History className="w-5 h-5 text-purple-500" /> Journal Events Logged
                   </div>
                   <div className="text-2xl font-bold">{data?.journal?.length || 0}</div>
               </div>
@@ -95,16 +101,16 @@ export function PaperTradingPage() {
               
               <div className="bg-card border border-border rounded-xl p-6 overflow-y-auto h-96">
                    <h3 className="font-semibold mb-4">Open Positions</h3>
-                   {data?.positions?.length > 0 ? (
+                   {activePositions.length > 0 ? (
                        <div className="space-y-4">
-                           {data.positions.map((pos: any, i: number) => (
+                           {activePositions.map((pos: any, i: number) => (
                                <div key={i} className="flex justify-between items-center p-3 border border-border rounded-lg bg-muted/10">
                                    <div>
                                        <div className="font-bold">{pos.symbol}</div>
                                        <div className="text-xs text-muted-foreground capitalize">{pos.side || 'long'} • {pos.quantity || pos.shares || 0} shares</div>
                                    </div>
                                    <div className={`font-mono font-semibold ${pos.unrealized_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                      ${pos.unrealized_pnl?.toFixed(2) || '0.00'}
+                                      ₹{pos.unrealized_pnl?.toFixed(2) || '0.00'}
                                    </div>
                                </div>
                            ))}
