@@ -64,8 +64,8 @@ All secrets are read from environment variables **only**. Notification channels 
 
 ## Safety Guarantees
 
-1. `PipelineType` → execution mode mapping never returns `"live"`
-2. `RunProfile.execution_allowed` remains `False` for all modes
-3. Rate limiting (configurable cooldown per job, default 300s)
-4. All contact targets are masked in API responses and logs
-5. Notification failures never break automation dispatch
+1. `PipelineType` → execution mode mapping (`execution_mode_for_pipeline()`) never returns `"live"` — enforced by exhaustive enum match and tested by `test_execution_mode_never_live`
+2. All dispatched `RunRecord` objects carry `execution_mode` set only at dispatch time via #1 above — no post-dispatch override path exists
+3. Rate limiting (configurable cooldown per job, default 300s) — returns HTTP 429 on violation
+4. All contact targets are masked in API responses and logs — `to_safe_dict()` is used at every response boundary
+5. Notification failures never break automation dispatch — all `notification_hook` calls are wrapped in silent try/except
