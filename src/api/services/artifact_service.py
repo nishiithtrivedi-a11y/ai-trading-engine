@@ -48,6 +48,15 @@ def get_overview_data(output_dir: str = "output") -> Dict[str, Any]:
         
     runs = list_backtest_runs(output_dir)
     
+    # Extra TopNav metrics
+    drawdown_mode = None
+    if market_state:
+        # Depending on phase, it might be in market_state or a separate risk artifact
+        drawdown_mode = market_state.get("risk_mode") or market_state.get("drawdown_status")
+
+    active_positions = 0
+    # Add logic here if a portfolio_summary.json exists in future
+
     return {
         "availability": avail,
         "metrics": {
@@ -57,5 +66,7 @@ def get_overview_data(output_dir: str = "output") -> Dict[str, Any]:
             "market_regime": regime
         },
         "market_state": market_state,
-        "decision_summary": decision_summary
+        "decision_summary": decision_summary,
+        "drawdown_mode": drawdown_mode,
+        "active_positions": active_positions
     }

@@ -1,7 +1,7 @@
 import { Shield, Activity, TrendingUp, Layers, HelpCircle } from 'lucide-react';
 
 interface AnalysisBadgeProps {
-  family: 'technical' | 'quant' | 'fundamental' | 'macro' | 'sentiment' | 'intermarket' | 'futures' | 'options';
+  family: string;
   score?: number;
   provider?: string;
   freshness?: string;

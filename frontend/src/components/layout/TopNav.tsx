@@ -11,7 +11,7 @@ export function TopNav() {
       .catch(err => console.error(err));
   }, []);
 
-  const drawdownMode = data?.drawdown_mode || 'Normal';
+  const drawdownMode = data?.drawdown_mode ?? '—';
   const isReducedRisk = drawdownMode.toLowerCase() !== 'normal';
 
   return (
@@ -30,7 +30,7 @@ export function TopNav() {
         </div>
         <div className="flex items-center space-x-2 text-xs font-bold text-muted-foreground uppercase tracking-widest hidden md:flex">
             <Crosshair className="w-3.5 h-3.5" />
-            <span>Exposure: {data?.active_positions || 0} Open</span>
+            <span>Exposure: {data?.active_positions ?? '—'} Open</span>
         </div>
         {isReducedRisk && (
             <div className="flex items-center space-x-1.5 text-xs font-bold text-orange-400 uppercase tracking-widest animate-pulse">
@@ -45,17 +45,21 @@ export function TopNav() {
         <div className="hidden lg:flex items-center space-x-4 mr-4 text-xs font-mono text-muted-foreground border-r border-border pr-4">
             <div className="flex flex-col items-end">
                 <span className="uppercase text-[9px] font-sans font-bold tracking-widest opacity-70">Daily Risk Meter</span>
-                <span className={`${isReducedRisk ? 'text-orange-400' : 'text-green-500'}`}>12% / 25% UTIL</span>
+                <span className="text-muted-foreground">N/A</span>
             </div>
             <div className="flex flex-col items-end">
                 <span className="uppercase text-[9px] font-sans font-bold tracking-widest opacity-70">Capital @ Risk</span>
-                <span className="text-foreground">$ 2,450.00</span>
+                <span className="text-foreground">N/A</span>
             </div>
         </div>
 
-        <button className="flex items-center space-x-2 px-3 py-1.5 bg-muted hover:bg-muted/80 text-foreground text-sm rounded-md border border-border transition-colors">
+        <button
+          disabled
+          title="Pipeline execution is disabled in this release"
+          className="flex items-center space-x-2 px-3 py-1.5 bg-muted/40 text-muted-foreground text-sm rounded-md border border-border cursor-not-allowed opacity-60 select-none"
+        >
           <Play className="w-4 h-4" />
-          <span className="font-semibold">Run Pipeline</span>
+          <span className="font-semibold">Run Pipeline (Disabled)</span>
         </button>
         <button className="text-muted-foreground hover:text-foreground relative">
           <Bell className="w-5 h-5" />

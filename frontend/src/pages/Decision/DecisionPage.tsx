@@ -83,10 +83,22 @@ export function DecisionPage() {
                         <td className="px-6 py-4 font-mono text-primary">${alloc.allocated_capital?.toLocaleString() || '-'}</td>
                         <td className="px-6 py-4 font-mono">{alloc.risk_percent ? `${(alloc.risk_percent * 100).toFixed(2)}%` : '-'}</td>
                         <td className="px-6 py-4">
-                            <div className="flex gap-2">
-                                <AnalysisBadge family="technical" score={0.85} provider="CSV" freshness="1m" contribution="40%" />
-                                <AnalysisBadge family="quant" score={0.72} provider="Local" freshness="1m" contribution="60%" />
-                            </div>
+                            {alloc.analysis_families ? (
+                              <div className="flex gap-2 flex-wrap">
+                                {Object.entries(alloc.analysis_families).map(([family, info]: [string, any]) => (
+                                  <AnalysisBadge
+                                    key={family}
+                                    family={family}
+                                    score={info.score ?? 0}
+                                    provider={info.provider ?? ''}
+                                    freshness={info.freshness ?? ''}
+                                    contribution={info.contribution ?? ''}
+                                  />
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
                         </td>
                       </tr>
                     ))

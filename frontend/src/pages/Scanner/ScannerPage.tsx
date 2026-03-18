@@ -45,8 +45,8 @@ export function ScannerPage() {
                   <th className="px-6 py-4 font-medium">Symbol</th>
                   <th className="px-6 py-4 font-medium">Signal</th>
                   <th className="px-6 py-4 font-medium">Score</th>
-                  <th className="px-6 py-4 font-medium">Close</th>
-                  <th className="px-6 py-4 font-medium">Volume M.A.</th>
+                  <th className="px-6 py-4 font-medium">Entry Price</th>
+                  <th className="px-6 py-4 font-medium">Liq. Score</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -63,8 +63,8 @@ export function ScannerPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 font-mono">{opp.score?.toFixed(2) || opp.combined_score?.toFixed(2) || '-'}</td>
-                      <td className="px-6 py-4 font-mono">${opp.close?.toFixed(2) || '-'}</td>
-                      <td className="px-6 py-4 font-mono">{opp.volume_ma?.toLocaleString() || '-'}</td>
+                      <td className="px-6 py-4 font-mono">{opp.entry_price != null ? `₹${opp.entry_price.toFixed(2)}` : '-'}</td>
+                      <td className="px-6 py-4 font-mono">{opp.score_liquidity != null ? opp.score_liquidity.toFixed(3) : '-'}</td>
                     </tr>
                   ))
                 ) : (
