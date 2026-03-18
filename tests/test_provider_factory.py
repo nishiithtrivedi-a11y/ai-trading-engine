@@ -2,7 +2,11 @@
 
 import pytest
 
-from src.data.provider_config import DataProvidersConfig, ProviderEntry
+from src.data.provider_config import (
+    AnalysisProvidersConfig,
+    DataProvidersConfig,
+    ProviderEntry,
+)
 from src.data.provider_capabilities import ProviderCapabilityError
 from src.data.provider_factory import ProviderError, ProviderFactory
 
@@ -126,3 +130,38 @@ class TestProviderFactory:
         factory = ProviderFactory(config)
         with pytest.raises(ProviderCapabilityError, match="live_quotes"):
             factory.validate_capabilities(require_live_quotes=True, timeframe="1D")
+
+    def test_get_analysis_provider_from_config(self):
+        config = DataProvidersConfig(
+            default_provider="csv",
+            providers={"csv": ProviderEntry(enabled=True)},
+            analysis_providers=AnalysisProvidersConfig(
+                fundamentals_provider="fmp",
+                macro_provider="alphavantage",
+                sentiment_provider="finnhub",
+                intermarket_provider="derived",
+            ),
+        )
+        factory = ProviderFactory(config)
+        assert factory.get_analysis_provider("fundamentals") == "fmp"
+        assert factory.get_analysis_provider("macro") == "alphavantage"
+        assert factory.get_analysis_provider("sentiment") == "finnhub"
+        assert factory.get_analysis_provider("intermarket") == "derived"
+
+    def test_analysis_capability_report_has_family_rows(self):
+        config = DataProvidersConfig(
+            default_provider="csv",
+            providers={"csv": ProviderEntry(enabled=True)},
+            analysis_providers=AnalysisProvidersConfig(
+                fundamentals_provider="fmp",
+                macro_provider="alphavantage",
+                sentiment_provider="finnhub",
+                intermarket_provider="derived",
+            ),
+        )
+        factory = ProviderFactory(config)
+        report = factory.analysis_capability_report()
+        assert "fundamentals" in report
+        assert "macro" in report
+        assert "sentiment" in report
+        assert "intermarket" in report

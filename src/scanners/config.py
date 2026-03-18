@@ -113,6 +113,11 @@ class ScannerConfig:
     graceful_provider_errors: bool = True
 
     export: ExportConfig = field(default_factory=ExportConfig)
+    # Optional analysis framework wiring (Phase 4). Disabled by default to
+    # preserve existing scanner behavior unless explicitly enabled.
+    enable_analysis_features: bool = False
+    analysis_profile: str = ""
+    analysis_context: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.timeframes = [normalize_timeframe(tf) for tf in self.timeframes]

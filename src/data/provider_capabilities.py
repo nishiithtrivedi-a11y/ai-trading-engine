@@ -33,6 +33,13 @@ class ProviderFeature(str, Enum):
     SNAPSHOT_POLLING = "snapshot_polling"
 
 
+class AnalysisFamily(str, Enum):
+    FUNDAMENTALS = "fundamentals"
+    MACRO = "macro"
+    SENTIMENT = "sentiment"
+    INTERMARKET = "intermarket"
+
+
 @dataclass(frozen=True)
 class ProviderFeatureSet:
     provider_name: str
@@ -316,4 +323,167 @@ def normalize_capability_timeframe(timeframe: str) -> str:
             f"Unsupported timeframe '{timeframe}' for capability validation. Supported: {sorted(supported)}"
         )
     return normalized
+
+
+@dataclass(frozen=True)
+class AnalysisProviderFeatureSet:
+    provider_name: str
+    supports_fundamentals: bool = False
+    supports_macro: bool = False
+    supports_sentiment: bool = False
+    supports_news: bool = False
+    supports_macro_calendar: bool = False
+    supports_intermarket_inputs: bool = False
+    implementation_status: ImplementationStatus = ImplementationStatus.PARTIAL
+    notes: str = ""
+
+    def supports_family(self, family: AnalysisFamily | str) -> bool:
+        clean_family = (
+            family
+            if isinstance(family, AnalysisFamily)
+            else AnalysisFamily(str(family).strip().lower())
+        )
+        if clean_family == AnalysisFamily.FUNDAMENTALS:
+            return self.supports_fundamentals
+        if clean_family == AnalysisFamily.MACRO:
+            return self.supports_macro
+        if clean_family == AnalysisFamily.SENTIMENT:
+            return self.supports_sentiment and self.supports_news
+        if clean_family == AnalysisFamily.INTERMARKET:
+            return self.supports_intermarket_inputs
+        return False
+
+
+_ANALYSIS_PROVIDER_CAPABILITIES: dict[str, AnalysisProviderFeatureSet] = {
+    "none": AnalysisProviderFeatureSet(
+        provider_name="none",
+        supports_fundamentals=False,
+        supports_macro=False,
+        supports_sentiment=False,
+        supports_news=False,
+        supports_macro_calendar=False,
+        supports_intermarket_inputs=False,
+        implementation_status=ImplementationStatus.PLACEHOLDER,
+        notes="No external analysis provider configured.",
+    ),
+    "derived": AnalysisProviderFeatureSet(
+        provider_name="derived",
+        supports_fundamentals=False,
+        supports_macro=True,
+        supports_sentiment=False,
+        supports_news=False,
+        supports_macro_calendar=False,
+        supports_intermarket_inputs=True,
+        implementation_status=ImplementationStatus.PARTIAL,
+        notes="Derived from existing market + macro context in local pipeline.",
+    ),
+    "alphavantage": AnalysisProviderFeatureSet(
+        provider_name="alphavantage",
+        supports_fundamentals=True,
+        supports_macro=True,
+        supports_sentiment=True,
+        supports_news=True,
+        supports_macro_calendar=True,
+        supports_intermarket_inputs=True,
+        implementation_status=ImplementationStatus.PARTIAL,
+        notes="Broad cross-family coverage; availability depends on configured API access.",
+    ),
+    "finnhub": AnalysisProviderFeatureSet(
+        provider_name="finnhub",
+        supports_fundamentals=True,
+        supports_macro=True,
+        supports_sentiment=True,
+        supports_news=True,
+        supports_macro_calendar=False,
+        supports_intermarket_inputs=True,
+        implementation_status=ImplementationStatus.PARTIAL,
+        notes="Fundamentals + economics + market news coverage, region-dependent endpoints.",
+    ),
+    "fmp": AnalysisProviderFeatureSet(
+        provider_name="fmp",
+        supports_fundamentals=True,
+        supports_macro=True,
+        supports_sentiment=True,
+        supports_news=True,
+        supports_macro_calendar=True,
+        supports_intermarket_inputs=True,
+        implementation_status=ImplementationStatus.PARTIAL,
+        notes="Financial statements + macro calendars + news where API plan permits.",
+    ),
+    "eodhd": AnalysisProviderFeatureSet(
+        provider_name="eodhd",
+        supports_fundamentals=True,
+        supports_macro=True,
+        supports_sentiment=True,
+        supports_news=True,
+        supports_macro_calendar=True,
+        supports_intermarket_inputs=True,
+        implementation_status=ImplementationStatus.PARTIAL,
+        notes="Economic events + news style coverage with partial sentiment availability.",
+    ),
+}
+
+
+def get_analysis_provider_feature_set(provider_name: str) -> AnalysisProviderFeatureSet:
+    clean_name = str(provider_name).strip().lower()
+    if not clean_name:
+        clean_name = "none"
+    if clean_name not in _ANALYSIS_PROVIDER_CAPABILITIES:
+        raise ProviderCapabilityError(
+            f"Unknown analysis provider '{provider_name}'. "
+            f"Known providers: {sorted(_ANALYSIS_PROVIDER_CAPABILITIES.keys())}"
+        )
+    return _ANALYSIS_PROVIDER_CAPABILITIES[clean_name]
+
+
+def list_analysis_provider_feature_sets() -> dict[str, AnalysisProviderFeatureSet]:
+    return dict(_ANALYSIS_PROVIDER_CAPABILITIES)
+
+
+def validate_analysis_provider_family(
+    provider_name: str,
+    family: AnalysisFamily | str,
+) -> AnalysisProviderFeatureSet:
+    feature_set = get_analysis_provider_feature_set(provider_name)
+    clean_family = (
+        family
+        if isinstance(family, AnalysisFamily)
+        else AnalysisFamily(str(family).strip().lower())
+    )
+    if not feature_set.supports_family(clean_family):
+        raise ProviderCapabilityError(
+            f"Analysis provider '{feature_set.provider_name}' does not support family "
+            f"'{clean_family.value}'. status={feature_set.implementation_status.value}; "
+            f"notes={feature_set.notes}"
+        )
+    return feature_set
+
+
+def get_analysis_provider_diagnostics(
+    provider_name: str,
+    *,
+    configured: bool,
+    payload_available: bool,
+    stale: bool = False,
+) -> dict:
+    feature_set = get_analysis_provider_feature_set(provider_name)
+    state = "available" if payload_available else "no_data"
+    if configured and not payload_available:
+        state = "configured_but_no_data"
+    if stale:
+        state = "stale_data"
+
+    return {
+        "provider": feature_set.provider_name,
+        "configured": bool(configured),
+        "state": state,
+        "implementation_status": feature_set.implementation_status.value,
+        "supports_fundamentals": feature_set.supports_fundamentals,
+        "supports_macro": feature_set.supports_macro,
+        "supports_sentiment": feature_set.supports_sentiment,
+        "supports_news": feature_set.supports_news,
+        "supports_macro_calendar": feature_set.supports_macro_calendar,
+        "supports_intermarket_inputs": feature_set.supports_intermarket_inputs,
+        "notes": feature_set.notes,
+    }
 

@@ -73,6 +73,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-n", type=int, default=0, help="Optional top-N override.")
     parser.add_argument("--data-dir", default="data", help="CSV data directory.")
     parser.add_argument(
+        "--enable-analysis-features",
+        action="store_true",
+        help="Enable profile-driven analysis module features in scanner scoring context.",
+    )
+    parser.add_argument(
+        "--analysis-profile",
+        default="",
+        help="Optional analysis profile name (for example: intraday_equity, swing_equity, macro_swing).",
+    )
+    parser.add_argument(
         "--strategies",
         nargs="+",
         choices=["rsi", "sma", "breakout"],
@@ -233,6 +243,8 @@ def main() -> int:
         timeframes=[timeframe],
         strategy_specs=_strategy_specs(args.strategies, timeframe),
         top_n=max(1, top_n),
+        enable_analysis_features=bool(args.enable_analysis_features),
+        analysis_profile=str(args.analysis_profile).strip(),
     )
     engine = StockScannerEngine(scanner_config=scanner_config)
     result = engine.run(export=False)

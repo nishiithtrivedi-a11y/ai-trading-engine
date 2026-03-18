@@ -92,6 +92,12 @@ class SnapshotEngine:
         regime_context = regime_assessment.regime.value if regime_assessment else None
         rs_score = float(rs_snapshot.score) if rs_snapshot else None
 
+        score_components = {}
+        if isinstance(opportunity.metadata, dict):
+            maybe_components = opportunity.metadata.get("score_components")
+            if isinstance(maybe_components, dict):
+                score_components = maybe_components
+
         return TopPick(
             symbol=opportunity.symbol,
             timeframe=opportunity.timeframe,
@@ -114,5 +120,11 @@ class SnapshotEngine:
                 "score_trend": opportunity.score_trend,
                 "score_liquidity": opportunity.score_liquidity,
                 "score_freshness": opportunity.score_freshness,
+                "fundamental_summary": score_components.get("fundamental_summary", {}),
+                "macro_summary": score_components.get("macro_summary", {}),
+                "sentiment_summary": score_components.get("sentiment_summary", {}),
+                "intermarket_summary": score_components.get("intermarket_summary", {}),
+                "event_risk_flags": score_components.get("event_risk_flags", {}),
+                "analysis_provider_metadata": score_components.get("analysis_provider_metadata", {}),
             },
         )

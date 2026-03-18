@@ -84,6 +84,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-once", action="store_true", help="No-op; accepted for CLI consistency.")
     parser.add_argument("--max-symbols", type=int, default=0, help="Optional max symbols.")
     parser.add_argument("--data-dir", default="data", help="CSV data directory.")
+    parser.add_argument(
+        "--enable-analysis-features",
+        action="store_true",
+        help="Enable profile-driven analysis module features in scanner scoring context.",
+    )
+    parser.add_argument(
+        "--analysis-profile",
+        default="",
+        help="Optional analysis profile name (for example: intraday_equity, swing_equity, macro_swing).",
+    )
     parser.add_argument("--log-level", default="INFO", help="Reserved for future logging control.")
     parser.add_argument(
         "--no-timestamped-output",
@@ -272,6 +282,8 @@ def main() -> int:
                 timeframes=[timeframe],
             ),
         ],
+        enable_analysis_features=bool(args.enable_analysis_features),
+        analysis_profile=str(args.analysis_profile).strip(),
     )
 
     monitoring_cfg = MonitoringConfig(

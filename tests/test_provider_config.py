@@ -7,6 +7,7 @@ from unittest import mock
 import pytest
 
 from src.data.provider_config import (
+    AnalysisProvidersConfig,
     DataProvidersConfig,
     ProviderCredentials,
     ProviderEntry,
@@ -55,6 +56,7 @@ class TestDataProvidersConfig:
         config = DataProvidersConfig()
         assert config.default_provider == "csv"
         assert config.providers == {}
+        assert config.analysis_providers.provider_for_family("intermarket") == "derived"
 
     def test_get_provider_returns_none_for_missing(self):
         config = DataProvidersConfig()
@@ -99,6 +101,30 @@ class TestDataProvidersConfig:
         )
         default = config.get_default()
         assert default is not None
+
+
+class TestAnalysisProvidersConfig:
+
+    def test_provider_for_family_normalizes(self):
+        cfg = AnalysisProvidersConfig(
+            fundamentals_provider=" FMP ",
+            macro_provider="ALPHAVANTAGE",
+            sentiment_provider=" FinnHub ",
+            intermarket_provider="",
+        )
+        assert cfg.provider_for_family("fundamentals") == "fmp"
+        assert cfg.provider_for_family("macro") == "alphavantage"
+        assert cfg.provider_for_family("sentiment") == "finnhub"
+        assert cfg.provider_for_family("intermarket") == "none"
+
+    def test_normalized_contains_expected_keys(self):
+        cfg = AnalysisProvidersConfig()
+        normalized = cfg.normalized()
+        assert "fundamentals_provider" in normalized
+        assert "macro_provider" in normalized
+        assert "sentiment_provider" in normalized
+        assert "intermarket_provider" in normalized
+        assert "allow_derived_sentiment_fallback" in normalized
 
 
 class TestEnvOverrides:

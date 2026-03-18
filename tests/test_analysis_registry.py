@@ -278,17 +278,18 @@ class TestCreateDefault:
         assert isinstance(features, dict)
         assert "volatility_20d" in features
 
-    def test_create_default_stub_health_check_is_stub(self):
+    def test_create_default_fundamental_health_check_ok(self):
         r = AnalysisRegistry.create_default()
-        stub = r.get("fundamental")
-        assert stub is not None
-        hc = stub.health_check()
-        assert hc.get("status") == "stub"
+        module = r.get("fundamental")
+        assert module is not None
+        hc = module.health_check()
+        assert hc.get("status") == "ok"
 
-    def test_create_default_stub_build_features_returns_empty(self):
+    def test_create_default_macro_handles_missing_payload_safely(self):
         import pandas as pd
         r = AnalysisRegistry.create_default()
-        stub = r.get("macro")
-        assert stub is not None
-        result = stub.build_features(pd.DataFrame(), {})
-        assert result == {}
+        module = r.get("macro")
+        assert module is not None
+        result = module.build_features(pd.DataFrame(), {})
+        assert isinstance(result, dict)
+        assert result.get("macro_available") == 0.0
