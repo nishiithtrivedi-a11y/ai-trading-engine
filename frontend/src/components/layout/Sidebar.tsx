@@ -11,7 +11,9 @@ import {
   Terminal,
   Cpu,
   TrendingUp,
-  LineChart
+  LineChart,
+  Archive,
+  Bot
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -24,10 +26,12 @@ export function Sidebar() {
     { name: 'Derivatives', path: '/derivatives', icon: LineChart },
     { name: 'Paper Trading', path: '/paper', icon: Briefcase },
     { name: 'Diagnostics', path: '/diagnostics', icon: Database },
+    { name: 'Artifacts', path: '/artifacts', icon: Archive },
     { name: 'Profiles & Modules', path: '/profiles', icon: Cpu },
     { name: 'Logs & Validation', path: '/logs', icon: Terminal },
     { name: 'AI Workspace', path: '/ai', icon: TrendingUp },
     { name: 'Settings', path: '/settings', icon: Settings },
+    { name: 'Automation', path: '/automation', icon: Bot },
   ];
 
   return (

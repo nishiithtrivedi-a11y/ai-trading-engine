@@ -31,9 +31,9 @@ export function TopNav() {
 
         {/* Global Date/Time */}
         <div className="h-4 w-px bg-border"></div>
-        <div className="flex items-center space-x-2 text-xs font-mono text-muted-foreground">
+        <div className="flex items-center space-x-2 text-xs font-mono text-muted-foreground" title="Current system time">
           <Clock className="w-3.5 h-3.5" />
-          <span>{currentTime.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} • {currentTime.toLocaleTimeString('en-IN', { hour12: false })}</span>
+          <span>Local System Time: {currentTime.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} • {currentTime.toLocaleTimeString('en-IN', { hour12: false, timeZoneName: 'short' })}</span>
         </div>
         
         {/* Global Risk visibility */}

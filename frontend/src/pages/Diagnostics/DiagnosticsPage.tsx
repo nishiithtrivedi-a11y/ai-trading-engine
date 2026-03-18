@@ -19,7 +19,7 @@ export function DiagnosticsPage() {
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Provider Diagnostics & Data Health</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-             API connection matrix, active modules, and feed latencies.
+             API connection matrix, active modules, and feed latencies. Providers not actively configured in backend YAML are naturally filtered out here.
           </p>
         </div>
       </div>

@@ -44,7 +44,7 @@ export function AutomationPage() {
                   </div>
               </div>
               <div className="bg-background border-t border-border p-4 flex justify-end">
-                   <div className="px-4 py-1.5 bg-muted rounded text-xs font-bold uppercase tracking-widest text-muted-foreground">Add Cron</div>
+                   <div className="px-4 py-1.5 bg-muted rounded text-xs font-bold uppercase tracking-widest text-muted-foreground cursor-not-allowed opacity-50">Add Cron</div>
               </div>
           </div>
 
@@ -64,7 +64,7 @@ export function AutomationPage() {
                   </div>
               </div>
               <div className="bg-background border-t border-border p-4 flex justify-end">
-                   <div className="px-4 py-1.5 bg-muted rounded text-xs font-bold uppercase tracking-widest text-muted-foreground">Add Rule</div>
+                   <div className="px-4 py-1.5 bg-muted rounded text-xs font-bold uppercase tracking-widest text-muted-foreground cursor-not-allowed opacity-50">Add Rule</div>
               </div>
           </div>
       </div>

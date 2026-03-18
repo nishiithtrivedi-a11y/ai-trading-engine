@@ -42,7 +42,7 @@ export function SettingsPage() {
                 </div>
             </div>
             <div className="mt-4 pt-4 border-t border-border">
-                <button disabled className="w-full py-2 bg-muted text-muted-foreground/50 rounded text-xs uppercase tracking-widest font-bold cursor-not-allowed">Edit Core Config (Disabled)</button>
+                <button disabled title="Core Config is managed via backend yaml files in this release." className="w-full py-2 bg-muted text-muted-foreground/50 rounded text-xs uppercase tracking-widest font-bold cursor-not-allowed opacity-60">Edit Core Config (Disabled)</button>
             </div>
         </div>
 
@@ -70,7 +70,7 @@ export function SettingsPage() {
                 </div>
             </div>
             <div className="mt-4 pt-4 border-t border-border">
-                <button disabled className="w-full py-2 bg-muted text-muted-foreground/50 rounded text-xs uppercase tracking-widest font-bold cursor-not-allowed">Manage Providers (Disabled)</button>
+                <button disabled title="Provider configuration is managed via backend yaml files in this release." className="w-full py-2 bg-muted text-muted-foreground/50 rounded text-xs uppercase tracking-widest font-bold cursor-not-allowed opacity-60">Manage Providers (Disabled)</button>
             </div>
         </div>
 
@@ -111,15 +111,15 @@ export function SettingsPage() {
                     <div className="space-y-3">
                         <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
                             <span className="text-sm font-semibold">Zerodha Kite</span>
-                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Unlinked</span>
+                            <span className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Session UI Not Enabled</span>
                         </div>
                         <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
                             <span className="text-sm font-semibold">DhanHQ</span>
-                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Unlinked</span>
+                            <span className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Not Connected</span>
                         </div>
                         <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
                             <span className="text-sm font-semibold">Upstox</span>
-                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Unlinked</span>
+                            <span className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Future Phase</span>
                         </div>
                     </div>
                 </div>
@@ -130,15 +130,15 @@ export function SettingsPage() {
                     <div className="space-y-3">
                         <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
                             <span className="text-sm font-semibold">Financial Modeling Prep</span>
-                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Missing Key</span>
+                            <span className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Managed via Backend</span>
                         </div>
                         <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
                             <span className="text-sm font-semibold">Alpha Vantage</span>
-                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Missing Key</span>
+                            <span className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Managed via Backend</span>
                         </div>
                         <div className="flex items-center justify-between p-3 border border-border bg-muted/20 rounded-md">
                             <span className="text-sm font-semibold">Finnhub / EODHD</span>
-                            <span className="text-xs px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Missing Key</span>
+                            <span className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground rounded uppercase tracking-wider font-bold">Managed via Backend</span>
                         </div>
                     </div>
                 </div>
@@ -160,7 +160,7 @@ export function SettingsPage() {
             </div>
             
             <div className="mt-4 pt-4 border-t border-border">
-                <button disabled className="w-full py-2 bg-muted text-muted-foreground/50 rounded text-xs uppercase tracking-widest font-bold cursor-not-allowed">Add Connection (Disabled)</button>
+                <button disabled title="Real credential entry forms are deferred to Phase 21 for safety bounds." className="w-full py-2 bg-muted text-muted-foreground/50 rounded text-xs uppercase tracking-widest font-bold cursor-not-allowed opacity-60">Add Connection (Disabled)</button>
             </div>
         </div>
 

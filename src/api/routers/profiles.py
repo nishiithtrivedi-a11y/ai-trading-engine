@@ -13,7 +13,7 @@ def list_profiles() -> List[Dict[str, Any]]:
         return []
         
     try:
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             profiles_data = yaml.safe_load(f) or {}
     except Exception:
         return []

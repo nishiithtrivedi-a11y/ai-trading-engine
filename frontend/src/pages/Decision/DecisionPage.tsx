@@ -35,7 +35,7 @@ export function DecisionPage() {
                       <Briefcase className="w-5 h-5 text-blue-500" /> Planned Allocation
                   </div>
                   <div className="text-3xl font-bold">
-                    ${data?.portfolio_plan?.total_allocated_capital?.toLocaleString() || '0'}
+                    ₹{data?.portfolio_plan?.total_allocated_capital?.toLocaleString() || '0'}
                   </div>
                   <div className="text-sm text-muted-foreground">of active capital pool</div>
               </div>
@@ -80,7 +80,7 @@ export function DecisionPage() {
                         <td className="px-6 py-4 font-bold">{alloc.symbol}</td>
                         <td className="px-6 py-4 capitalize font-semibold text-green-500">{alloc.action || 'Buy'}</td>
                         <td className="px-6 py-4 font-mono">{alloc.shares || alloc.quantity || '-'}</td>
-                        <td className="px-6 py-4 font-mono text-primary">${alloc.allocated_capital?.toLocaleString() || '-'}</td>
+                        <td className="px-6 py-4 font-mono text-primary">₹{alloc.allocated_capital?.toLocaleString() || '-'}</td>
                         <td className="px-6 py-4 font-mono">{alloc.risk_percent ? `${(alloc.risk_percent * 100).toFixed(2)}%` : '-'}</td>
                         <td className="px-6 py-4">
                             {alloc.analysis_families ? (
