@@ -17,8 +17,17 @@ export function PaperTradingPage() {
   // Format chart data if journal exists
   const chartData = data?.journal?.map((entry: any, i: number) => ({
     name: entry.timestamp || `Trade ${i}`,
-    equity: parseFloat(entry.equity || entry.balance || '100000') // Fallback mock parsing
+    equity: parseFloat(entry.equity || entry.balance || '100000')
   })) || [];
+
+  // Compute session PnL from journal if possible, otherwise null
+  const computedPnl: string | null = (() => {
+    if (!data?.journal || data.journal.length < 2) return null;
+    const first = parseFloat(data.journal[0]?.equity || data.journal[0]?.balance || '0');
+    const last = parseFloat(data.journal[data.journal.length - 1]?.equity || data.journal[data.journal.length - 1]?.balance || '0');
+    if (!first || first === 0) return null;
+    return `${((last - first) / first * 100).toFixed(2)}%`;
+  })();
 
   return (
     <div className="space-y-6">
@@ -48,7 +57,9 @@ export function PaperTradingPage() {
                   <div className="flex items-center gap-2 font-medium text-muted-foreground mb-2">
                        <Percent className="w-5 h-5 text-green-500" /> Session PnL
                   </div>
-                  <div className="text-2xl font-bold text-green-500">+2.4%</div>
+                  <div className={`text-2xl font-bold ${computedPnl ? 'text-green-500' : 'text-muted-foreground'}`}>
+                    {computedPnl ?? 'N/A'}
+                  </div>
               </div>
               <div className="bg-card border border-border p-6 rounded-xl">
                   <div className="flex items-center gap-2 font-medium text-muted-foreground mb-2">

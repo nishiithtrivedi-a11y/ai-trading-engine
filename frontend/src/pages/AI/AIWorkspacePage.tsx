@@ -113,9 +113,9 @@ export function AIWorkspacePage() {
              
              <div className="w-full mt-8 text-left space-y-2">
                  <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Presets</div>
-                 <button className="w-full p-2 bg-muted/30 hover:bg-muted text-sm border border-border rounded text-left transition-colors">Generate EOD Summary Report</button>
-                 <button className="w-full p-2 bg-muted/30 hover:bg-muted text-sm border border-border rounded text-left transition-colors">Explain Top Rejected Candidates</button>
-                 <button className="w-full p-2 bg-muted/30 hover:bg-muted text-sm border border-border rounded text-left transition-colors">Audit Risk Exposure Constraints</button>
+                 <button onClick={() => setPrompt('Generate an EOD summary report based on today\'s scanner and decision outputs.')} className="w-full p-2 bg-muted/30 hover:bg-muted text-sm border border-border rounded text-left transition-colors">Generate EOD Summary Report</button>
+                 <button onClick={() => setPrompt('Explain the top rejected trade candidates and the reasons they did not pass the decision filter.')} className="w-full p-2 bg-muted/30 hover:bg-muted text-sm border border-border rounded text-left transition-colors">Explain Top Rejected Candidates</button>
+                 <button onClick={() => setPrompt('Audit the current risk exposure constraints and confirm whether any limits are being approached.')} className="w-full p-2 bg-muted/30 hover:bg-muted text-sm border border-border rounded text-left transition-colors">Audit Risk Exposure Constraints</button>
              </div>
           </div>
       </div>
