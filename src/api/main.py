@@ -21,7 +21,7 @@ app.add_middleware(
 def get_status():
     return {"status": "ok", "message": "API is running"}
 
-from src.api.routers import overview, scanner, monitoring, decision, paper, providers, artifacts, logs, profiles, derivatives, ai
+from src.api.routers import overview, scanner, monitoring, decision, paper, providers, artifacts, logs, profiles, derivatives, ai, automation, provider_sessions
 
 app.include_router(overview.router)
 app.include_router(scanner.router)
@@ -34,6 +34,8 @@ app.include_router(logs.router)
 app.include_router(profiles.router)
 app.include_router(derivatives.router)
 app.include_router(ai.router)
+app.include_router(automation.router)
+app.include_router(provider_sessions.router)
 
 if __name__ == "__main__":
     import uvicorn

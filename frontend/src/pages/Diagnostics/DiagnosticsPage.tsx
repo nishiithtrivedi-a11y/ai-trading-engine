@@ -1,17 +1,48 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
-import { Activity, Database, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import {
+  Activity, Database, CheckCircle2, XCircle, AlertCircle, Loader2,
+  Plug, RefreshCcw, Shield
+} from 'lucide-react';
+
+const API = 'http://localhost:8000/api/v1';
+
+interface ProviderSession {
+  provider_type: string;
+  display_name: string;
+  session_status: string;
+  credentials_present: boolean;
+  last_validated: string | null;
+  diagnostics_summary: string;
+  error_message: string | null;
+}
+
+const STATUS_MAP: Record<string, { color: string; icon: typeof CheckCircle2; label: string }> = {
+  active: { color: 'text-green-500', icon: CheckCircle2, label: 'Active' },
+  expired: { color: 'text-orange-500', icon: AlertCircle, label: 'Expired' },
+  invalid: { color: 'text-red-500', icon: XCircle, label: 'Invalid' },
+  error: { color: 'text-red-500', icon: XCircle, label: 'Error' },
+  credentials_missing: { color: 'text-yellow-500', icon: AlertCircle, label: 'Creds Missing' },
+  not_configured: { color: 'text-muted-foreground', icon: AlertCircle, label: 'Not Configured' },
+};
 
 export function DiagnosticsPage() {
   const [data, setData] = useState<any>(null);
+  const [sessions, setSessions] = useState<ProviderSession[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    axios.get('http://localhost:8000/api/v1/providers/health')
-      .then(res => setData(res.data))
-      .catch(err => console.error(err))
-      .finally(() => setLoading(false));
+  const loadData = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      axios.get(`${API}/providers/health`).catch(() => ({ data: null })),
+      axios.get(`${API}/providers/sessions`).catch(() => ({ data: { providers: [] } })),
+    ]).then(([healthRes, sessionRes]) => {
+      setData(healthRes.data);
+      setSessions(sessionRes.data.providers || []);
+    }).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   return (
     <div className="space-y-6">
@@ -19,15 +50,69 @@ export function DiagnosticsPage() {
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Provider Diagnostics & Data Health</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-             API connection matrix, active modules, and feed latencies. Providers not actively configured in backend YAML are naturally filtered out here.
+             Session health, API connections, active modules, and feed latencies.
           </p>
         </div>
+        <button onClick={loadData} className="p-2 rounded-lg hover:bg-muted transition-colors" title="Refresh">
+          <RefreshCcw className="w-5 h-5" />
+        </button>
       </div>
 
       {loading ? (
-        <div className="h-64 flex items-center justify-center text-muted-foreground">Loading diagnostics...</div>
+        <div className="h-64 flex items-center justify-center text-muted-foreground">
+          <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading diagnostics...
+        </div>
       ) : (
         <div className="space-y-6">
+
+          {/* ─── Session Health ─── */}
+          {sessions.length > 0 && (
+            <div className="bg-card border border-border rounded-xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-border bg-muted/20 flex items-center gap-2">
+                <Plug className="w-5 h-5 text-indigo-500" />
+                <h3 className="font-semibold text-lg">Session Health</h3>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3 p-6">
+                {sessions.map(s => {
+                  const statusInfo = STATUS_MAP[s.session_status] || STATUS_MAP.not_configured;
+                  const StatusIcon = statusInfo.icon;
+                  return (
+                    <div key={s.provider_type} className="border border-border rounded-lg p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold">{s.display_name || s.provider_type}</span>
+                        <span className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${statusInfo.color}`}>
+                          <StatusIcon className="w-3.5 h-3.5" /> {statusInfo.label}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {s.session_status === 'not_configured' && 'Provider not configured — no credentials present.'}
+                        {s.session_status === 'credentials_missing' && (
+                          <span className="text-yellow-600">{s.diagnostics_summary || 'Some credentials are missing.'}</span>
+                        )}
+                        {s.session_status === 'active' && (
+                          <span className="text-green-600">Session active. {s.last_validated ? `Validated: ${new Date(s.last_validated).toLocaleString()}` : ''}</span>
+                        )}
+                        {s.session_status === 'expired' && (
+                          <span className="text-orange-600">Session expired. Reconnect required.</span>
+                        )}
+                        {(s.session_status === 'invalid' || s.session_status === 'error') && (
+                          <span className="text-red-500">{s.error_message || 'Auth validation failed.'}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="px-6 pb-4 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-green-600" />
+                <span className="text-[11px] text-muted-foreground">
+                  Connecting a provider does <strong>not</strong> enable live trading. Execution remains structurally disabled.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ─── Summary Cards ─── */}
           <div className="grid gap-4 md:grid-cols-3">
               <div className="bg-card border border-border p-6 rounded-xl flex items-center gap-4">
                   <div className="p-3 bg-primary/10 rounded-full text-primary">
@@ -47,8 +132,18 @@ export function DiagnosticsPage() {
                       <div className="text-xl font-bold">{data?.diagnostics?.filter((d: any) => d.enabled).length || 0}</div>
                   </div>
               </div>
+              <div className="bg-card border border-border p-6 rounded-xl flex items-center gap-4">
+                  <div className="p-3 bg-indigo-500/10 rounded-full text-indigo-500">
+                      <Plug className="w-6 h-6" />
+                  </div>
+                  <div>
+                      <div className="text-sm font-medium text-muted-foreground">Provider Sessions</div>
+                      <div className="text-xl font-bold">{sessions.filter(s => s.session_status === 'active').length} / {sessions.length}</div>
+                  </div>
+              </div>
           </div>
 
+          {/* ─── Diagnostics Matrix ─── */}
           <div className="bg-card border border-border rounded-xl flex flex-col overflow-hidden">
             <div className="px-6 py-4 border-b border-border bg-muted/20">
                 <h3 className="font-semibold text-lg">Diagnostics Matrix</h3>
