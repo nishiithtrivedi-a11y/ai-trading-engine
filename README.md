@@ -189,6 +189,8 @@ Safety details: [`docs/SAFETY.md`](docs/SAFETY.md)
 
 ## Quickstart
 
+> **Looking for the operator guide?** See [docs/OPERATOR_QUICKSTART.md](docs/OPERATOR_QUICKSTART.md) for full commands, launcher details, and configuration.
+
 Install dependencies:
 
 ```bash

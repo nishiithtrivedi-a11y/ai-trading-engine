@@ -16,6 +16,7 @@ from src.runtime.contract_validation import (
     assert_artifact_contract,
 )
 from src.runtime.run_profiles import RunMode
+from src.automation.models import PipelineType
 
 
 class WorkflowOrchestratorError(RuntimeError):
@@ -67,7 +68,7 @@ class WorkflowStepResult:
 
 @dataclass
 class WorkflowRunResult:
-    workflow: WorkflowType
+    workflow: str
     success: bool
     output_root: str
     steps: list[WorkflowStepResult] = field(default_factory=list)
@@ -75,7 +76,7 @@ class WorkflowRunResult:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "workflow": self.workflow.value,
+            "workflow": getattr(self.workflow, "value", self.workflow),
             "success": self.success,
             "output_root": self.output_root,
             "steps": [step.to_dict() for step in self.steps],
@@ -188,11 +189,30 @@ class WorkflowOrchestrator:
 
     def _build_steps(
         self,
-        workflow: WorkflowType,
+        workflow: WorkflowType | str,
         output_root: Path,
         *,
         symbols_limit: int,
     ) -> list[WorkflowStep]:
+        # Handle PipelineType orchestration
+        if isinstance(workflow, PipelineType):
+            out_dir = output_root
+            if workflow == PipelineType.MORNING_SCAN:
+                return [WorkflowStep(name=workflow.value, run_mode=RunMode.RESEARCH, output_dir=out_dir, command=[self.python_executable, "scripts/run_scanner.py", "--profile", "morning", "--output-dir", str(out_dir)])]
+            if workflow == PipelineType.INTRADAY_REFRESH:
+                return [WorkflowStep(name=workflow.value, run_mode=RunMode.RESEARCH, output_dir=out_dir, command=[self.python_executable, "scripts/run_monitoring.py", "--profile", "intraday", "--output-dir", str(out_dir)])]
+            if workflow == PipelineType.DECISION_REFRESH:
+                return [WorkflowStep(name=workflow.value, run_mode=RunMode.RESEARCH, output_dir=out_dir, command=[self.python_executable, "scripts/run_decision.py", "--profile", "intraday", "--output-dir", str(out_dir)])]
+            if workflow == PipelineType.EOD_PROCESSING:
+                return [WorkflowStep(name=workflow.value, run_mode=RunMode.RESEARCH, output_dir=out_dir, command=[self.python_executable, "scripts/run_decision.py", "--profile", "eod", "--output-dir", str(out_dir)])]
+            if workflow == PipelineType.PAPER_REFRESH:
+                return [WorkflowStep(name=workflow.value, run_mode=RunMode.PAPER, output_dir=out_dir, command=[self.python_executable, "scripts/run_paper_trading.py", "--paper-output-dir", str(out_dir)])]
+            if workflow == PipelineType.LIVE_SAFE_REFRESH:
+                return [WorkflowStep(name=workflow.value, run_mode=RunMode.LIVE_SAFE, output_dir=out_dir, command=[self.python_executable, "scripts/run_live_signal_pipeline.py", "--output-dir", str(out_dir)])]
+            if workflow == PipelineType.MANUAL_RESCAN:
+                return [WorkflowStep(name=workflow.value, run_mode=RunMode.RESEARCH, output_dir=out_dir, command=[self.python_executable, "scripts/run_scanner.py", "--run-once", "--output-dir", str(out_dir)])]
+
+        # Handle existing WorkflowType smoke tests
         if workflow == WorkflowType.RESEARCH_SMOKE:
             out_dir = output_root
             return [

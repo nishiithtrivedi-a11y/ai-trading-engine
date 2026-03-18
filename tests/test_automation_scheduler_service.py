@@ -15,11 +15,15 @@ from src.automation.scheduler_service import (
 )
 
 
+def mock_runner(pt: PipelineType, out: str) -> dict:
+    return {"success": True, "artifacts": [], "errors": []}
+
 def _make_service(tmp_path: Path) -> AutomationSchedulerService:
     store = RunStore(store_dir=tmp_path / "runs")
     return AutomationSchedulerService(
         run_store=store,
         output_root=tmp_path / "output",
+        runner=mock_runner,
     )
 
 
