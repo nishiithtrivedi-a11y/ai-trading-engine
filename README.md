@@ -208,6 +208,8 @@ Run one command per mode:
 - Built a premium **React/Vite** frontend and **FastAPI** backend to serve as an operator-grade trading dashboard.
 - Features real-time state viewing for Scanner, Monitoring, Decision, Paper Trading, Provider Diagnostics, Artifact Explorer, and Profiles.
 - Includes Derivatives Intelligence (with graceful fallback for offline modes) and AI Workspace / Automation panels (advisory/placeholder only).
+- **Phase 20.1 UI Polish**: Enhanced UI trust with a global system clock, standardized disabled action semantics, Indian ecosystem currency (₹) consistency, and explicit read-only helper messaging in Profiles and Settings.
+- **Phase 21+ Planning**: Integrated inert Provider Authentication & Sessions scaffolds in Settings for future broker/API key management.
 - **Execution Rule:** All broker execution, strategy deployment, and live-routing UI controls are strictly disabled or marked as future visual placeholders, reinforcing the read-only and simulation-first architecture.
 
 ## What Changed in Phase 18
