@@ -9,14 +9,15 @@ The code-level source of truth is `src/data/provider_capabilities.py`.
 
 ---
 
-## Support Matrix (Phase 2 — Indian Derivatives Data Layer)
+## Support Matrix (Phase 3 — Derivatives Intelligence + DhanHQ)
 
-| Provider | Historical | Latest/Live | Derivative Hist. | Derivative Live | OI | Depth | Instrument Master | Status |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `csv` | ✓ | simulated | ✗ | ✗ | ✗ | ✗ | ✗ | stable |
-| `indian_csv` | ✓ | simulated | ✗ | ✗ | ✗ | ✗ | ✗ | stable |
-| `zerodha` | ✓ | ✓ | **✓** | **✓** | **✓** | **✓** | **✓** | partial (auth-gated) |
-| `upstox` | partial | ✗ (SDK stub) | ✗ | ✗ | ✗ | ✗ | ✗ | partial (CSV fallback) |
+| Provider | Historical | Latest/Live | Derivative Hist. | Derivative Live | OI | Depth | Option Chain | Instrument Master | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `csv` | ✓ | simulated | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | stable |
+| `indian_csv` | ✓ | simulated | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | stable |
+| `zerodha` | ✓ | ✓ | **✓** | **✓** | **✓** | **✓** | via instruments | **✓** | partial (auth-gated) |
+| `upstox` | partial | ✗ (SDK stub) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | partial (CSV fallback) |
+| `dhan` | **✓** | **✓** | **✓** | **✓** | **✓** | **✓** | **✓ (native API)** | ✗ | partial (optional SDK) |
 
 ---
 
@@ -75,6 +76,76 @@ weekly symbols.
 
 ---
 
+## DhanHQ (Phase 3)
+
+DhanHQ is an optional switchable provider for derivative data. It requires the `dhanhq` Python package and valid `client_id` + `access_token` credentials.
+
+### Health check states
+
+| State | Meaning |
+| --- | --- |
+| `sdk_unavailable` | `dhanhq` package not installed — all methods raise gracefully |
+| `no_credentials` | SDK present but `client_id`/`access_token` not configured |
+| `sdk_configured` | SDK and credentials present — full API access |
+
+### What is implemented
+
+- **`fetch_option_chain(underlying, expiry, segment)`** — returns normalized `{"calls": [...], "puts": [...]}` rows with LTP, OI, IV, delta, theta, gamma, vega where the API provides them
+- **`fetch_expiry_list(underlying, segment)`** — returns list of expiry date strings
+- **Historical OHLCV** — via DhanHQ historical candles API
+- **Live quote snapshots** — via DhanHQ market quote API
+- **OI passthrough** — Open Interest in normalized quote model
+- **Bid/ask + depth passthrough** — where API provides it
+- **DhanHQ segment strings** in `provider_mapping.py`:
+
+| Exchange | DhanHQ segment |
+| --- | --- |
+| NSE (equity) | `NSE_EQ` |
+| BSE (equity) | `BSE_EQ` |
+| NFO (F&O) | `NSE_FO` |
+| MCX (commodity) | `MCX` |
+| CDS (currency) | `CUR` |
+
+### Provider routing (Phase 3)
+
+Use `ProviderRoutingPolicy` to select a named routing strategy:
+
+```python
+from src.data.provider_router import ProviderRoutingPolicy, ProviderRouter
+
+policy = ProviderRoutingPolicy.dhan_primary_zerodha_cash()
+router = ProviderRouter(policy, available_providers=["zerodha", "dhan", "csv"])
+
+router.select_for_segment("NFO")  # -> "dhan"
+router.select_for_segment("NSE")  # -> "zerodha"
+```
+
+| Policy factory | derivatives_provider | cash_provider |
+| --- | --- | --- |
+| `zerodha_only()` | `zerodha` | `zerodha` |
+| `dhan_only()` | `dhan` | `dhan` |
+| `dhan_primary_zerodha_cash()` | `dhan` | `zerodha` |
+| `auto()` | first available derivative-capable | first available |
+
+### Config
+
+In `config/data_providers.yaml`:
+
+```yaml
+dhan:
+  api_key: "<client_id>"
+  access_token: "<access_token>"
+```
+
+### What is NOT implemented for DhanHQ
+
+- Live order execution (permanently disabled by design)
+- WebSocket / streaming data
+- Full instrument master download (`instrument_master_available=False`)
+- Upstox-style segment|symbol format (DhanHQ uses its own segment strings)
+
+---
+
 ## Upstox
 
 ### What is implemented
@@ -121,6 +192,8 @@ in a future phase, the `supports_historical_derivatives` flag will be updated to
 
 - Use **CSV/Indian CSV** for deterministic local runs, backtesting, and testing (equity only).
 - Use **Zerodha** for real Indian market data including derivatives (requires valid credentials).
+- Use **DhanHQ** for option chain data, expiry lists, and live derivative quotes (requires optional `dhanhq` package + credentials).
+- Use `ProviderRoutingPolicy.dhan_primary_zerodha_cash()` when you want Dhan for derivatives and Zerodha for equity.
 - Treat **Upstox** as scaffolded architecture for derivatives until the SDK path is implemented.
 - Always check `src/data/provider_capabilities.py` for the authoritative runtime capability flags.
 - Use `validate_provider_workflow()` to gate workflows by actual provider capability.
@@ -132,10 +205,12 @@ in a future phase, the `supports_historical_derivatives` flag will be updated to
 
 - NSE equity symbol normalization: `src/data/symbol_mapping.py`
 - Canonical instrument format: `src/instruments/normalization.py`
-- Provider-native format (Kite/Upstox): `src/instruments/provider_mapping.py`
+- Provider-native format (Kite/Upstox/DhanHQ): `src/instruments/provider_mapping.py`
 - Instrument hydration from provider payloads: `src/instruments/hydrator.py`
 - Universe resolution (NIFTY50, BANKNIFTY, custom): `src/data/nse_universe.py`
 - Active contract resolution (nearest expiry, option chain): `src/instruments/contracts.py`
+- Derivative intelligence (option chain, Black-Scholes, futures families): `src/analysis/derivatives/`
+- Provider routing policies: `src/data/provider_router.py`
 
 ## Code Source of Truth
 

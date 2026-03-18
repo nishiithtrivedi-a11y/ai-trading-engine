@@ -171,6 +171,30 @@ _PROVIDER_CAPABILITIES: dict[str, ProviderFeatureSet] = {
         supports_market_depth=False,
         instrument_master_available=False,
     ),
+    "dhan": ProviderFeatureSet(
+        provider_name="dhan",
+        supports_historical_data=True,
+        supports_live_quotes=True,
+        supports_intraday_bars=True,
+        supports_daily_bars=True,
+        supports_instrument_lookup=False,   # No full instrument list API
+        supports_order_execution=False,     # Execution disabled by design
+        supports_snapshot_polling=True,
+        supported_instrument_types=_DEFAULT_INSTRUMENTS,
+        implementation_status=ImplementationStatus.PARTIAL,
+        notes=(
+            "DhanHQ optional provider. Requires dhanhq package and credentials. "
+            "Provides historical candles, option chain, and expiry list. "
+            "SDK path degrades gracefully when package or auth is unavailable."
+        ),
+        supported_segments=("NSE", "BSE", "NFO", "MCX", "CDS"),
+        supports_derivatives=True,
+        supports_historical_derivatives=True,
+        supports_latest_derivatives=True,
+        supports_oi=True,
+        supports_market_depth=True,
+        instrument_master_available=False,
+    ),
 }
 
 

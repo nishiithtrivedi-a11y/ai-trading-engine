@@ -1,13 +1,4 @@
-"""
-CommoditiesAnalysisModule.
-
-Commodities-specific features (contango/backwardation, seasonal patterns) when fully wired.
-
-This is a stub implementation.  It is registered in the default
-AnalysisRegistry but disabled by default.  Enable it and implement
-build_features() when the required data feeds are available.
-"""
-
+"""CommoditiesAnalysisModule — thin wrapper over futures module for MCX context."""
 from __future__ import annotations
 
 import pandas as pd
@@ -16,21 +7,29 @@ from src.analysis.base import BaseAnalysisModule
 
 
 class CommoditiesAnalysisModule(BaseAnalysisModule):
-    """Commodities-specific features (contango/backwardation, seasonal patterns). Stub implementation."""
+    """Commodity futures features (thin wrapper). Delegates to futures logic."""
 
     name: str = "commodities"
-    version: str = "0.1.0"
+    version: str = "1.0.0"
 
     def is_enabled(self, config=None) -> bool:
-        return False  # disabled until data feed is wired
+        return True
+
+    def supports(self, instrument_type: str, timeframe: str) -> bool:
+        return str(instrument_type).lower() in ("future", "commodity", "futures")
 
     def build_features(self, data: pd.DataFrame, context: dict) -> dict:
-        return {}
+        from src.analysis.derivatives.futures.module import FuturesAnalysisModule
+
+        fut = FuturesAnalysisModule()
+        features = fut.build_features(data, context)
+        features["asset_class"] = "commodity"
+        return features
 
     def health_check(self) -> dict:
         return {
-            "status": "stub",
+            "status": "ok",
             "module": self.name,
             "version": self.version,
-            "description": "Commodities-specific features (contango/backwardation, seasonal patterns). Stub.",
+            "description": "Commodity futures features (MCX). Delegates to futures module.",
         }
