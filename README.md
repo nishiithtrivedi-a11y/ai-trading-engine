@@ -64,11 +64,11 @@ Expanded matrix: [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md)
 
 ## Provider Support Matrix
 
-| Provider | Historical Data | Live Quotes | Status |
-| --- | --- | --- | --- |
-| CSV | yes | simulated reload | stable |
-| Zerodha | partial | partial | provider + broker integration paths, execution disabled |
-| Upstox | partial | partial (safe fallback) | safe data-only partial integration |
+| Provider | Historical Data | Live Quotes | Derivatives | Segments | Status |
+| --- | --- | --- | --- | --- | --- |
+| CSV | yes | simulated reload | no | NSE | stable |
+| Zerodha | yes | yes | **yes** | NSE, BSE, NFO, MCX, CDS | provider + broker paths; execution disabled |
+| Upstox | partial | partial (fallback) | no (SDK stub) | NSE, NFO | honest partial; SDK not implemented |
 
 Provider details: [`docs/PROVIDERS.md`](docs/PROVIDERS.md)
 
@@ -80,9 +80,10 @@ Code-level provider capability registry: `src/data/provider_capabilities.py`
 | --- | --- | --- |
 | Equities | supported | primary workflow target |
 | Equity indices | supported via symbols | benchmark/regime use cases |
-| Futures | not implemented | contract/expiry workflow missing |
-| Options | not implemented | strike/expiry/greeks workflow missing |
-| Commodities | not implemented | dedicated data + contract model not implemented |
+| NFO futures | **data-layer supported** | canonical symbol, hydration, Zerodha fetch path |
+| NFO options | **data-layer supported** | canonical symbol, hydration, Zerodha fetch path; no Greeks |
+| MCX futures | **data-layer supported** | canonical symbol, hydration, Zerodha fetch path |
+| CDS futures/options | **data-layer supported** | canonical symbol, hydration, Zerodha fetch path |
 | Crypto | not implemented | no dedicated provider/runtime path |
 
 ## Workflow Guides
@@ -209,6 +210,59 @@ Run one command per mode:
 - `run_paper_trading.py` can optionally consume `portfolio_plan.json` quantity/drawdown overlays.
 - Live-safe paper handoff artifacts now include portfolio recommendation metadata fields.
 - Live execution remains disabled.
+
+## Indian Derivatives Data Layer (Phase 2)
+
+Phase 2 makes Indian derivatives first-class data and instrument citizens without adding execution, analytics, or Greeks.
+
+### What is real (fully implemented)
+
+| Capability | Location |
+|---|---|
+| Kite/Zerodha derivative symbol format (`NIFTY26APRFUT`, `NIFTY26APR24500CE`) | `src/instruments/provider_mapping.py` |
+| Upstox segment|symbol format (`NSE_FO\|NIFTY26APRFUT`) | `src/instruments/provider_mapping.py` |
+| `to_provider_symbol()` for zerodha/upstox/csv | `src/instruments/normalization.py` |
+| Round-trip canonical ↔ Kite symbol parsing | `src/instruments/provider_mapping.py` |
+| Instrument hydration from Kite instruments() rows | `src/instruments/hydrator.py` |
+| Active contract resolution and option chain utilities | `src/instruments/contracts.py` |
+| NFO/MCX/CDS registry lookup (`list_by_underlying`, `list_by_expiry`, `list_option_chain`) | `src/instruments/registry.py` |
+| Derivative-aware data fetch routing (`DerivativeDataFetcher`) | `src/data/derivative_data.py` |
+| Normalized quote model with OI + depth + quality flags | `src/data/quote_normalizer.py` |
+| Extended provider capability flags (historical_derivatives, OI, depth, instrument_master) | `src/data/provider_capabilities.py` |
+| NSE 2025–2026 trading holidays populated | `src/instruments/calendar.py` |
+| Multi-segment instrument mapper (`refresh_all_segments`, `hydrate_registry`) | `src/data/instrument_mapper.py` |
+
+### Supported Indian segments
+
+| Exchange | Segment | Instruments | Provider |
+|---|---|---|---|
+| NSE | CASH | Equities, ETFs, Indices | Zerodha ✓, CSV ✓ |
+| BSE | CASH | Equities, ETFs | Zerodha ✓ |
+| NFO | FO | NIFTY/BANKNIFTY futures + options | Zerodha ✓ |
+| MCX | COMM | GOLD, CRUDEOIL, SILVER futures | Zerodha ✓ |
+| CDS | CURR | USDINR and other forex futures/options | Zerodha ✓ |
+
+### Canonical derivative symbol format
+
+```
+EXCHANGE:UNDERLYING[-EXPIRY-SUFFIX]
+
+NFO:NIFTY-2026-04-30-FUT       # NFO monthly future
+NFO:NIFTY-2026-04-30-24500-CE  # NFO monthly call option
+MCX:GOLD-2026-04-30-FUT        # MCX commodity future
+CDS:USDINR-2026-04-30-FUT      # CDS forex future
+```
+
+### What is NOT yet implemented (deferred to Phase 3+)
+
+- Options analytics (Greeks, IV, skew, volatility surface)
+- Futures continuous series / roll-over logic
+- Upstox SDK derivative fetch (SDK path raises NotImplementedError — CSV fallback only)
+- Live streaming / WebSocket data
+- Execution of any kind (permanently disabled by design)
+- MCX/CDS weekly expiry exact symbol mapping (monthly format is correct; weekly is best-effort)
+
+---
 
 ## Modular Analysis Framework (Phase 1 — Modular Foundation)
 
