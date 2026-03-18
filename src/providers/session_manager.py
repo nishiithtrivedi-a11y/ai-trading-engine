@@ -9,6 +9,7 @@ enable live trading — execution remains structurally disabled.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -101,9 +102,6 @@ class ProviderSessionManager:
         - Zerodha: attempt profile fetch
         - DhanHQ: attempt fund margin query
         - Upstox: attempt profile fetch
-
-        Currently uses mock validation; real broker SDK calls can be
-        integrated later without changing the interface.
         """
         if isinstance(provider_type, str):
             provider_type = ProviderType(provider_type)
@@ -118,26 +116,101 @@ class ProviderSessionManager:
 
         has_creds = self.credential_store.has_credentials(provider_type)
         if not has_creds:
-            state = self.get_status(provider_type)
-            return state
+            return self.get_status(provider_type)
 
-        # Mock validation — in future, this calls the actual broker SDK
+        creds = {}
+        for cred_name in config.required_credentials:
+            env_key = f"{config.env_key_prefix}_{cred_name}"
+            creds[cred_name] = os.environ.get(env_key, "")
+            
+        masked_indicators = self.credential_store.get_masked_indicators(provider_type)
         now = datetime.now(timezone.utc).isoformat()
+
+        session_status = SessionStatus.ERROR.value
+        diagnostics_summary = ""
+        error_message = None
+
+        try:
+            if provider_type == ProviderType.ZERODHA:
+                from kiteconnect import KiteConnect
+                kite = KiteConnect(api_key=creds.get("API_KEY", ""))
+                access_token = creds.get("ACCESS_TOKEN")
+                if access_token:
+                    kite.set_access_token(access_token)
+                    profile = kite.profile()
+                    user_name = profile.get("user_name", "Unknown") if isinstance(profile, dict) else "Unknown"
+                    diagnostics_summary = f"Zerodha session validated. User: {user_name}"
+                    session_status = SessionStatus.ACTIVE.value
+                else:
+                    diagnostics_summary = "Zerodha API Key present, but Access Token missing."
+                    session_status = SessionStatus.CREDENTIALS_MISSING.value
+
+            elif provider_type == ProviderType.DHAN:
+                from dhanhq import dhanhq
+                client_id = creds.get("CLIENT_ID")
+                access_token = creds.get("ACCESS_TOKEN")
+                if client_id and access_token:
+                    dhan = dhanhq(client_id, access_token)
+                    funds = dhan.get_fund_limits()
+                    if funds and isinstance(funds, dict):
+                        diagnostics_summary = "DhanHQ session validated successfully."
+                        session_status = SessionStatus.ACTIVE.value
+                    else:
+                        raise ValueError("Invalid response from DhanHQ get_fund_limits()")
+                else:
+                    diagnostics_summary = "DhanHQ credentials incomplete."
+                    session_status = SessionStatus.CREDENTIALS_MISSING.value
+
+            elif provider_type == ProviderType.UPSTOX:
+                import upstox_client
+                configuration = upstox_client.Configuration()
+                configuration.access_token = creds.get("ACCESS_TOKEN", "")
+                
+                # Upstox client requires proper instantiation to test the token
+                api_client = upstox_client.ApiClient(configuration)
+                api_instance = upstox_client.UserApi(api_client)
+                profile_response = api_instance.get_profile()
+                
+                # Depending on version, response might be an object
+                if hasattr(profile_response, "data") and hasattr(profile_response.data, "user_name"):
+                    user_name = profile_response.data.user_name
+                else:
+                    user_name = "Validated"
+                    
+                diagnostics_summary = f"Upstox session validated. User: {user_name}"
+                session_status = SessionStatus.ACTIVE.value
+            else:
+                diagnostics_summary = f"Validation not implemented for {provider_type.value}."
+                session_status = SessionStatus.ACTIVE.value
+
+        except ImportError as e:
+            session_status = SessionStatus.INVALID.value
+            error_message = f"SDK not installed: {e}"
+            diagnostics_summary = "Required provider SDK is not installed in this environment."
+            logger.warning("Provider validation missing SDK: %s", e)
+        except Exception as e:
+            session_status = SessionStatus.INVALID.value
+            error_message = str(e)
+            diagnostics_summary = f"Session validation failed: {type(e).__name__}"
+            logger.warning("Provider validation failed: %s", e)
+
         state = ProviderSessionState(
             provider_type=provider_type.value,
             display_name=config.display_name,
-            session_status=SessionStatus.ACTIVE.value,
+            session_status=session_status,
             credentials_present=True,
             last_validated=now,
-            masked_indicators=self.credential_store.get_masked_indicators(provider_type),
-            diagnostics_summary="Session validated successfully (mock validation).",
+            masked_indicators=masked_indicators,
+            diagnostics_summary=diagnostics_summary,
+            error_message=error_message,
         )
 
         self._session_cache[provider_type.value] = state
         logger.info(
-            "Provider %s session validated at %s",
+            "Provider %s session validated at %s (Status: %s)",
             provider_type.value,
             now,
+            session_status,
         )
         return state
 

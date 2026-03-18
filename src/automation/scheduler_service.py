@@ -30,6 +30,7 @@ from src.automation.models import (
 from src.automation.run_store import RunStore
 from src.monitoring.models import ScheduleMode, ScheduleSpec
 from src.monitoring.scheduler import Scheduler
+from src.runtime.workflow_orchestrator import WorkflowOrchestrator
 
 
 class AutomationServiceError(RuntimeError):
@@ -55,7 +56,25 @@ def _noop_runner(pipeline_type: PipelineType, output_dir: str) -> dict[str, Any]
         "success": True,
         "artifacts": [],
         "errors": [],
-        "message": f"No-op run for {pipeline_type.value}",
+        "message": f"No-op run for {getattr(pipeline_type, 'value', pipeline_type)}",
+    }
+
+
+def _orchestrator_runner(pipeline_type: PipelineType, output_dir: str) -> dict[str, Any]:
+    """Real runner using the system WorkflowOrchestrator."""
+    orchestrator = WorkflowOrchestrator(output_root=Path(output_dir).parent.parent)
+    result = orchestrator.run(
+        workflow=pipeline_type,
+        output_root=output_dir,
+        symbols_limit=0,  # Limits are configured by pipelines inherently
+    )
+
+    artifacts = []
+    return {
+        "success": result.success,
+        "artifacts": artifacts, # Artifacts can be gathered if needed
+        "errors": result.errors,
+        "message": f"Orchestrated run for {getattr(pipeline_type, 'value', pipeline_type)}",
     }
 
 
@@ -70,7 +89,7 @@ class AutomationSchedulerService:
     run_store: RunStore = field(default_factory=RunStore)
     jobs: list[JobDefinition] = field(default_factory=default_job_definitions)
     output_root: Path = field(default_factory=lambda: Path("output/automation"))
-    runner: PipelineRunner = field(default=_noop_runner)
+    runner: PipelineRunner = field(default=_orchestrator_runner)
 
     # Notification hook: called with (notification_type, title, message, metadata)
     notification_hook: Optional[Callable[..., None]] = None
