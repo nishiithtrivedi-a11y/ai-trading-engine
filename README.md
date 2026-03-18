@@ -12,6 +12,7 @@ The platform currently supports:
 - Walk-forward validation and Monte Carlo robustness testing
 - Portfolio-level research and relative-strength analysis
 - Scanner + decision pipeline for ranked opportunities and picks
+- Multi-family analysis framework (technical, quant, fundamental, macro, sentiment, intermarket, derivatives)
 - Portfolio-aware decision planning (allocation, sizing, and risk overlays)
 - Paper trading simulation with fills, positions, and PnL tracking
 - Live-safe signal pipeline on fresh/latest bars (no execution)
@@ -340,9 +341,60 @@ Phase 3 promotes four derivative modules from stub to real implementation:
 - Live order execution (permanently disabled)
 - WebSocket / streaming data
 - Volatility surface interpolation or skew models beyond simple slope
-- Macro / fundamental / sentiment modules (remain stubs — separate scope)
+- Cross-provider credential orchestration for every external analysis API endpoint
 - Upstox SDK derivatives path (remains CSV fallback)
 - Crypto provider or data path
+
+---
+
+## Combined Phase 4 — Fundamental + Macro + Sentiment + Intermarket
+
+Phase 4 upgrades the non-technical analysis families from placeholders to
+modular, profile-driven components with switchable provider selection.
+
+### What Phase 4 adds
+
+- Fundamental normalization + factor engine (`value`, `quality`, `growth`, `leverage`, `profitability`, `cash-flow quality`, earnings-event risk flags)
+- Macro normalization + context engine (inflation/growth trends, rate pressure, yield-curve context, calendar/event blackout hooks)
+- Sentiment/news normalization + feature engine (ticker/market/macro sentiment, intensity, caution flags, freshness)
+- Intermarket feature engine (cross-asset correlations, divergence, confirmation/contradiction flags)
+- Family-specific provider selection:
+  - fundamentals: `alphavantage` / `finnhub` / `fmp` / `eodhd` / `none`
+  - macro: `alphavantage` / `finnhub` / `fmp` / `eodhd` / `none`
+  - sentiment: `alphavantage` / `finnhub` / `fmp` / `eodhd` / `none`
+  - intermarket: `derived` (plus fallback routing support)
+- Additive scanner -> monitoring -> decision wiring:
+  - `analysis_features`
+  - `fundamental_summary`, `macro_summary`, `sentiment_summary`, `intermarket_summary`
+  - `event_risk_flags`
+  - `analysis_provider_metadata`
+
+### Provider-supplied vs derived
+
+- Provider-supplied fields are preserved and tagged in normalized bundles.
+- Derived fields are explicit (for example `fcf_yield` from `free_cash_flow / market_cap` when missing from provider payload).
+- Sentiment uses provider scores when supplied; a lightweight keyword fallback is optional.
+- Intermarket is intentionally derived from available market/macro series and reports degraded coverage honestly when sparse.
+
+### Profile wiring (Phase 4)
+
+Representative profile combinations now include:
+
+- `intraday_equity`: technical + quant
+- `swing_equity`: technical + quant + fundamental + sentiment
+- `positional_equity`: technical + quant + fundamental + macro + sentiment + intermarket
+- `macro_swing`: macro + intermarket + technical (+ quant overlay)
+- `index_options`: technical + quant + options + sentiment
+- `commodity_futures`: technical + quant + futures + commodities + macro + intermarket
+- `inr_currency_derivatives`: technical + quant + futures + forex + macro + intermarket
+- `full`: all available families
+
+### What remains deferred after Phase 4
+
+- Live order execution (still disabled)
+- Heavy NLP stack beyond lightweight sentiment fallback
+- Full external API client implementations for every analysis provider endpoint in all regions
+- Crypto execution/runtime expansion
 
 ---
 
@@ -357,10 +409,12 @@ All additions are backward-compatible — no existing behaviour was altered.
 |-----------|---------|
 | `BaseAnalysisModule` ABC | Plugin contract: `name`, `is_enabled()`, `supports()`, `build_features()`, `build_signals()`, `build_context()`, `health_check()` |
 | `FeatureOutput` | Standardised multi-domain output dataclass with slots `technical`, `quant`, `fundamental`, `macro`, `sentiment`, `intermarket`, `derivatives` |
-| `AnalysisRegistry` | Central hub: register/enable/disable/resolve modules; `create_default()` wires technical+quant and registers 9 disabled stubs |
+| `AnalysisRegistry` | Central hub: register/enable/disable/resolve modules; `create_default()` wires technical+quant and registers optional modules disabled by default |
 | `TechnicalAnalysisModule` | Delegates entirely to `BaseStrategy` static methods — zero indicator duplication |
 | `QuantAnalysisModule` | Rolling volatility (annualised), momentum, return z-score, Sharpe, volume z-score |
-| Stub modules (×9) | `fundamental`, `macro`, `sentiment`, `intermarket`, `futures`, `options`, `commodities`, `forex`, `crypto` — `is_enabled()=False`, `build_features()={}` |
+| Phase 4 non-technical modules | `fundamental`, `macro`, `sentiment`, `intermarket` with normalized provider payload support and degraded-safe outputs |
+| Derivative modules | `futures`, `options`, `commodities`, `forex` with real feature implementations |
+| Remaining stub module | `crypto` (disabled by default) |
 
 ### Instrument Master (`src/instruments/`)
 

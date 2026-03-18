@@ -12,6 +12,8 @@ It is not a live execution system today.
    - Provider factory and provider config
    - CSV/Indian CSV stable paths
    - Zerodha/Upstox integration-ready paths
+   - Phase 4 analysis-family normalization adapters (`fundamental_sources.py`, `macro_sources.py`, `sentiment_sources.py`, `intermarket_sources.py`)
+   - Family-specific provider capability truth (`alphavantage`/`finnhub`/`fmp`/`eodhd`/`none` + `derived` for intermarket)
 
 2. **Core Research Layer** (`src/core/`, `src/research/`)
    - Backtesting engine
@@ -50,9 +52,10 @@ It is not a live execution system today.
    - `BaseAnalysisModule` ABC — pluggable feature/signal/context contract
    - `FeatureOutput` — standardised multi-domain output schema (technical, quant, fundamental, macro, sentiment, intermarket, derivatives)
    - `AnalysisRegistry` — module registry with enable/disable/resolve/health_check; `create_default()` wires technical+quant, registers modules disabled by default
-   - Active modules: `TechnicalAnalysisModule` (RSI/SMA/EMA/ATR/Donchian via BaseStrategy), `QuantAnalysisModule` (volatility/momentum/Sharpe)
+   - Active baseline modules: `TechnicalAnalysisModule` (RSI/SMA/EMA/ATR/Donchian via BaseStrategy), `QuantAnalysisModule` (volatility/momentum/Sharpe)
+   - Phase 4 non-technical modules: `FundamentalAnalysisModule`, `MacroAnalysisModule`, `SentimentAnalysisModule`, `IntermarketAnalysisModule`
    - Real derivative modules (Phase 3): `FuturesAnalysisModule`, `OptionsAnalysisModule`, `CommoditiesAnalysisModule`, `ForexAnalysisModule`
-   - Stub modules: fundamental, macro, sentiment, intermarket, crypto
+   - Remaining stub module: crypto
    - `AnalysisProfileLoader` — YAML-driven named profiles; `apply_profile_by_name()` enables exactly the listed modules
 
 10. **Instrument Master Layer** (`src/instruments/`)
@@ -80,6 +83,20 @@ It is not a live execution system today.
     - Activated `FuturesAnalysisModule`, `OptionsAnalysisModule`, `CommoditiesAnalysisModule`, `ForexAnalysisModule` — real `build_features()` implementations
     - 4 new analysis profiles: `index_futures`, `stock_futures`, `equity_options`, `inr_currency_derivatives`
 
+13. **Phase 4 Multi-Layer Analysis Expansion** (`src/analysis/`, `src/data/`) — Combined Phase 4
+    - `fundamental_sources.py` — normalized company/factor/event models with source/derived metadata
+    - `macro_sources.py` — normalized macro indicator + calendar models with country tags and freshness
+    - `sentiment_sources.py` — normalized ticker/market/macro news models with provider-vs-derived semantics
+    - `intermarket_sources.py` — derived cross-asset series normalization for intermarket context
+    - `provider_capabilities.py` — analysis-family provider truth (`AnalysisFamily`, `AnalysisProviderFeatureSet`, diagnostics)
+    - `provider_router.py` — `AnalysisProviderRoutingPolicy` + `AnalysisProviderRouter` family-level routing
+    - `provider_factory.py` — family-level provider report (`analysis_capability_report`)
+    - Additive scanner/monitoring/decision context wiring:
+      - `analysis_features`
+      - `fundamental_summary`, `macro_summary`, `sentiment_summary`, `intermarket_summary`
+      - `event_risk_flags`
+      - `analysis_provider_metadata`
+
 ### How Provider-to-Canonical Mapping Works
 
 ```
@@ -104,6 +121,26 @@ ProviderRouter.select_for_segment("NFO")
 ProviderRouter.select_for_segment("NSE")
   -> returns "zerodha" (cash segment)
 ```
+
+### How Analysis Provider Routing Works (Phase 4)
+
+```
+AnalysisProviderRoutingPolicy(
+  fundamentals_provider="fmp",
+  macro_provider="alphavantage",
+  sentiment_provider="finnhub",
+  intermarket_provider="derived",
+)
+
+AnalysisProviderRouter.select_for_family("fundamentals")
+  -> "fmp"
+
+AnalysisProviderRouter.select_for_family("intermarket")
+  -> "derived" (or fallback provider if configured and supported)
+```
+
+Analysis-family routing is independent from market-data routing and can be
+switched per family without changing equity/derivatives data providers.
 
 ### How Option Chain Intelligence Works (Phase 3)
 

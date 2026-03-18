@@ -31,7 +31,10 @@
 | Multi-segment provider capabilities | supported | `src/data/provider_capabilities.py` | supported_segments, supports_derivatives flags | stable |
 | Technical analysis module | supported | `src/analysis/technical/module.py` | RSI/SMA/EMA/ATR/Donchian features | stable |
 | Quant analysis module | supported | `src/analysis/quant/module.py` | volatility/momentum/z-score/Sharpe features | stable |
-| Fundamental / macro / sentiment / intermarket modules | stub (disabled) | `src/analysis/{fundamental,macro,sentiment,intermarket}/` | placeholder — returns `{}` | future scope |
+| Fundamental analysis module | supported (profile-driven, optional) | `src/analysis/fundamental/module.py` | normalized fundamentals, factor outputs, earnings-event risk flags, degraded-safe mode | stable (Phase 4) |
+| Macro analysis module | supported (profile-driven, optional) | `src/analysis/macro/module.py` | inflation/growth trends, rate pressure, macro regime, calendar blackout flags | stable (Phase 4) |
+| Sentiment/news analysis module | supported (profile-driven, optional) | `src/analysis/sentiment/module.py` | ticker/market/macro sentiment, intensity, caution hooks, freshness | stable (Phase 4) |
+| Intermarket analysis module | supported (profile-driven, optional) | `src/analysis/intermarket/module.py` | cross-asset correlations, divergence, confirmation/contradiction flags | stable (Phase 4) |
 | Derivatives modules (futures, options, commodities, forex) | **implemented** | `src/analysis/derivatives/*/module.py` | DTE, basis, PCR, OI, IV skew, max pain, roll signals | stable (Phase 3) |
 | Crypto derivative module | stub (disabled) | `src/analysis/derivatives/crypto/module.py` | placeholder — returns `{}` | future scope |
 | Derivative instrument hydration (Kite rows → Instrument objects) | supported | `src/instruments/hydrator.py` | Instrument objects for NFO/MCX/CDS | stable |
@@ -50,6 +53,10 @@
 | Continuous series scaffold | **implemented** | `src/analysis/derivatives/futures/intelligence.py` ContinuousSeriesBuilder | dte_roll / calendar_roll schedules, stitch_from_dataframes | stable (Phase 3) |
 | DhanHQ data provider | **implemented** | `src/data/dhan_source.py`, `src/data/provider_capabilities.py` | option chain, expiry list, quotes; graceful degradation | partial (optional SDK) |
 | Provider routing policies | **implemented** | `src/data/provider_router.py` | zerodha_only, dhan_only, dhan_primary_zerodha_cash, auto | stable (Phase 3) |
+| Analysis-family provider capability registry | supported | `src/data/provider_capabilities.py` | `AnalysisFamily`, `AnalysisProviderFeatureSet`, diagnostics (`alphavantage/finnhub/fmp/eodhd/none/derived`) | stable (Phase 4) |
+| Analysis-family provider routing | supported | `src/data/provider_router.py` | `AnalysisProviderRoutingPolicy`, `AnalysisProviderRouter.select_for_family()` | stable (Phase 4) |
+| Analysis-family provider config | supported | `src/data/provider_config.py`, `config/data_providers.yaml` | per-family provider selection + sentiment fallback flag | stable (Phase 4) |
+| Scanner/monitoring/decision additive analysis wiring | supported (optional) | `src/scanners/scorer.py`, `src/monitoring/snapshot_engine.py` | `analysis_features`, family summaries, `event_risk_flags`, provider metadata | stable (Phase 4) |
 | Derivative analysis profiles (4 new) | **implemented** | `src/config/analysis_profiles.yaml` | index_futures, stock_futures, equity_options, inr_currency_derivatives | stable (Phase 3) |
 | Upstox SDK derivatives fetch | not implemented (SDK stub) | `src/data/sources.py` UpstoxDataSource | CSV fallback only | future scope |
 | NSE 2025–2026 trading holidays | populated | `src/instruments/calendar.py` | accurate trading-day detection | stable |
@@ -61,7 +68,25 @@
 - **Futures contract intelligence**: `FuturesContractResolver` labels front/next/far, detects roll imminence (DTE ≤ 5), computes basis and contango/backwardation. `ContinuousSeriesBuilder` provides roll schedule scaffolding (no price adjustment — research-grade).
 - **Derivative analysis modules** (futures, options, commodities, forex) are now real implementations registered in the `AnalysisRegistry`. `create_default()` still explicitly disables them — enable via a named analysis profile.
 - **Provider routing**: `ProviderRoutingPolicy` named factory methods select the right provider per segment; `ProviderRouter.select_for_segment()` is the single dispatch call.
-- All safety constraints maintained: no execution, no WebSocket, no live order paths, no macro/fundamental/sentiment scope.
+- All safety constraints maintained: no execution, no WebSocket, no live order paths.
+
+## Combined Phase 4 Notes — Fundamental + Macro + Sentiment + Intermarket
+
+- Non-technical analysis families are now implemented and remain profile-driven/optional.
+- Family-specific provider selection is supported independently from market-data provider selection:
+  - fundamentals: `alphavantage` / `finnhub` / `fmp` / `eodhd` / `none`
+  - macro: `alphavantage` / `finnhub` / `fmp` / `eodhd` / `none`
+  - sentiment: `alphavantage` / `finnhub` / `fmp` / `eodhd` / `none`
+  - intermarket: `derived` (plus routed fallback support)
+- Provider-supplied vs derived values are explicit in normalized models:
+  - fundamentals: derived `fcf_yield` fallback when provider omits it
+  - sentiment: provider score first, lightweight keyword fallback optional
+  - intermarket: intentionally derived from available market/macro series
+- Scanner/monitoring/decision integration is additive:
+  - existing ranking behavior is preserved
+  - context enrichment includes `analysis_features`, per-family summaries, and `event_risk_flags`
+- Degraded and no-provider states are first-class and non-breaking.
+- Live execution remains disabled.
 
 ## Phase 18 Notes
 
