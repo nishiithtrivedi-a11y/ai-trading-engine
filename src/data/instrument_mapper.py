@@ -245,3 +245,142 @@ class KiteInstrumentMapper:
         """Number of instruments currently loaded."""
         self._ensure_loaded()
         return len(self._instruments_df)
+
+    # ------------------------------------------------------------------
+    # Multi-segment support (Phase 2)
+    # ------------------------------------------------------------------
+
+    def refresh_all_segments(
+        self,
+        exchanges: Optional[list[str]] = None,
+    ) -> dict[str, pd.DataFrame]:
+        """Download instruments for multiple exchanges and cache results.
+
+        Parameters
+        ----------
+        exchanges:
+            List of exchange strings to download.
+            Default: ["NSE", "BSE", "NFO", "MCX", "CDS"].
+
+        Returns
+        -------
+        dict mapping exchange string -> DataFrame of instruments.
+        """
+        target_exchanges = exchanges or ["NSE", "BSE", "NFO", "MCX", "CDS"]
+        results: dict[str, pd.DataFrame] = {}
+
+        for exc in target_exchanges:
+            logger.info(f"refresh_all_segments: downloading {exc}")
+            try:
+                instruments = self._kite.instruments(exc)
+                df = pd.DataFrame(instruments)
+                results[exc] = df
+            except Exception as exc_err:
+                logger.warning(f"refresh_all_segments: failed for {exc}: {exc_err}")
+                results[exc] = pd.DataFrame()
+
+        # Combine all into master cache
+        if results:
+            all_dfs = [df for df in results.values() if not df.empty]
+            if all_dfs:
+                combined = pd.concat(all_dfs, ignore_index=True)
+                self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+                combined.to_csv(self._cache_path, index=False)
+                self._instruments_df = combined
+                logger.info(f"refresh_all_segments: cached {len(combined)} total instruments")
+
+        return results
+
+    def get_instruments_by_segment(self, exchange: str) -> pd.DataFrame:
+        """Return cached instruments for a specific exchange/segment.
+
+        Parameters
+        ----------
+        exchange:
+            Exchange string (e.g. "NSE", "NFO", "MCX").
+
+        Returns
+        -------
+        pd.DataFrame filtered to the given exchange. Empty DataFrame if not found.
+        """
+        self._ensure_loaded()
+        df = self._instruments_df
+        if "exchange" not in df.columns:
+            return pd.DataFrame()
+        return df[df["exchange"] == exchange.strip().upper()].reset_index(drop=True)
+
+    def to_instrument_object(
+        self,
+        row: dict,
+        hydrator=None,
+    ) -> Optional["Instrument"]:
+        """Convert a single instrument cache row to an Instrument object.
+
+        Parameters
+        ----------
+        row:
+            Dict with instrument fields (tradingsymbol, exchange,
+            instrument_type, expiry, strike, lot_size, tick_size, etc.).
+        hydrator:
+            Optional InstrumentHydrator instance. If None, creates a new one.
+
+        Returns
+        -------
+        Instrument or None if hydration fails.
+        """
+        if hydrator is None:
+            from src.instruments.hydrator import InstrumentHydrator
+            hydrator = InstrumentHydrator()
+        return hydrator.hydrate_from_kite_row(row)
+
+    def hydrate_registry(
+        self,
+        registry,
+        exchanges: Optional[list[str]] = None,
+        hydrator=None,
+        replace: bool = False,
+    ) -> int:
+        """Populate an InstrumentRegistry from the instrument cache.
+
+        Parameters
+        ----------
+        registry:
+            InstrumentRegistry instance to populate.
+        exchanges:
+            If provided, only process instruments from these exchanges.
+        hydrator:
+            Optional InstrumentHydrator. Created internally if None.
+        replace:
+            Passed to registry.add() — if True, replaces existing instruments.
+
+        Returns
+        -------
+        int
+            Count of instruments successfully added.
+        """
+        self._ensure_loaded()
+
+        if hydrator is None:
+            from src.instruments.hydrator import InstrumentHydrator
+            hydrator = InstrumentHydrator()
+
+        df = self._instruments_df
+        if exchanges:
+            exc_upper = [e.strip().upper() for e in exchanges]
+            if "exchange" in df.columns:
+                df = df[df["exchange"].isin(exc_upper)]
+
+        rows = df.to_dict("records")
+        added = 0
+        for row in rows:
+            inst = hydrator.hydrate_from_kite_row(row)
+            if inst is None:
+                continue
+            try:
+                registry.add(inst, replace=replace)
+                added += 1
+            except Exception as err:
+                logger.debug(f"hydrate_registry: skipping {row.get('tradingsymbol')}: {err}")
+
+        logger.info(f"hydrate_registry: added {added} instruments to registry")
+        return added
