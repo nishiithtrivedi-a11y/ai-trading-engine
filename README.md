@@ -64,11 +64,13 @@ Expanded matrix: [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md)
 
 ## Provider Support Matrix
 
-| Provider | Historical Data | Live Quotes | Derivatives | Segments | Status |
-| --- | --- | --- | --- | --- | --- |
-| CSV | yes | simulated reload | no | NSE | stable |
-| Zerodha | yes | yes | **yes** | NSE, BSE, NFO, MCX, CDS | provider + broker paths; execution disabled |
-| Upstox | partial | partial (fallback) | no (SDK stub) | NSE, NFO | honest partial; SDK not implemented |
+| Provider | Historical Data | Live Quotes | Derivatives | OI | Depth | Segments | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSV | yes | simulated reload | no | no | no | NSE | stable |
+| Indian CSV | yes | simulated reload | no | no | no | NSE, BSE | stable |
+| Zerodha | yes | yes | **yes** | **yes** | **yes** | NSE, BSE, NFO, MCX, CDS | partial (auth-gated) |
+| Upstox | partial | no (SDK stub) | no | no | no | NSE, NFO | partial (CSV fallback) |
+| **DhanHQ** | **yes** | **yes** | **yes** | **yes** | **yes** | NSE, BSE, NFO, MCX, CDS | **partial (optional SDK)** |
 
 Provider details: [`docs/PROVIDERS.md`](docs/PROVIDERS.md)
 
@@ -80,10 +82,10 @@ Code-level provider capability registry: `src/data/provider_capabilities.py`
 | --- | --- | --- |
 | Equities | supported | primary workflow target |
 | Equity indices | supported via symbols | benchmark/regime use cases |
-| NFO futures | **data-layer supported** | canonical symbol, hydration, Zerodha fetch path |
-| NFO options | **data-layer supported** | canonical symbol, hydration, Zerodha fetch path; no Greeks |
-| MCX futures | **data-layer supported** | canonical symbol, hydration, Zerodha fetch path |
-| CDS futures/options | **data-layer supported** | canonical symbol, hydration, Zerodha fetch path |
+| NFO futures | **intelligence supported** | canonical symbol, hydration, fetch path, Greeks/basis/roll signals via Zerodha or DhanHQ |
+| NFO options | **intelligence supported** | canonical symbol, hydration, fetch path, option chain, IV/Greeks, skew, PCR, max pain |
+| MCX futures | **intelligence supported** | canonical symbol, hydration, fetch path, basis/roll signals |
+| CDS futures/options | **intelligence supported** | canonical symbol, hydration, fetch path, basis/roll signals |
 | Crypto | not implemented | no dedicated provider/runtime path |
 
 ## Workflow Guides
@@ -253,14 +255,94 @@ MCX:GOLD-2026-04-30-FUT        # MCX commodity future
 CDS:USDINR-2026-04-30-FUT      # CDS forex future
 ```
 
-### What is NOT yet implemented (deferred to Phase 3+)
+### What is NOT yet implemented from Phase 2 scope
 
-- Options analytics (Greeks, IV, skew, volatility surface)
-- Futures continuous series / roll-over logic
 - Upstox SDK derivative fetch (SDK path raises NotImplementedError — CSV fallback only)
 - Live streaming / WebSocket data
 - Execution of any kind (permanently disabled by design)
 - MCX/CDS weekly expiry exact symbol mapping (monthly format is correct; weekly is best-effort)
+
+Options analytics (Greeks, IV, skew) and futures continuous series logic were deferred from Phase 2 and are now implemented in Phase 3 — see below.
+
+---
+
+## Derivatives Intelligence Layer (Phase 3)
+
+Phase 3 builds actual derivatives analytics and a switchable DhanHQ data provider on top of the Phase 2 data layer.
+
+### DhanHQ Switchable Provider
+
+| Feature | Status |
+|---|---|
+| Optional `dhanhq` SDK (graceful degradation when absent or unconfigured) | implemented |
+| Health check states: `sdk_unavailable`, `no_credentials`, `sdk_configured` | implemented |
+| `fetch_option_chain()` returning normalized CE/PE rows per strike | implemented |
+| `fetch_expiry_list()` for underlying | implemented |
+| DhanHQ segment strings: `NSE_EQ`, `NSE_FO`, `MCX`, `CUR` | implemented |
+| DhanHQ ↔ canonical symbol conversion in `provider_mapping.py` | implemented |
+| `"dhan"` entry in `_PROVIDER_CAPABILITIES` with full derivative flags | implemented |
+
+### Provider Routing (`src/data/provider_router.py`)
+
+Named routing policies for segment-aware provider selection:
+
+| Policy | Description |
+|---|---|
+| `zerodha_only` | All segments via Zerodha |
+| `dhan_only` | All segments via DhanHQ |
+| `dhan_primary_zerodha_cash` | Derivatives via DhanHQ, cash via Zerodha |
+| `auto` | Segment-smart routing with fallback chain |
+
+### Option Chain Intelligence (`src/analysis/derivatives/options/`)
+
+| Component | Capability |
+|---|---|
+| `OptionStrike` | Per-strike CE/PE struct: LTP, OI, volume, bid/ask, IV, delta, theta, gamma, vega |
+| `OptionChain` | Full chain with ATM strike, chain PCR, max pain, IV skew |
+| `OptionChainBuilder` | Build from DhanHQ response, generic dict list, or `InstrumentRegistry` |
+| `OptionChainAnalyzer` | PCR, max pain, IV skew, OI concentration, strike ladder |
+| `black_scholes()` | Pure-Python BSM (no scipy) — price, delta, gamma, theta, vega, rho |
+| `implied_volatility()` | Bisection IV solver in [1e-6, 5.0] sigma range |
+| `classify_moneyness()` | ATM / ITM / OTM classification |
+| `enrich_greeks()` | Compute IV + Greeks for strikes missing them |
+
+### Futures Contract Intelligence (`src/analysis/derivatives/futures/intelligence.py`)
+
+| Component | Capability |
+|---|---|
+| `FuturesContractInfo` | Per-contract: DTE, position (front/next/far), lot size, active flag |
+| `FuturesContractFamily` | front/next/far labeling; `is_roll_imminent` (DTE ≤ 5) |
+| `FuturesContractResolver` | `get_contract_family()`, `compute_basis()`, `get_roll_signal()` |
+| `ContinuousSeriesBuilder` | `dte_roll` and `calendar_roll` roll schedules; `stitch_from_dataframes()` |
+
+### Activated Derivative Analysis Modules
+
+Phase 3 promotes four derivative modules from stub to real implementation:
+
+| Module | Key Features |
+|---|---|
+| `FuturesAnalysisModule` | DTE, roll imminence, basis, basis_pct, contango/backwardation, OI, price change |
+| `OptionsAnalysisModule` | PCR, call/put OI totals, IV skew, ATM strike, max pain, call resistance, put support |
+| `CommoditiesAnalysisModule` | Delegates to FuturesAnalysisModule + `asset_class="commodity"` |
+| `ForexAnalysisModule` | Delegates to FuturesAnalysisModule + `asset_class="currency"` + currency pair |
+
+### New Analysis Profiles (Phase 3)
+
+| Profile | Enabled Modules |
+|---|---|
+| `index_futures` | technical, quant, futures |
+| `stock_futures` | technical, quant, futures |
+| `equity_options` | technical, quant, options |
+| `inr_currency_derivatives` | technical, quant, futures, forex |
+
+### What is NOT implemented in Phase 3 (by design)
+
+- Live order execution (permanently disabled)
+- WebSocket / streaming data
+- Volatility surface interpolation or skew models beyond simple slope
+- Macro / fundamental / sentiment modules (remain stubs — separate scope)
+- Upstox SDK derivatives path (remains CSV fallback)
+- Crypto provider or data path
 
 ---
 

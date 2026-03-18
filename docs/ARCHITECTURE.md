@@ -49,9 +49,10 @@ It is not a live execution system today.
 9. **Analysis Plugin Layer** (`src/analysis/`)
    - `BaseAnalysisModule` ABC — pluggable feature/signal/context contract
    - `FeatureOutput` — standardised multi-domain output schema (technical, quant, fundamental, macro, sentiment, intermarket, derivatives)
-   - `AnalysisRegistry` — module registry with enable/disable/resolve/health_check; `create_default()` wires technical+quant, registers 9 stub modules disabled
+   - `AnalysisRegistry` — module registry with enable/disable/resolve/health_check; `create_default()` wires technical+quant, registers modules disabled by default
    - Active modules: `TechnicalAnalysisModule` (RSI/SMA/EMA/ATR/Donchian via BaseStrategy), `QuantAnalysisModule` (volatility/momentum/Sharpe)
-   - Stub modules: fundamental, macro, sentiment, intermarket, futures, options, commodities, forex, crypto
+   - Real derivative modules (Phase 3): `FuturesAnalysisModule`, `OptionsAnalysisModule`, `CommoditiesAnalysisModule`, `ForexAnalysisModule`
+   - Stub modules: fundamental, macro, sentiment, intermarket, crypto
    - `AnalysisProfileLoader` — YAML-driven named profiles; `apply_profile_by_name()` enables exactly the listed modules
 
 10. **Instrument Master Layer** (`src/instruments/`)
@@ -62,13 +63,22 @@ It is not a live execution system today.
     - `InstrumentRegistry` — canonical-keyed store with lookup by type/exchange/segment/underlying/expiry/option-chain
 
 11. **Indian Derivatives Data Layer** (`src/instruments/`, `src/data/`) — Phase 2
-    - `provider_mapping.py` — bidirectional Instrument ↔ Kite tradingsymbol and Upstox segment|symbol conversion
+    - `provider_mapping.py` — bidirectional Instrument ↔ Kite tradingsymbol, Upstox segment|symbol, and DhanHQ segment conversion
     - `hydrator.py` — `InstrumentHydrator` converts Kite `instruments()` rows and generic dicts to `Instrument` objects for all segments (NSE/BSE/NFO/MCX/CDS)
     - `contracts.py` — `ContractResolver` for active contract filtering, nearest expiry, option chain grouping, strikes list — all pure data/filtering, no execution
     - `quote_normalizer.py` — `NormalizedQuote` dataclass with OI, bid/ask, depth, `DataQualityFlags` (stale, missing OI, missing depth, degraded auth); normalizers for Kite and Upstox payloads
     - `derivative_data.py` — `DerivativeDataFetcher` for segment-aware historical and latest-quote routing via Zerodha; `resolve_active_contract()` helper
     - Extended `provider_capabilities.py` — `supports_historical_derivatives`, `supports_latest_derivatives`, `supports_oi`, `supports_market_depth`, `instrument_master_available` flags + `get_derivative_capability_summary()`
     - Extended `instrument_mapper.py` — `refresh_all_segments()`, `hydrate_registry()` for multi-segment instrument master population
+
+12. **Derivatives Intelligence Layer** (`src/analysis/derivatives/`, `src/data/`) — Phase 3
+    - `dhan_source.py` — `DhanHQDataSource` optional SDK provider; `fetch_option_chain()`, `fetch_expiry_list()`, graceful SDK-absent degradation
+    - `provider_router.py` — `ProviderRoutingPolicy` named factory methods + `ProviderRouter.select_for_segment()` dispatch
+    - `options/chain.py` — `OptionStrike`, `OptionChain`, `OptionChainBuilder` (from DhanHQ response / dict list / `InstrumentRegistry`)
+    - `options/analytics.py` — pure-Python BSM (`black_scholes()`, `implied_volatility()` bisection), `OptionChainAnalyzer` (PCR, max pain, IV skew, OI concentration)
+    - `futures/intelligence.py` — `FuturesContractInfo`, `FuturesContractFamily` (front/next/far, roll imminence), `FuturesContractResolver`, `ContinuousSeriesBuilder`
+    - Activated `FuturesAnalysisModule`, `OptionsAnalysisModule`, `CommoditiesAnalysisModule`, `ForexAnalysisModule` — real `build_features()` implementations
+    - 4 new analysis profiles: `index_futures`, `stock_futures`, `equity_options`, `inr_currency_derivatives`
 
 ### How Provider-to-Canonical Mapping Works
 
@@ -77,7 +87,55 @@ Provider native (Kite)         Canonical internal          Instrument object
 NIFTY26APRFUT        <-->   NFO:NIFTY-2026-04-30-FUT  <--> Instrument.future("NIFTY", date(2026,4,30))
 NIFTY26APR24500CE    <-->   NFO:NIFTY-2026-04-30-24500-CE  <--> Instrument.option("NIFTY", ..., 24500, CALL)
 GOLD26APRFUT         <-->   MCX:GOLD-2026-04-30-FUT   <--> Instrument.future("GOLD", ..., Exchange.MCX)
-NSE_FO|NIFTY26APRFUT (Upstox) <--> same canonical     <--> same Instrument
+NSE_FO|NIFTY26APRFUT (Upstox)  <--> same canonical    <--> same Instrument
+NSE_FO + NIFTY26APRFUT (Dhan)  <--> same canonical    <--> same Instrument
+```
+
+### How Provider Routing Works (Phase 3)
+
+```
+ProviderRoutingPolicy.dhan_primary_zerodha_cash()
+  -> derivatives_provider = "dhan"
+  -> cash_provider = "zerodha"
+
+ProviderRouter.select_for_segment("NFO")
+  -> returns "dhan"   (derivatives segment)
+
+ProviderRouter.select_for_segment("NSE")
+  -> returns "zerodha" (cash segment)
+```
+
+### How Option Chain Intelligence Works (Phase 3)
+
+```
+DhanHQDataSource.fetch_option_chain(underlying, expiry, segment)
+  -> raw DhanHQ API response
+
+OptionChainBuilder.from_dhan_response(underlying, expiry, dhan_chain)
+  -> OptionChain with OptionStrike objects per strike
+
+OptionChainAnalyzer.enrich_greeks(chain, T)
+  -> black_scholes() + implied_volatility() for strikes missing IV/Greeks
+  -> returns enriched OptionChain
+
+OptionChainAnalyzer.analyze(chain)
+  -> ChainAnalytics: pcr, max_pain, iv_skew, oi_concentration
+```
+
+### How Futures Intelligence Works (Phase 3)
+
+```
+FuturesContractResolver.get_contract_family(registry, underlying, exchange, as_of)
+  -> FuturesContractFamily with front/next/far FuturesContractInfo
+
+FuturesContractResolver.get_roll_signal(family)
+  -> {"action": "roll_to_next"|"hold_front", "front_dte": ..., "next_canonical": ...}
+
+FuturesContractResolver.compute_basis(spot_price, futures_price)
+  -> {"basis": ..., "basis_pct": ..., "contango": bool, "backwardation": bool}
+
+ContinuousSeriesBuilder.build_roll_schedule(contracts, as_of)
+  -> ContinuousSeriesMetadata with roll dates and contract sequence
 ```
 
 ### How Derivative Data Enters the System

@@ -32,7 +32,8 @@
 | Technical analysis module | supported | `src/analysis/technical/module.py` | RSI/SMA/EMA/ATR/Donchian features | stable |
 | Quant analysis module | supported | `src/analysis/quant/module.py` | volatility/momentum/z-score/Sharpe features | stable |
 | Fundamental / macro / sentiment / intermarket modules | stub (disabled) | `src/analysis/{fundamental,macro,sentiment,intermarket}/` | placeholder — returns `{}` | future scope |
-| Derivatives modules (futures, options, commodities, forex, crypto) | stub (disabled) | `src/analysis/derivatives/*/` | placeholder — returns `{}` | future scope |
+| Derivatives modules (futures, options, commodities, forex) | **implemented** | `src/analysis/derivatives/*/module.py` | DTE, basis, PCR, OI, IV skew, max pain, roll signals | stable (Phase 3) |
+| Crypto derivative module | stub (disabled) | `src/analysis/derivatives/crypto/module.py` | placeholder — returns `{}` | future scope |
 | Derivative instrument hydration (Kite rows → Instrument objects) | supported | `src/instruments/hydrator.py` | Instrument objects for NFO/MCX/CDS | stable |
 | Provider-native symbol mapping (canonical ↔ Kite ↔ Upstox) | supported | `src/instruments/provider_mapping.py`, `normalization.py` | Kite tradingsymbols, Upstox segment\|symbol | stable |
 | Active contract resolution and option chain utilities | supported | `src/instruments/contracts.py` | nearest expiry, strikes, grouped option chain | stable |
@@ -43,10 +44,24 @@
 | NFO futures / options data fetch via Zerodha | supported | `src/data/derivative_data.py` + Zerodha | OHLCV + OI where available | stable |
 | MCX commodity futures data fetch via Zerodha | supported | `src/data/derivative_data.py` + Zerodha | OHLCV | stable |
 | CDS currency futures data fetch via Zerodha | supported | `src/data/derivative_data.py` + Zerodha | OHLCV | stable |
-| Options analytics (Greeks, IV, skew) | not implemented | — | — | future scope (Phase 3+) |
-| Futures continuous series / roll-over | not implemented | — | — | future scope (Phase 3+) |
+| Options analytics (Greeks, IV, skew) | **implemented** | `src/analysis/derivatives/options/analytics.py` | BSM price/Greeks, IV bisection, max pain, IV skew, OI concentration | stable (Phase 3) |
+| Option chain builder | **implemented** | `src/analysis/derivatives/options/chain.py` | OptionChain + OptionStrike from DhanHQ / dict list / registry | stable (Phase 3) |
+| Futures contract intelligence | **implemented** | `src/analysis/derivatives/futures/intelligence.py` | FuturesContractFamily, roll signals, basis, backwardation/contango | stable (Phase 3) |
+| Continuous series scaffold | **implemented** | `src/analysis/derivatives/futures/intelligence.py` ContinuousSeriesBuilder | dte_roll / calendar_roll schedules, stitch_from_dataframes | stable (Phase 3) |
+| DhanHQ data provider | **implemented** | `src/data/dhan_source.py`, `src/data/provider_capabilities.py` | option chain, expiry list, quotes; graceful degradation | partial (optional SDK) |
+| Provider routing policies | **implemented** | `src/data/provider_router.py` | zerodha_only, dhan_only, dhan_primary_zerodha_cash, auto | stable (Phase 3) |
+| Derivative analysis profiles (4 new) | **implemented** | `src/config/analysis_profiles.yaml` | index_futures, stock_futures, equity_options, inr_currency_derivatives | stable (Phase 3) |
 | Upstox SDK derivatives fetch | not implemented (SDK stub) | `src/data/sources.py` UpstoxDataSource | CSV fallback only | future scope |
 | NSE 2025–2026 trading holidays | populated | `src/instruments/calendar.py` | accurate trading-day detection | stable |
+
+## Phase 3 Notes — Derivatives Intelligence + DhanHQ
+
+- **DhanHQ** added as an optional switchable provider. When `dhanhq` SDK is absent or credentials are missing, `DhanHQDataSource` degrades gracefully and reports its health state honestly.
+- **Option chain analytics** are pure-Python (no scipy). Black-Scholes uses `math.erf` for CDF; IV computed via bisection in [1e-6, 5.0] sigma.
+- **Futures contract intelligence**: `FuturesContractResolver` labels front/next/far, detects roll imminence (DTE ≤ 5), computes basis and contango/backwardation. `ContinuousSeriesBuilder` provides roll schedule scaffolding (no price adjustment — research-grade).
+- **Derivative analysis modules** (futures, options, commodities, forex) are now real implementations registered in the `AnalysisRegistry`. `create_default()` still explicitly disables them — enable via a named analysis profile.
+- **Provider routing**: `ProviderRoutingPolicy` named factory methods select the right provider per segment; `ProviderRouter.select_for_segment()` is the single dispatch call.
+- All safety constraints maintained: no execution, no WebSocket, no live order paths, no macro/fundamental/sentiment scope.
 
 ## Phase 18 Notes
 
