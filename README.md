@@ -1,4 +1,4 @@
-﻿# AI Trading Engine
+# AI Trading Engine
 
 A modular Python AI trading research platform for backtesting, strategy evaluation, paper trading simulation, and live-safe signal generation.
 
@@ -201,6 +201,14 @@ Run one command per mode:
 - Paper trading: `python scripts/run_paper_trading.py --paper-trading --provider indian_csv --symbols RELIANCE.NS TCS.NS INFY.NS --interval day --paper-output-dir output/paper_trading_run --paper-max-orders 10`
 - Live-safe signals: `python scripts/run_live_signal_pipeline.py --live-signals --provider indian_csv --symbols RELIANCE.NS TCS.NS INFY.NS --interval day --run-once --output-dir output/live_signals_run`
 - Decision + portfolio plan: `python scripts/run_decision.py --provider indian_csv --symbols RELIANCE.NS TCS.NS INFY.NS --interval day --profile eod --output-dir output/decision_run`
+- UI Command Center: `uvicorn src.api.main:app --reload` (backend) and `npm run dev` (frontend)
+
+## What Changed in Phase 20 (UI / Command Center)
+
+- Built a premium **React/Vite** frontend and **FastAPI** backend to serve as an operator-grade trading dashboard.
+- Features real-time state viewing for Scanner, Monitoring, Decision, Paper Trading, Provider Diagnostics, Artifact Explorer, and Profiles.
+- Includes Derivatives Intelligence (with graceful fallback for offline modes) and AI Workspace / Automation panels (advisory/placeholder only).
+- **Execution Rule:** All broker execution, strategy deployment, and live-routing UI controls are strictly disabled or marked as future visual placeholders, reinforcing the read-only and simulation-first architecture.
 
 ## What Changed in Phase 18
 
@@ -467,7 +475,7 @@ python -m pytest tests -q
 
 Follow [`AI_AGENT_WORKFLOW.md`](AI_AGENT_WORKFLOW.md):
 
-- Branches: `claude/*` and `codex/*`
-- Commits: `claude:` and `codex:` prefixes
+- Branches: `codex/*`
+- Commits: `codex:` prefix
 - Never push directly to `main`
 - Use PR-based merge flow

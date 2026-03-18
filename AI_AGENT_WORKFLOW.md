@@ -4,14 +4,12 @@ This repository uses explicit branch/commit conventions to keep Claude and Codex
 
 ## Branch Naming
 
-- Claude branches: `claude/<feature-name>`
 - Codex branches: `codex/<feature-name>`
 
 Never develop directly on `main`.
 
 ## Commit Message Prefixes
 
-- Claude commits: `claude: <message>`
 - Codex commits: `codex: <message>`
 
 Use clear, scoped commit messages.
@@ -28,7 +26,7 @@ Use clear, scoped commit messages.
 
 - Do not rewrite or force-push shared history unless explicitly approved.
 - Do not amend/squash unrelated prior work.
-- Preserve existing Claude/Codex commit lineage.
+- Preserve existing Codex commit lineage.
 
 ## Staging Safety
 
@@ -45,8 +43,8 @@ If needed, make a small safe `.gitignore` update in the same PR.
 
 ## Recommended PR Checklist
 
-- [ ] Branch prefix is correct (`claude/` or `codex/`)
-- [ ] Commit prefix is correct (`claude:` or `codex:`)
+- [ ] Branch prefix is correct (`codex/`)
+- [ ] Commit prefix is correct (`codex:`)
 - [ ] No secrets or local artifacts staged
 - [ ] Tests run and summarized
 - [ ] PR description includes scope, risk, and validation

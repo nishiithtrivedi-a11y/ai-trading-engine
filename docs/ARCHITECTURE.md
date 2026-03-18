@@ -1,4 +1,4 @@
-﻿# Architecture
+# Architecture
 
 ## System Purpose
 
@@ -96,6 +96,11 @@ It is not a live execution system today.
       - `fundamental_summary`, `macro_summary`, `sentiment_summary`, `intermarket_summary`
       - `event_risk_flags`
       - `analysis_provider_metadata`
+
+14. **UI / Command Center Layer (`frontend/`, `src/api/`)** — Phase 20
+    - `src/api/` — FastAPI backend acting as a thin read-only adapter over existing artifacts, configs, and logs.
+    - `frontend/` — React/Vite SPA providing operator-grade surfaces: Scanner, Decision, Paper Trading, Diagnostics, Artifact Explorer, Profiles, Derivatives, AI Workspace, and Settings.
+    - Designed with explicit execution separation (broker routing controls remain disabled visual placeholders).
 
 ### How Provider-to-Canonical Mapping Works
 
