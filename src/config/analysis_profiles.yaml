@@ -104,3 +104,36 @@ full:
     - commodities
     - forex
     - crypto
+
+index_futures:
+  description: >
+    Index futures profile (NFO). Technical + quant with futures contract features.
+  enabled:
+    - technical
+    - quant
+    - futures
+
+stock_futures:
+  description: >
+    Stock futures profile (NFO). Technical + quant with futures features.
+  enabled:
+    - technical
+    - quant
+    - futures
+
+equity_options:
+  description: >
+    Equity/stock options profile (NFO). Technical, quant, and options chain analytics.
+  enabled:
+    - technical
+    - quant
+    - options
+
+inr_currency_derivatives:
+  description: >
+    INR currency derivatives profile (CDS). Technical + quant + futures + forex context.
+  enabled:
+    - technical
+    - quant
+    - futures
+    - forex
