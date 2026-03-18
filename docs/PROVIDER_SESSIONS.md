@@ -41,18 +41,31 @@ Credentials are stored as environment variables with the prefix `{PROVIDER}_{CRE
 |---|---|---|
 | GET | `/api/v1/providers/sessions` | All provider session states |
 | GET | `/api/v1/providers/sessions/{type}` | Single provider status |
-| POST | `/api/v1/providers/sessions/{type}/validate` | Validate/reconnect session |
-| POST | `/api/v1/providers/sessions/{type}/configure` | Store credential (masked response) |
+| POST | `/api/v1/providers/sessions/{type}/validate` | Validate/reconnect session via live SDK |
+| POST | `/api/v1/providers/sessions/{type}/configure` | Store a single credential |
+| POST | `/api/v1/providers/sessions/{type}/credentials` | Store multiple API credentials atomically |
+| GET | `/api/v1/providers/sessions/{type}/login` | Get the Browser OAuth URL (Kite, Upstox) |
+| GET | `/api/v1/providers/sessions/{type}/callback` | Handle the OAuth redirect and save Tokens |
 
-## Security
+## Provider Specific Auth Flows
 
-- Raw credential values are **never** returned by any API endpoint or logged
-- All API responses use masked indicators (last 3 chars visible, e.g. `•••••def`)
-- Credentials are stored in `.env` file and loaded via `os.environ`
-- Connecting a provider does NOT enable execution — `safety_gate.py` enforces this independently
+### 1. Zerodha (Kite)
+- **Settings Required:** Must have `ZERODHA_API_KEY` and `ZERODHA_API_SECRET` in `.env`.
+- **Callback URL needed:** Configure your Kite Dev App redirect URL to: `http://127.0.0.1:8000/api/v1/providers/sessions/zerodha/callback`
+- **UX Flow:** Click **Connect** in the UI. A browser popup opens. After Login, Kite redirects back to the system, which exchanges the token, saves it to `.env` using Python `dotenv`, and refreshes the memory state synchronously.
+- **Constraints:** Zerodha tokens expire daily at 6 AM. The operator must click Connect once every morning.
 
-## Known Limitations (Phase 21.x)
+### 2. Upstox
+- **Settings Required:** Must have `UPSTOX_API_KEY` and `UPSTOX_API_SECRET` in `.env`.
+- **Callback URL needed:** Configure Upstox App Redirect URI as: `http://127.0.0.1:8000/api/v1/providers/sessions/upstox/callback`. Must add `UPSTOX_REDIRECT_URI` to `.env`.
+- **UX Flow:** Click **Connect** in the UI. Completes the OAuth 2.0 flow and saves `ACCESS_TOKEN` identically to Zerodha.
 
-- **Session validation is mock only:** `validate_session()` currently simulates a successful `ACTIVE` state if credentials are present. Real broker SDK connection tests (Kite `profile()`, Dhan margin query, Upstox profile) are intentionally deferred to a future phase. The interface is ready for that wiring with no API changes required.
-- **`.env` file write is append/update only:** If the `.env` file is managed by an external tool (e.g. dotenv-vault, docker secret injection), the `store_credential` path may conflict. In those setups, credential configuration should be done by setting env vars directly and skipping the configure API.
-- **No session expiry tracking:** `expiry_time` and `expired` state detection from broker token timestamps are not yet implemented. Expiry tracking is deferred to real SDK integration.
+### 3. DhanHQ
+- **Settings Required:** None upfront. Does not use OAuth.
+- **UX Flow:** Generate a long-lived Client ID and Access Token from the Dhan Web Portal. Click **Config** in the UI, input the values, and the engine persists them to `.env`.
+- **Constraints:** Manual generation required once, but does not need a daily reconnection.
+
+## Security & Architecture
+- **Zero Restart Architecture:** Modifying credentials via the UI edits the local `.env` file whilst updating the live `os.environ` thread. Validations immediately inherit the new token without requiring the command center API to restart.
+- Credentials are NEVER echoed. The UI only displays Masked Values (`••••xyz`).
+- Connecting a provider strictly enables market data and account feeds. Execution is strictly blocked outside Phase 22 routing models.
