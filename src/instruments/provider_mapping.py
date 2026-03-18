@@ -345,3 +345,51 @@ def _last_day_of_month(year: int, month: int) -> date:
     if month == 12:
         return date(year, 12, 31)
     return date(year, month + 1, 1) - datetime.timedelta(days=1)
+
+
+# ---------------------------------------------------------------------------
+# Dhan symbol mapping
+# ---------------------------------------------------------------------------
+
+_DHAN_SEGMENT_MAP: dict[Exchange, str] = {
+    Exchange.NSE: "NSE_EQ",
+    Exchange.BSE: "BSE_EQ",
+    Exchange.NFO: "NSE_FO",
+    Exchange.MCX: "MCX",
+    Exchange.CDS: "CUR",
+}
+
+
+def instrument_to_dhan_symbol(instrument: Instrument) -> str:
+    """Convert Instrument to DhanHQ trading symbol.
+
+    DhanHQ uses the same base tradingsymbol as Kite for most instruments.
+    The key difference is the exchange segment string.
+    """
+    return instrument_to_kite_symbol(instrument)  # same tradingsymbol, different segment
+
+
+def instrument_to_dhan_segment(instrument: Instrument) -> str:
+    """Return the DhanHQ exchange segment string for an Instrument."""
+    return _DHAN_SEGMENT_MAP.get(instrument.exchange, "NSE_EQ")
+
+
+def canonical_to_dhan(canonical: str) -> tuple[str, str]:
+    """Convert canonical symbol to (dhan_symbol, dhan_segment) tuple.
+
+    Returns:
+        (tradingsymbol, exchange_segment) e.g. ("NIFTY26APRFUT", "NSE_FO")
+
+    Raises
+    ------
+    ProviderMappingError
+        If the canonical symbol cannot be parsed or mapped.
+    """
+    from src.instruments.normalization import parse_canonical, CanonicalSymbolError
+    try:
+        inst = parse_canonical(canonical)
+    except CanonicalSymbolError as exc:
+        raise ProviderMappingError(
+            f"Cannot parse canonical symbol {canonical!r}: {exc}"
+        ) from exc
+    return instrument_to_dhan_symbol(inst), instrument_to_dhan_segment(inst)

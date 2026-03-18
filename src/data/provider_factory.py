@@ -113,6 +113,8 @@ class ProviderFactory:
             return self._build_zerodha(entry, **kwargs)
         elif name == "upstox":
             return self._build_upstox(entry, **kwargs)
+        elif name == "dhan":
+            return self._build_dhan(entry, **kwargs)
         else:
             # Check custom registry
             if name in self._registry:
@@ -184,6 +186,17 @@ class ProviderFactory:
             api_secret=creds.api_secret,
             access_token=creds.access_token,
             data_dir=kwargs.get("data_dir", entry.data_dir),
+        )
+
+    def _build_dhan(self, entry: ProviderEntry, **kwargs) -> BaseDataSource:
+        """Build a DhanHQ data source. Degrades gracefully if SDK unavailable."""
+        from src.data.dhan_source import DhanHQDataSource
+
+        creds = entry.get_credentials()
+        return DhanHQDataSource(
+            client_id=creds.api_key,   # DhanHQ uses client_id in api_key field
+            access_token=creds.access_token,
+            **kwargs,
         )
 
     @classmethod
