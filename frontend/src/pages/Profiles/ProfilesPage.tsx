@@ -32,6 +32,10 @@ export function ProfilesPage() {
           <p className="text-muted-foreground mt-1 text-sm">
              Engine configurations and active strategy module mappings.
           </p>
+          <div className="mt-2 text-xs font-semibold text-orange-500 bg-orange-500/10 inline-block px-2 py-1 rounded">
+             <Shield className="w-3 h-3 inline mr-1" />
+             Read-Only View: Direct profile editing is deferred to a future phase.
+          </div>
         </div>
       </div>
 

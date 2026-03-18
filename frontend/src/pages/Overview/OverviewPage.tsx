@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, Database, CheckCircle, BarChart2, Layers } from 'lucide-react';
+import { Activity, Database, BarChart2, Layers } from 'lucide-react';
 import axios from 'axios';
 
 export function OverviewPage() {
@@ -17,9 +17,9 @@ export function OverviewPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold tracking-tight">Platform Overview</h2>
-        <div className="flex items-center space-x-2 text-sm text-green-500 bg-green-500/10 px-3 py-1 rounded-full">
-          <CheckCircle className="w-4 h-4" />
-          <span>System Healthy</span>
+        <div className="flex items-center space-x-2 text-sm text-foreground bg-primary/10 px-3 py-1 rounded-full">
+          <Activity className="w-4 h-4 text-primary" />
+          <span>System Active</span>
         </div>
       </div>
 

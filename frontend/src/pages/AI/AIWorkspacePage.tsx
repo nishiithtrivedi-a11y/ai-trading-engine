@@ -4,7 +4,7 @@ import { Send, Bot, AlertTriangle, ShieldCheck, FileText, BarChart3, Settings2, 
 
 export function AIWorkspacePage() {
   const [prompt, setPrompt] = useState('');
-  const [chatHistory, setChatHistory] = useState<{role: 'user'|'assistant', content: string}[]>([]);
+  const [chatHistory, setChatHistory] = useState<{role: 'user'|'assistant', content: string, advisory_warning?: string}[]>([]);
   const [selectedContext, setSelectedContext] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -27,7 +27,7 @@ export function AIWorkspacePage() {
         prompt: userMsg,
         context_sources: selectedContext
       });
-      setChatHistory(prev => [...prev, { role: 'assistant', content: res.data.response }]);
+      setChatHistory(prev => [...prev, { role: 'assistant', content: res.data.response, advisory_warning: res.data.advisory_warning }]);
     } catch (e) {
       setChatHistory(prev => [...prev, { role: 'assistant', content: 'Error reaching AI backend.' }]);
     } finally {
@@ -66,6 +66,12 @@ export function AIWorkspacePage() {
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[85%] p-3 rounded-lg text-sm whitespace-pre-wrap ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground border border-border'}`}>
                         {msg.content}
+                        {msg.advisory_warning && (
+                            <div className="mt-3 pt-3 border-t border-border/50 text-[10px] uppercase font-bold text-orange-400 flex items-center gap-1.5">
+                                <AlertTriangle className="w-3 h-3" />
+                                {msg.advisory_warning}
+                            </div>
+                        )}
                     </div>
                 </div>
             ))}

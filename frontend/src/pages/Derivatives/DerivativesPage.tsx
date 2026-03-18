@@ -84,7 +84,9 @@ export function DerivativesPage() {
             <div className="grid gap-6 md:grid-cols-3 opacity-40 select-none grayscale cursor-not-allowed">
                 <div className="md:col-span-2 bg-card border border-border rounded-xl p-6 h-96 flex flex-col">
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-semibold">Options Chain (NIFTY - <span className="text-muted-foreground font-normal">Awaiting Expiry Data</span>)</h3>
+                        <h3 className="font-semibold">
+                          Options Chain ({summary.spot_reference?.symbol || 'Spot Reference Only'} - <span className="text-muted-foreground font-normal">No Live Options Data</span>)
+                        </h3>
                     </div>
                     <div className="flex-1 border border-border rounded flex items-center justify-center bg-muted/20 text-muted-foreground text-sm">
                         [ CHAIN GRID PLACEHOLDER ]

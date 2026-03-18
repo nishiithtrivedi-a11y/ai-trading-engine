@@ -27,7 +27,11 @@ export function ScannerPage() {
             <Filter className="w-4 h-4" />
             <span>Filter</span>
           </button>
-          <button className="flex items-center space-x-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90">
+          <button 
+            disabled
+            title="UI is currently read-only / execution-disabled. Scanner reruns are deferred to a later controlled phase."
+            className="flex items-center space-x-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm cursor-not-allowed opacity-60 select-none"
+          >
             <Search className="w-4 h-4" />
             <span>Rescan Now (Disabled)</span>
           </button>

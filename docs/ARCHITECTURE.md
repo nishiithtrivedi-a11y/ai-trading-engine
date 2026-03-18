@@ -97,10 +97,11 @@ It is not a live execution system today.
       - `event_risk_flags`
       - `analysis_provider_metadata`
 
-14. **UI / Command Center Layer (`frontend/`, `src/api/`)** — Phase 20
+14. **UI / Command Center Layer (`frontend/`, `src/api/`)** — Phase 20/20.1
     - `src/api/` — FastAPI backend acting as a thin read-only adapter over existing artifacts, configs, and logs.
     - `frontend/` — React/Vite SPA providing operator-grade surfaces: Scanner, Decision, Paper Trading, Diagnostics, Artifact Explorer, Profiles, Derivatives, AI Workspace, and Settings.
     - Designed with explicit execution separation (broker routing controls remain disabled visual placeholders).
+    - Includes **Phase 21 Provider Connection Placeholders** in the Settings view to pre-allocate UI for Broker token exchanges, Data API Keys, and Static feed mappings without introducing execution-enabling forms yet.
 
 ### How Provider-to-Canonical Mapping Works
 
