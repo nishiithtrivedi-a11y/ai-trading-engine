@@ -51,6 +51,12 @@ class ProviderFeatureSet:
     # --- Segment and derivatives capability flags (Phase 1 modular foundation) ---
     supported_segments: tuple[str, ...] = ("NSE",)
     supports_derivatives: bool = False
+    # --- Phase 2 derivative-specific capability flags ---
+    supports_historical_derivatives: bool = False
+    supports_latest_derivatives: bool = False
+    supports_oi: bool = False
+    supports_market_depth: bool = False
+    instrument_master_available: bool = False
 
     def supports_segment(self, segment: str) -> bool:
         """Return True if this provider supports the given market segment."""
@@ -96,6 +102,11 @@ _PROVIDER_CAPABILITIES: dict[str, ProviderFeatureSet] = {
         notes="File-based provider with deterministic local data.",
         supported_segments=("NSE",),
         supports_derivatives=False,
+        supports_historical_derivatives=False,
+        supports_latest_derivatives=False,
+        supports_oi=False,
+        supports_market_depth=False,
+        instrument_master_available=False,
     ),
     "indian_csv": ProviderFeatureSet(
         provider_name="indian_csv",
@@ -111,6 +122,11 @@ _PROVIDER_CAPABILITIES: dict[str, ProviderFeatureSet] = {
         notes="Indian market CSV loader with timezone/session normalization.",
         supported_segments=("NSE", "BSE"),
         supports_derivatives=False,
+        supports_historical_derivatives=False,
+        supports_latest_derivatives=False,
+        supports_oi=False,
+        supports_market_depth=False,
+        instrument_master_available=False,
     ),
     "zerodha": ProviderFeatureSet(
         provider_name="zerodha",
@@ -126,6 +142,11 @@ _PROVIDER_CAPABILITIES: dict[str, ProviderFeatureSet] = {
         notes="Data provider + broker adapter paths exist; runtime execution remains disabled.",
         supported_segments=("NSE", "BSE", "NFO", "MCX", "CDS"),
         supports_derivatives=True,
+        supports_historical_derivatives=True,
+        supports_latest_derivatives=True,
+        supports_oi=True,
+        supports_market_depth=True,
+        instrument_master_available=True,
     ),
     "upstox": ProviderFeatureSet(
         provider_name="upstox",
@@ -144,6 +165,11 @@ _PROVIDER_CAPABILITIES: dict[str, ProviderFeatureSet] = {
         ),
         supported_segments=("NSE", "NFO"),
         supports_derivatives=False,
+        supports_historical_derivatives=False,
+        supports_latest_derivatives=False,
+        supports_oi=False,
+        supports_market_depth=False,
+        instrument_master_available=False,
     ),
 }
 
@@ -210,6 +236,40 @@ def validate_provider_workflow(
         )
 
     return feature_set
+
+
+def get_derivative_capability_summary(provider_name: str) -> dict:
+    """Return a structured summary of derivative capabilities for a provider.
+
+    Parameters
+    ----------
+    provider_name:
+        Provider name string (e.g. "zerodha", "upstox").
+
+    Returns
+    -------
+    dict
+        Keys: provider, supports_derivatives, supports_historical_derivatives,
+        supports_latest_derivatives, supports_oi, supports_market_depth,
+        instrument_master_available, supported_segments, implementation_status.
+
+    Raises
+    ------
+    ProviderCapabilityError
+        If the provider is unknown.
+    """
+    fs = get_provider_feature_set(provider_name)
+    return {
+        "provider": fs.provider_name,
+        "supports_derivatives": fs.supports_derivatives,
+        "supports_historical_derivatives": fs.supports_historical_derivatives,
+        "supports_latest_derivatives": fs.supports_latest_derivatives,
+        "supports_oi": fs.supports_oi,
+        "supports_market_depth": fs.supports_market_depth,
+        "instrument_master_available": fs.instrument_master_available,
+        "supported_segments": list(fs.supported_segments),
+        "implementation_status": fs.implementation_status.value,
+    }
 
 
 def normalize_capability_timeframe(timeframe: str) -> str:

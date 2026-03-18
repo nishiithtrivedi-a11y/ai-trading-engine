@@ -203,22 +203,44 @@ def to_provider_symbol(canonical: str, provider: str) -> str:
     """
     Convert a canonical symbol to a provider-specific trading symbol.
 
-    This is a stub — provider-specific mapping logic is not yet wired.
-    Future implementations should handle Zerodha (KiteConnect), Upstox,
-    and other broker conventions.
-
     Parameters
     ----------
     canonical:
         Canonical symbol string (e.g. ``"NSE:RELIANCE-EQ"``).
     provider:
-        Provider name (e.g. ``"zerodha"``, ``"upstox"``).
+        Provider name (e.g. ``"zerodha"``, ``"upstox"``, ``"csv"``).
+
+    Returns
+    -------
+    str
+        Provider-native symbol string.
 
     Raises
     ------
+    ProviderMappingError
+        If the canonical symbol cannot be mapped for the given provider.
     NotImplementedError
-        Always — until provider-specific logic is implemented.
+        If the provider is not yet supported.
     """
+    from src.instruments.provider_mapping import (
+        canonical_to_kite,
+        canonical_to_upstox,
+        ProviderMappingError,
+    )
+
+    p = str(provider).strip().lower()
+
+    if p in ("zerodha", "kite"):
+        return canonical_to_kite(canonical)
+
+    if p == "upstox":
+        return canonical_to_upstox(canonical)
+
+    if p in ("csv", "indian_csv"):
+        # For CSV providers, return the bare symbol part of the canonical
+        inst = parse_canonical(canonical)
+        return inst.symbol
+
     raise NotImplementedError(
         f"Provider symbol mapping for '{provider}' is not yet implemented. "
         f"Cannot convert canonical symbol '{canonical}' to {provider} format."

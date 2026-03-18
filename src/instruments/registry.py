@@ -10,6 +10,7 @@ The InstrumentRegistry provides:
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from src.data.instrument_metadata import InstrumentType
@@ -145,6 +146,116 @@ class InstrumentRegistry:
     def all(self) -> list[Instrument]:
         """Return all registered instruments."""
         return list(self._store.values())
+
+    # ------------------------------------------------------------------
+    # Derivative filtering (Phase 2)
+    # ------------------------------------------------------------------
+
+    def list_by_underlying(
+        self,
+        underlying: str,
+        exchange: Optional[Exchange] = None,
+    ) -> list[Instrument]:
+        """Return all derivatives with the given underlying symbol.
+
+        Parameters
+        ----------
+        underlying:
+            Underlying symbol to match (case-insensitive).
+        exchange:
+            If provided, further filter by exchange.
+
+        Returns
+        -------
+        List of instruments whose ``symbol`` or ``underlying`` matches.
+        """
+        underlying_upper = underlying.strip().upper()
+        result = []
+        for i in self._store.values():
+            sym_match = (
+                i.symbol == underlying_upper
+                or (i.underlying is not None and i.underlying.upper() == underlying_upper)
+            )
+            if not sym_match:
+                continue
+            if exchange is not None and i.exchange != exchange:
+                continue
+            result.append(i)
+        return result
+
+    def list_by_expiry(self, expiry: date) -> list[Instrument]:
+        """Return all instruments with the given expiry date.
+
+        Parameters
+        ----------
+        expiry:
+            Exact expiry date to match.
+
+        Returns
+        -------
+        List of instruments with expiry == expiry.
+        """
+        return [i for i in self._store.values() if i.expiry == expiry]
+
+    def list_active_futures(self, as_of: Optional[date] = None) -> list[Instrument]:
+        """Return futures with expiry >= as_of (today if None).
+
+        Parameters
+        ----------
+        as_of:
+            Reference date. Defaults to today.
+
+        Returns
+        -------
+        List of active futures sorted by expiry ascending.
+        """
+        ref = as_of or date.today()
+        futures = [
+            i for i in self._store.values()
+            if i.instrument_type == InstrumentType.FUTURE
+            and i.expiry is not None
+            and i.expiry >= ref
+        ]
+        return sorted(futures, key=lambda x: x.expiry)  # type: ignore[arg-type, return-value]
+
+    def list_option_chain(
+        self,
+        underlying: str,
+        expiry: date,
+        exchange: Optional[Exchange] = None,
+    ) -> list[Instrument]:
+        """Return all options for a given underlying and expiry, sorted by strike.
+
+        Parameters
+        ----------
+        underlying:
+            Underlying symbol (case-insensitive).
+        expiry:
+            Exact expiry date.
+        exchange:
+            If provided, further filter by exchange.
+
+        Returns
+        -------
+        List of option instruments sorted by strike ascending.
+        """
+        underlying_upper = underlying.strip().upper()
+        result = []
+        for i in self._store.values():
+            if i.instrument_type != InstrumentType.OPTION:
+                continue
+            if i.expiry != expiry:
+                continue
+            sym_match = (
+                i.symbol == underlying_upper
+                or (i.underlying is not None and i.underlying.upper() == underlying_upper)
+            )
+            if not sym_match:
+                continue
+            if exchange is not None and i.exchange != exchange:
+                continue
+            result.append(i)
+        return sorted(result, key=lambda x: x.strike or 0.0)
 
     # ------------------------------------------------------------------
     # Dunder

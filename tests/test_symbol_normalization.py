@@ -223,23 +223,63 @@ class TestCanonicalSymbolError:
 
 
 # ---------------------------------------------------------------------------
-# to_provider_symbol stub
+# to_provider_symbol (Phase 2 implementation)
 # ---------------------------------------------------------------------------
 
 class TestToProviderSymbol:
-    def test_raises_not_implemented(self):
+    def test_equity_to_zerodha_returns_bare_symbol(self):
+        result = to_provider_symbol("NSE:RELIANCE-EQ", "zerodha")
+        assert result == "RELIANCE"
+
+    def test_equity_to_upstox_returns_segment_format(self):
+        result = to_provider_symbol("NSE:RELIANCE-EQ", "upstox")
+        assert result == "NSE_EQ|RELIANCE"
+
+    def test_equity_to_csv_returns_bare_symbol(self):
+        result = to_provider_symbol("NSE:RELIANCE-EQ", "csv")
+        assert result == "RELIANCE"
+
+    def test_equity_to_indian_csv_returns_bare_symbol(self):
+        result = to_provider_symbol("NSE:TCS-EQ", "indian_csv")
+        assert result == "TCS"
+
+    def test_unknown_provider_raises(self):
         with pytest.raises(NotImplementedError):
-            to_provider_symbol("NSE:RELIANCE-EQ", "zerodha")
+            to_provider_symbol("NSE:RELIANCE-EQ", "unknown_xyz")
 
-    def test_raises_for_any_provider(self):
-        for provider in ("zerodha", "upstox", "angel", "unknown"):
-            with pytest.raises(NotImplementedError):
-                to_provider_symbol("NSE:TCS-EQ", provider)
+    def test_unknown_provider_error_contains_provider_name(self):
+        with pytest.raises(NotImplementedError, match="angel"):
+            to_provider_symbol("NSE:INFY-EQ", "angel")
 
-    def test_error_message_contains_provider(self):
-        with pytest.raises(NotImplementedError, match="zerodha"):
-            to_provider_symbol("NSE:INFY-EQ", "zerodha")
+    def test_future_to_zerodha_contains_fut_suffix(self):
+        result = to_provider_symbol("NFO:NIFTY-2026-04-30-FUT", "zerodha")
+        assert "NIFTY" in result and result.endswith("FUT")
 
-    def test_error_message_contains_canonical(self):
-        with pytest.raises(NotImplementedError, match="NSE:HDFC-EQ"):
-            to_provider_symbol("NSE:HDFC-EQ", "upstox")
+    def test_future_to_upstox_has_nfo_segment(self):
+        result = to_provider_symbol("NFO:NIFTY-2026-04-30-FUT", "upstox")
+        assert result.startswith("NSE_FO|")
+        assert "NIFTY" in result and "FUT" in result
+
+    def test_call_option_to_zerodha_ends_with_ce(self):
+        result = to_provider_symbol("NFO:NIFTY-2026-04-30-24500-CE", "zerodha")
+        assert result.endswith("CE") and "NIFTY" in result
+
+    def test_put_option_to_zerodha_ends_with_pe(self):
+        result = to_provider_symbol("NFO:NIFTY-2026-04-30-24500-PE", "zerodha")
+        assert result.endswith("PE")
+
+    def test_mcx_future_to_zerodha(self):
+        result = to_provider_symbol("MCX:GOLD-2026-04-30-FUT", "zerodha")
+        assert "GOLD" in result and result.endswith("FUT")
+
+    def test_bse_equity_to_upstox(self):
+        result = to_provider_symbol("BSE:TCS-EQ", "upstox")
+        assert result.startswith("BSE_EQ|")
+
+    def test_kite_alias_works(self):
+        result = to_provider_symbol("NSE:RELIANCE-EQ", "kite")
+        assert result == "RELIANCE"
+
+    def test_cds_future_to_zerodha(self):
+        result = to_provider_symbol("CDS:USDINR-2026-04-30-FUT", "zerodha")
+        assert "USDINR" in result and result.endswith("FUT")

@@ -33,9 +33,34 @@ class TradingCalendar:
         Defaults to the class-level ``NSE_HOLIDAYS`` tuple.
     """
 
-    #: Known NSE holidays.  Extend this tuple with actual holiday dates as
-    #: data becomes available.  Dates are in (year, month, day) format.
-    NSE_HOLIDAYS: tuple[date, ...] = ()
+    #: Known NSE holidays.
+    NSE_HOLIDAYS: tuple[date, ...] = (
+        # 2025 NSE Holidays
+        date(2025, 1, 26),   # Republic Day
+        date(2025, 2, 26),   # Mahashivratri
+        date(2025, 3, 14),   # Holi
+        date(2025, 3, 31),   # Id-ul-Fitr (Ramzan Eid) - tentative
+        date(2025, 4, 14),   # Dr. Baba Saheb Ambedkar Jayanti
+        date(2025, 4, 18),   # Good Friday
+        date(2025, 5, 1),    # Maharashtra Day
+        date(2025, 8, 15),   # Independence Day
+        date(2025, 8, 27),   # Ganesh Chaturthi
+        date(2025, 10, 2),   # Mahatma Gandhi Jayanti / Dussehra
+        date(2025, 10, 20),  # Diwali Laxmi Pujan (tentative)
+        date(2025, 10, 21),  # Diwali Balipratipada
+        date(2025, 11, 5),   # Gurunanak Jayanti
+        date(2025, 12, 25),  # Christmas
+        # 2026 NSE Holidays (standard market holidays - subject to NSE circular)
+        date(2026, 1, 26),   # Republic Day
+        date(2026, 3, 20),   # Holi (approximate)
+        date(2026, 4, 3),    # Good Friday (approximate)
+        date(2026, 4, 14),   # Dr. Baba Saheb Ambedkar Jayanti
+        date(2026, 5, 1),    # Maharashtra Day
+        date(2026, 8, 15),   # Independence Day
+        date(2026, 10, 2),   # Mahatma Gandhi Jayanti
+        date(2026, 11, 14),  # Diwali (approximate)
+        date(2026, 12, 25),  # Christmas
+    )
 
     def __init__(
         self,

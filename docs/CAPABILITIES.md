@@ -33,6 +33,20 @@
 | Quant analysis module | supported | `src/analysis/quant/module.py` | volatility/momentum/z-score/Sharpe features | stable |
 | Fundamental / macro / sentiment / intermarket modules | stub (disabled) | `src/analysis/{fundamental,macro,sentiment,intermarket}/` | placeholder — returns `{}` | future scope |
 | Derivatives modules (futures, options, commodities, forex, crypto) | stub (disabled) | `src/analysis/derivatives/*/` | placeholder — returns `{}` | future scope |
+| Derivative instrument hydration (Kite rows → Instrument objects) | supported | `src/instruments/hydrator.py` | Instrument objects for NFO/MCX/CDS | stable |
+| Provider-native symbol mapping (canonical ↔ Kite ↔ Upstox) | supported | `src/instruments/provider_mapping.py`, `normalization.py` | Kite tradingsymbols, Upstox segment\|symbol | stable |
+| Active contract resolution and option chain utilities | supported | `src/instruments/contracts.py` | nearest expiry, strikes, grouped option chain | stable |
+| Normalized derivative quotes (OI, depth, quality flags) | supported | `src/data/quote_normalizer.py` | NormalizedQuote with DataQualityFlags | stable |
+| Derivative-aware data fetch routing | supported | `src/data/derivative_data.py` | DataFrame (OHLCV) or NormalizedQuote per instrument | stable |
+| Derivative capability flags (per-provider) | supported | `src/data/provider_capabilities.py` | historical_derivatives, OI, depth, instrument_master | stable |
+| Multi-segment instrument master hydration | supported | `src/data/instrument_mapper.py` | InstrumentRegistry populated from Kite instrument lists | stable |
+| NFO futures / options data fetch via Zerodha | supported | `src/data/derivative_data.py` + Zerodha | OHLCV + OI where available | stable |
+| MCX commodity futures data fetch via Zerodha | supported | `src/data/derivative_data.py` + Zerodha | OHLCV | stable |
+| CDS currency futures data fetch via Zerodha | supported | `src/data/derivative_data.py` + Zerodha | OHLCV | stable |
+| Options analytics (Greeks, IV, skew) | not implemented | — | — | future scope (Phase 3+) |
+| Futures continuous series / roll-over | not implemented | — | — | future scope (Phase 3+) |
+| Upstox SDK derivatives fetch | not implemented (SDK stub) | `src/data/sources.py` UpstoxDataSource | CSV fallback only | future scope |
+| NSE 2025–2026 trading holidays | populated | `src/instruments/calendar.py` | accurate trading-day detection | stable |
 
 ## Phase 18 Notes
 
