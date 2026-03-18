@@ -107,24 +107,26 @@ def load_scanner_opportunities(
     output_dir: Optional[str] = None,
 ) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Load the latest scanner opportunities CSV."""
-    path = find_file_in_dirs(
-        "opportunities.csv", ["scanner"], output_dir
-    )
-    if path is None:
-        return None, "No scanner output found. Run the scanner engine first."
-    return load_csv(path)
+    for filename in ["scanner_candidates.csv", "ranked_opportunities.csv", "opportunities.csv"]:
+        path = find_file_in_dirs(
+            filename, ["phase16b_scanner", "scanner"], output_dir
+        )
+        if path:
+            return load_csv(path)
+    return None, "No scanner output found. Run the scanner engine first."
 
 
 def load_scanner_json(
     output_dir: Optional[str] = None,
 ) -> Tuple[Optional[Dict], Optional[str]]:
     """Load the latest scanner opportunities JSON."""
-    path = find_file_in_dirs(
-        "opportunities.json", ["scanner"], output_dir
-    )
-    if path is None:
-        return None, "No scanner JSON output found."
-    return load_json(path)
+    for filename in ["scanner_candidates.json", "ranked_opportunities.json", "opportunities.json"]:
+        path = find_file_in_dirs(
+            filename, ["phase16b_scanner", "scanner"], output_dir
+        )
+        if path:
+            return load_json(path)
+    return None, "No scanner JSON output found."
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +137,7 @@ def load_monitoring_alerts(
     output_dir: Optional[str] = None,
 ) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Load the latest monitoring alerts CSV."""
-    path = find_file_in_dirs("alerts.csv", ["monitoring"], output_dir)
+    path = find_file_in_dirs("alerts.csv", ["phase18_monitoring", "phase16b_monitoring", "monitoring"], output_dir)
     if path is None:
         return None, "No monitoring alerts found. Run the monitoring engine first."
     return load_csv(path)
@@ -145,7 +147,7 @@ def load_monitoring_top_picks(
     output_dir: Optional[str] = None,
 ) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Load the latest monitoring top picks CSV."""
-    path = find_file_in_dirs("top_picks.csv", ["monitoring"], output_dir)
+    path = find_file_in_dirs("top_picks.csv", ["phase18_monitoring", "phase16b_monitoring", "monitoring"], output_dir)
     if path is None:
         return None, "No monitoring top picks found."
     return load_csv(path)
@@ -155,7 +157,7 @@ def load_monitoring_regime(
     output_dir: Optional[str] = None,
 ) -> Tuple[Optional[Dict], Optional[str]]:
     """Load the latest regime summary JSON."""
-    path = find_file_in_dirs("regime_summary.json", ["monitoring"], output_dir)
+    path = find_file_in_dirs("regime_summary.json", ["phase18_monitoring", "phase16b_monitoring", "monitoring"], output_dir)
     if path is None:
         return None, "No regime summary found."
     return load_json(path)
@@ -165,7 +167,7 @@ def load_monitoring_relative_strength(
     output_dir: Optional[str] = None,
 ) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Load the latest relative strength CSV."""
-    path = find_file_in_dirs("relative_strength.csv", ["monitoring"], output_dir)
+    path = find_file_in_dirs("relative_strength.csv", ["phase18_monitoring", "phase16b_monitoring", "monitoring"], output_dir)
     if path is None:
         return None, "No relative strength data found."
     return load_csv(path)
@@ -175,7 +177,7 @@ def load_monitoring_snapshot(
     output_dir: Optional[str] = None,
 ) -> Tuple[Optional[Dict], Optional[str]]:
     """Load the latest market snapshot JSON."""
-    path = find_file_in_dirs("market_snapshot.json", ["monitoring"], output_dir)
+    path = find_file_in_dirs("market_snapshot.json", ["phase18_monitoring", "phase16b_monitoring", "monitoring"], output_dir)
     if path is None:
         return None, "No market snapshot found."
     return load_json(path)
@@ -191,7 +193,7 @@ def load_decision_picks(
 ) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Load decision picks CSV for a given horizon."""
     filename = f"decision_top_{horizon}.csv"
-    path = find_file_in_dirs(filename, ["decision"], output_dir)
+    path = find_file_in_dirs(filename, ["phase18_decision", "phase16b_decision", "decision"], output_dir)
     if path is None:
         return None, f"No {horizon} decision picks found. Run the decision engine first."
     return load_csv(path)
@@ -201,7 +203,7 @@ def load_decision_rejected(
     output_dir: Optional[str] = None,
 ) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Load rejected opportunities CSV."""
-    path = find_file_in_dirs("decision_rejected.csv", ["decision"], output_dir)
+    path = find_file_in_dirs("decision_rejected.csv", ["phase18_decision", "phase16b_decision", "decision"], output_dir)
     if path is None:
         return None, "No rejected opportunities found."
     return load_csv(path)
@@ -211,9 +213,19 @@ def load_decision_summary(
     output_dir: Optional[str] = None,
 ) -> Tuple[Optional[Dict], Optional[str]]:
     """Load the decision summary JSON."""
-    path = find_file_in_dirs("decision_summary.json", ["decision"], output_dir)
+    path = find_file_in_dirs("decision_summary.json", ["phase18_decision", "phase16b_decision", "decision"], output_dir)
     if path is None:
         return None, "No decision summary found."
+    return load_json(path)
+
+
+def load_portfolio_plan(
+    output_dir: Optional[str] = None,
+) -> Tuple[Optional[Dict], Optional[str]]:
+    """Load the portfolio plan JSON."""
+    path = find_file_in_dirs("portfolio_plan.json", ["phase18_decision", "phase16b_decision", "decision"], output_dir)
+    if path is None:
+        return None, "No portfolio plan found."
     return load_json(path)
 
 

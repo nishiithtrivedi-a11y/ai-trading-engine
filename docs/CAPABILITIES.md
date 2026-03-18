@@ -1,4 +1,4 @@
-﻿# Capabilities
+# Capabilities
 
 ## Capability Matrix
 
@@ -60,6 +60,16 @@
 | Derivative analysis profiles (4 new) | **implemented** | `src/config/analysis_profiles.yaml` | index_futures, stock_futures, equity_options, inr_currency_derivatives | stable (Phase 3) |
 | Upstox SDK derivatives fetch | not implemented (SDK stub) | `src/data/sources.py` UpstoxDataSource | CSV fallback only | future scope |
 | NSE 2025–2026 trading holidays | populated | `src/instruments/calendar.py` | accurate trading-day detection | stable |
+| FastAPI Backend Adapter | **implemented** | `src/api/` | read-only adapters for core outputs | stable (Phase 20) |
+| React/Vite UI Dashboard | **implemented** | `frontend/` | scanner, decision, paper, logs, artifacts, profiles, derivatives, ai workspace, settings | stable (Phase 20) |
+| AI Workspace / Automation | placeholder | `frontend/src/pages/AI`, `Automation` | advisory-only UI, execution disabled | stable (Phase 20) |
+
+## Phase 20 Notes — UI Command Center
+
+- Introduced a premium React/Vite frontend and FastAPI backend serving as a thin adapter over the core engine.
+- Views include Scanner, Monitoring, Decision, Paper Trading, Diagnostics, Artifact Explorer, Profiles, Derivatives, AI Workspace, and Settings.
+- Graceful degradation: Handles missing artifacts and disconnected live feeds seamlessly (e.g., Derivatives shows CSV/offline modes).
+- AI Workspace is an advisory-only placeholder. Live execution and broker routing controls remain visually disabled placeholders.
 
 ## Phase 3 Notes — Derivatives Intelligence + DhanHQ
 
