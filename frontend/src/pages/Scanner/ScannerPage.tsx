@@ -28,12 +28,16 @@ export function ScannerPage() {
             <span>Filter</span>
           </button>
           <button 
-            disabled
-            title="UI is currently read-only / execution-disabled. Scanner reruns are deferred to a later controlled phase."
-            className="flex items-center space-x-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm cursor-not-allowed opacity-60 select-none"
+            title="Trigger a manual rescan pipeline (Safe / Non-live)"
+            onClick={() => {
+              axios.post('http://localhost:8000/api/v1/automation/trigger/manual_rescan')
+                .then(() => alert('Rescan triggered successfully! Check Automation page for progress.'))
+                .catch(err => alert('Failed to trigger rescan: ' + err.message));
+            }}
+            className="flex items-center space-x-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 transition-colors"
           >
             <Search className="w-4 h-4" />
-            <span>Rescan Now (Disabled)</span>
+            <span>Rescan Now</span>
           </button>
         </div>
       </div>

@@ -68,12 +68,16 @@ export function TopNav() {
         </div>
 
         <button
-          disabled
-          title="UI is currently read-only / execution-disabled. Pipeline triggering is deferred to a later controlled phase (Phase 22+)."
-          className="flex items-center space-x-2 px-3 py-1.5 bg-muted/40 text-muted-foreground text-sm rounded-md border border-border cursor-not-allowed opacity-60 select-none"
+          onClick={() => {
+            axios.post('http://localhost:8000/api/v1/automation/trigger/manual_rescan')
+              .then(() => alert('Pipeline triggered successfully! Check Automation page for status.'))
+              .catch(err => alert('Failed to trigger pipeline: ' + err.message));
+          }}
+          title="Trigger a manual rescan pipeline (Safe / Non-live)"
+          className="flex items-center space-x-2 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-sm rounded-md border border-primary/20 transition-colors"
         >
           <Play className="w-4 h-4" />
-          <span className="font-semibold">Run Pipeline (Disabled)</span>
+          <span className="font-semibold">Run Pipeline</span>
         </button>
         <button className="text-muted-foreground hover:text-foreground relative">
           <Bell className="w-5 h-5" />
