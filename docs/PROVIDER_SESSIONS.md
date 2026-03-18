@@ -47,6 +47,12 @@ Credentials are stored as environment variables with the prefix `{PROVIDER}_{CRE
 ## Security
 
 - Raw credential values are **never** returned by any API endpoint or logged
-- All API responses use masked indicators (`•••••xyz` format)
+- All API responses use masked indicators (last 3 chars visible, e.g. `•••••def`)
 - Credentials are stored in `.env` file and loaded via `os.environ`
 - Connecting a provider does NOT enable execution — `safety_gate.py` enforces this independently
+
+## Known Limitations (Phase 21.x)
+
+- **Session validation is mock only:** `validate_session()` currently simulates a successful `ACTIVE` state if credentials are present. Real broker SDK connection tests (Kite `profile()`, Dhan margin query, Upstox profile) are intentionally deferred to a future phase. The interface is ready for that wiring with no API changes required.
+- **`.env` file write is append/update only:** If the `.env` file is managed by an external tool (e.g. dotenv-vault, docker secret injection), the `store_credential` path may conflict. In those setups, credential configuration should be done by setting env vars directly and skipping the configure API.
+- **No session expiry tracking:** `expiry_time` and `expired` state detection from broker token timestamps are not yet implemented. Expiry tracking is deferred to real SDK integration.

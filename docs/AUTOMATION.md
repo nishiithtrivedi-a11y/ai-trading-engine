@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Phase 21 automation layer provides safe, bounded, repeatable pipeline execution with run history persistence and outbound notification support. It builds upon the existing `Scheduler`, `WorkflowOrchestrator`, and `AlertEngine` modules without modifying their interfaces.
+The Phase 21 automation layer provides safe, bounded, repeatable pipeline execution with run history persistence and outbound notification support. It delegates schedule computation to the existing `Scheduler` class (`src/monitoring/scheduler.py`) and exposes a pluggable `PipelineRunner` callback that defaults to a no-op runner for this phase. Integration with `WorkflowOrchestrator` or real script runners is intentionally deferred to a future phase via the runner hook — the interface is ready for that wiring.
 
 **Execution remains structurally disabled.** All pipelines run in `research`, `paper`, or `live_safe` modes. No broker orders are placed.
 
@@ -51,11 +51,16 @@ src/automation/
 
 ## Notification Channels
 
-- **Email** — SMTP via env vars (`NOTIFICATION_SMTP_*`)
-- **Telegram** — Bot API via env var (`NOTIFICATION_TELEGRAM_BOT_TOKEN`)
-- **WhatsApp / Slack / Discord / Webhook** — Placeholder adapters (future phases)
+| Channel | Status | Config |
+|---|---|---|
+| Email (SMTP) | ✅ Implemented | `NOTIFICATION_SMTP_HOST/PORT/USER/PASSWORD/FROM/USE_TLS` |
+| Telegram | ✅ Implemented | `NOTIFICATION_TELEGRAM_BOT_TOKEN` (env var) + `chat_id` per contact |
+| WhatsApp | 🔲 Placeholder only | Not implemented — reserved for future phase |
+| Slack | 🔲 Placeholder only | Not implemented — reserved for future phase |
+| Discord | 🔲 Placeholder only | Not implemented — reserved for future phase |
+| Webhook | 🔲 Placeholder only | Not implemented — reserved for future phase |
 
-All secrets are read from environment variables only. Notification channels are outbound-only — no trade approval via messaging.
+All secrets are read from environment variables **only**. Notification channels are **outbound-only** — no inbound command handling, no trade approval via messaging.
 
 ## Safety Guarantees
 
