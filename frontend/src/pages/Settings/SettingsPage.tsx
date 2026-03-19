@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import {
   Shield, Server, Plug, Settings2, Cpu, Lock, RefreshCcw,
-  CheckCircle2, XCircle, AlertCircle, Loader2, BellRing, ExternalLink
+  CheckCircle2, XCircle, AlertCircle, Loader2, BellRing, ExternalLink, Radio
 } from 'lucide-react';
 
 const API = 'http://localhost:8000/api/v1';
@@ -42,6 +42,9 @@ export function SettingsPage() {
   const [providers, setProviders] = useState<ProviderSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [validating, setValidating] = useState<string | null>(null);
+  const [runtimeSource, setRuntimeSource] = useState('csv');
+  const [marketLabel, setMarketLabel] = useState('');
+  const [marketPhase, setMarketPhase] = useState('');
 
   // Dhan config modal states
   const [dhanConfigOpen, setDhanConfigOpen] = useState(false);
@@ -51,10 +54,17 @@ export function SettingsPage() {
 
   const loadProviders = useCallback(() => {
     setLoading(true);
-    axios.get(`${API}/providers/sessions`)
-      .then(res => setProviders(res.data.providers || []))
-      .catch(() => setProviders([]))
-      .finally(() => setLoading(false));
+    Promise.all([
+      axios.get(`${API}/providers/sessions`).catch(() => ({ data: { providers: [] } })),
+      axios.get(`${API}/platform/status`).catch(() => ({ data: null })),
+    ]).then(([sessRes, platRes]) => {
+      setProviders(sessRes.data.providers || []);
+      if (platRes.data) {
+        setRuntimeSource(platRes.data.runtime_data_source ?? 'csv');
+        setMarketLabel(platRes.data.market_session?.label ?? '');
+        setMarketPhase(platRes.data.market_session?.phase ?? '');
+      }
+    }).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { loadProviders(); }, [loadProviders]);
@@ -251,14 +261,30 @@ export function SettingsPage() {
                       </div>
                     )}
                   </div>
+                  {/* Context notes */}
+                  {p.session_status === 'active' && (
+                    <div className="px-4 pb-2 space-y-1">
+                      {p.provider_type !== runtimeSource && (
+                        <div className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-1 rounded flex items-center gap-1">
+                          <Radio className="w-3 h-3" /> Connected — not currently primary data source (primary: {runtimeSource.toUpperCase()})
+                        </div>
+                      )}
+                      {['post_close', 'closed', 'weekend'].includes(marketPhase) && (
+                        <div className="text-[10px] bg-amber-500/10 text-amber-500 px-2 py-1 rounded">
+                          Connected — {marketLabel}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="p-3 border-t border-border bg-muted/10 flex justify-end gap-2">
                     {p.provider_type === 'zerodha' || p.provider_type === 'upstox' ? (
                       <button
                         onClick={() => handleOAuthConnect(p.provider_type)}
-                        title="Open interactive login to safely acquire and save the session token"
+                        title={p.session_status === 'active' ? 'Reconnect / refresh session token' : 'Open interactive login to safely acquire session token'}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-500 rounded text-xs font-bold uppercase tracking-wider hover:bg-indigo-500/20 transition-colors"
                       >
-                        <Plug className="w-3 h-3" /> Connect
+                        <Plug className="w-3 h-3" />
+                        {p.session_status === 'active' ? 'Reconnect' : p.session_status === 'expired' ? 'Reconnect' : 'Connect'}
                       </button>
                     ) : null}
                     
@@ -268,7 +294,8 @@ export function SettingsPage() {
                         title="Update fixed API credentials"
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-500 rounded text-xs font-bold uppercase tracking-wider hover:bg-indigo-500/20 transition-colors"
                       >
-                        <Settings2 className="w-3 h-3" /> Config
+                        <Settings2 className="w-3 h-3" />
+                        {p.session_status === 'active' ? 'Reconfigure' : 'Config'}
                       </button>
                     ) : null}
 
@@ -282,7 +309,7 @@ export function SettingsPage() {
                       ) : (
                         <RefreshCcw className="w-3 h-3" />
                       )}
-                      Validate
+                      {p.session_status === 'active' ? 'Refresh Session' : 'Validate'}
                     </button>
                   </div>
                 </div>
