@@ -1,39 +1,32 @@
-# Provider Session Management — Phase 21.x
+# Provider Session Management - Phase 21.x
 
 ## Overview
 
-Phase 21.x provides safe provider session lifecycle management for broker/data provider connections. Connecting a provider **does NOT enable live trading** — execution remains structurally disabled.
+Provider session management validates broker/data connectivity for read-only data access.
 
-## Module Layout
+Connecting a provider does **not** enable live trading. Execution remains structurally disabled.
 
-```
-src/providers/
-├── __init__.py
-├── models.py              # ProviderType, SessionStatus, ProviderConfig, PROVIDER_REGISTRY
-├── credential_store.py     # Safe masked credential handling, .env file management
-└── session_manager.py      # Session lifecycle, validation, credential configuration
-```
+## Provider IDs and Required Credentials
 
-## Provider Registry
-
-| Provider | Auth Type | Required Credentials |
+| Provider ID | Display Name | Required Credentials |
 |---|---|---|
-| Zerodha Kite | Token | `API_KEY`, `API_SECRET`, `ACCESS_TOKEN` |
-| DhanHQ | Token | `CLIENT_ID`, `ACCESS_TOKEN` |
-| Upstox | OAuth | `API_KEY`, `API_SECRET`, `ACCESS_TOKEN` |
+| `zerodha` | Zerodha Kite | `ZERODHA_API_KEY`, `ZERODHA_API_SECRET`, `ZERODHA_ACCESS_TOKEN` |
+| `upstox` | Upstox | `UPSTOX_API_KEY`, `UPSTOX_API_SECRET`, `UPSTOX_ACCESS_TOKEN` |
+| `dhan` | DhanHQ | `DHAN_CLIENT_ID`, `DHAN_ACCESS_TOKEN` |
 
-Credentials are stored as environment variables with the prefix `{PROVIDER}_{CREDENTIAL}` (e.g., `ZERODHA_API_KEY`).
+Credentials are stored in local environment settings (`.env` / process env).
+Tracked YAML config must not store secret values.
 
 ## Session States
 
 | State | Meaning |
 |---|---|
-| `not_configured` | Provider not set up |
-| `credentials_missing` | Some required credentials absent |
+| `not_configured` | Provider has credentials but not validated in current process |
+| `credentials_missing` | Required credentials missing |
 | `active` | Session validated successfully |
-| `expired` | Session token has expired |
-| `invalid` | Auth validation failed |
-| `error` | Unexpected error during validation |
+| `expired` | Token/session expired |
+| `invalid` | Credential/session validation failed |
+| `error` | Unexpected validation error |
 
 ## API Endpoints
 
@@ -41,57 +34,24 @@ Credentials are stored as environment variables with the prefix `{PROVIDER}_{CRE
 |---|---|---|
 | GET | `/api/v1/providers/sessions` | All provider session states |
 | GET | `/api/v1/providers/sessions/{type}` | Single provider status |
-| POST | `/api/v1/providers/sessions/{type}/validate` | Validate/reconnect session via live SDK |
+| POST | `/api/v1/providers/sessions/{type}/validate` | Validate/reconnect read-only session |
 | POST | `/api/v1/providers/sessions/{type}/configure` | Store a single credential |
-| POST | `/api/v1/providers/sessions/{type}/credentials` | Store multiple API credentials atomically |
-| GET | `/api/v1/providers/sessions/{type}/login` | Get the Browser OAuth URL (Kite, Upstox) |
-| GET | `/api/v1/providers/sessions/{type}/callback` | Handle the OAuth redirect and save Tokens |
-
-## Provider Specific Auth Flows
-
-### 1. Zerodha (Kite)
-- **Settings Required:** Must have `ZERODHA_API_KEY` and `ZERODHA_API_SECRET` in `.env`.
-- **Callback URL needed:** Configure your Kite Dev App redirect URL to: `http://127.0.0.1:8000/api/v1/providers/sessions/zerodha/callback`
-- **UX Flow:** Click **Connect** in the UI. A browser popup opens. After Login, Kite redirects back to the system, which exchanges the token, saves it to `.env` using Python `dotenv`, and refreshes the memory state synchronously.
-- **Constraints:** Zerodha tokens expire daily at 6 AM. The operator must click Connect once every morning.
-
-### 2. Upstox
-- **Settings Required:** Must have `UPSTOX_API_KEY` and `UPSTOX_API_SECRET` in `.env`.
-- **Callback URL needed:** Configure Upstox App Redirect URI as: `http://127.0.0.1:8000/api/v1/providers/sessions/upstox/callback`. Must add `UPSTOX_REDIRECT_URI` to `.env`.
-- **UX Flow:** Click **Connect** in the UI. Completes the OAuth 2.0 flow and saves `ACCESS_TOKEN` identically to Zerodha.
-
-### 3. DhanHQ
-- **Settings Required:** None upfront. Does not use OAuth.
-- **UX Flow:** Generate a long-lived Client ID and Access Token from the Dhan Web Portal. Click **Config** in the UI, input the values, and the engine persists them to `.env`.
-- **Constraints:** Manual generation required once, but does not need a daily reconnection.
+| POST | `/api/v1/providers/sessions/{type}/credentials` | Store multiple credentials |
+| GET | `/api/v1/providers/sessions/zerodha/login` | Zerodha login URL |
+| GET | `/api/v1/providers/sessions/zerodha/callback` | Zerodha callback handler |
+| GET | `/api/v1/providers/sessions/upstox/login` | Upstox login URL |
+| GET | `/api/v1/providers/sessions/upstox/callback` | Upstox callback handler |
 
 ## Runtime Source Selection
 
-Phase 21.x introduces a dynamic **Runtime Source** model. This allows operators to promote any ACTIVE provider session to be the primary data source for the command center without manual configuration edits or restarts.
+Runtime source can be promoted from Settings only when the provider session is `active`.
 
-- **Primary Source:** The provider currently used for live scans and monitoring (e.g., Zerodha).
-- **Fallback Source:** When the primary source is unavailable or the session expires, the system automatically falls back to **CSV** (Offline/Local) data.
-- **Promotion:** Operators can click **"Set as Primary"** in the Settings page for any provider with an `active` session. This updates `config/data_providers.yaml` dynamically.
+- Primary runtime source is persisted to `config/data_providers.yaml`.
+- Secret fields are scrubbed during persistence.
+- If a primary broker session is inactive, platform status reports fallback behavior.
 
-## Truthful Diagnostics
+## Safety Notes
 
-The **Diagnostics Matrix** now provides real-time reasoning for provider roles:
-
-| Status | Meaning |
-|---|---|
-| `active_primary` | The selected primary source is LIVE and session is ACTIVE. |
-| `primary_unavailable` | The selected primary is enabled but the session is OFFLINE. System is in CSV Fallback. |
-| `session_active` | Provider has an active session but is NOT currently the primary source. |
-| `healthy` | Provider is enabled in config but no live session exists. |
-
-## Operational Manifests
-
-Every automation run (scan, monitoring, refresh) now emits a `run_manifest.json` containing:
-- `market_phase`: The session state at trigger time.
-- `runtime_source`: Exactly which provider (or CSV) was used for the run.
-- `execution_mode`: Always `research`, `paper`, or `live_safe`.
-
-## Security & Architecture
-- **Zero Restart Architecture:** Modifying credentials or primary source via the UI edits the local config files whilst updating the live services.
-- **Read-Only Posture:** Provider SDKs are strictly limited to `GET` (Market Data / Positions / Orders) and `POST` (Order Placement is blocked in Phase 21.x).
-- **Safety Gates:** All triggers are gated by market session. Manual rescans are blocked when the market is closed to prevent empty/confusing results.
+- Provider validation calls are read-only session checks.
+- No order placement is enabled by session connectivity.
+- Credential values are masked in API responses.

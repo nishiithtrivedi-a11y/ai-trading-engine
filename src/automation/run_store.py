@@ -74,6 +74,8 @@ class RunStore:
                 trigger_source=data.get("trigger_source", "manual_ui"),
                 status=data.get("status", "queued"),
                 execution_mode=data.get("execution_mode", "research"),
+                market_phase=data.get("market_phase", "unknown"),
+                runtime_source=data.get("runtime_source", "csv"),
                 started_at=data.get("started_at", ""),
                 completed_at=data.get("completed_at"),
                 duration_seconds=data.get("duration_seconds"),

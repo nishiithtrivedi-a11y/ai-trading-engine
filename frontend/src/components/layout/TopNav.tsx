@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Bell, Activity, Play, ShieldAlert, AlertTriangle, Crosshair, Clock, Radio, Database, Wifi, WifiOff } from 'lucide-react';
+import { Bell, Activity, Play, ShieldAlert, AlertTriangle, Clock, Database, Wifi } from 'lucide-react';
 
 const API = 'http://localhost:8000/api/v1';
 

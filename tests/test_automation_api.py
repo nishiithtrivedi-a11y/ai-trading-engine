@@ -7,11 +7,22 @@ and masking guarantee at the API output boundary.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
 from src.api.main import app
+from src.api.routers.automation import _run_store, _scheduler_service
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _reset_automation_state() -> None:
+    for path in Path(_run_store.store_dir).glob("*.json"):
+        path.unlink(missing_ok=True)
+    _scheduler_service._last_run_times.clear()
 
 
 def test_get_schedules_returns_list() -> None:

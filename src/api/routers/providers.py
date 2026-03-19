@@ -93,9 +93,11 @@ def get_providers_health() -> Dict[str, Any]:
             status = "offline"
             detail_text = f"Base URL: {base_url}"
 
-        latency = "—"
-        if status in ("active_primary", "session_active", "healthy"):
-            latency = "12ms"
+        latency = "N/A"
+        if status in ("active_primary", "session_active"):
+            latency = "Read-only check"
+        elif status == "healthy":
+            latency = "Configured"
 
         diagnostics.append({
             "name": prov_name,
@@ -115,8 +117,8 @@ def get_providers_health() -> Dict[str, Any]:
                 "type": f"analysis_{module_name}",
                 "enabled": True,
                 "status": "healthy",
-                "latency": "45ms",
-                "details": f"Plugin Provider for {module_name}",
+                "latency": "Simulated",
+                "details": f"Plugin provider for {module_name} (no live latency probe).",
                 "session_status": None,
             })
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from src.automation.models import PipelineType
 from src.runtime.artifact_contracts import get_artifact_contract
 from src.runtime.output_manifest import write_output_manifest
 from src.runtime.workflow_orchestrator import WorkflowOrchestrator, WorkflowType
@@ -118,3 +119,54 @@ def test_run_release_smoke_stops_on_failure(tmp_path: Path, monkeypatch) -> None
     assert results["research_smoke"].success is True
     assert results["paper_smoke"].success is False
     assert "live_safe_smoke" not in results
+
+
+def test_run_accepts_pipeline_type_without_workflow_enum_coercion(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    orchestrator = WorkflowOrchestrator(root_dir=tmp_path)
+    captured: dict[str, object] = {}
+
+    def _fake_build_steps(self, workflow, output_root, *, symbols_limit):  # noqa: ANN001
+        captured["workflow"] = workflow
+        return []
+
+    monkeypatch.setattr(WorkflowOrchestrator, "_build_steps", _fake_build_steps)
+    result = orchestrator.run(
+        PipelineType.MORNING_SCAN,
+        output_root=tmp_path / "pipeline",
+    )
+
+    assert result.success is True
+    assert captured["workflow"] == PipelineType.MORNING_SCAN
+
+
+def test_build_steps_for_paper_and_live_safe_include_explicit_safety_flags(
+    tmp_path: Path,
+) -> None:
+    orchestrator = WorkflowOrchestrator(root_dir=tmp_path)
+    scanner_steps = orchestrator._build_steps(
+        PipelineType.MORNING_SCAN,
+        tmp_path / "scanner",
+        symbols_limit=0,
+    )
+    paper_steps = orchestrator._build_steps(
+        PipelineType.PAPER_REFRESH,
+        tmp_path / "paper",
+        symbols_limit=0,
+    )
+    live_steps = orchestrator._build_steps(
+        PipelineType.LIVE_SAFE_REFRESH,
+        tmp_path / "live_safe",
+        symbols_limit=0,
+    )
+
+    paper_cmd = paper_steps[0].command
+    live_cmd = live_steps[0].command
+
+    assert scanner_steps[0].contract_id == "scanner_runner_v1"
+    assert "--no-timestamped-output" in scanner_steps[0].command
+    assert "--paper-trading" in paper_cmd
+    assert "--live-signals" in live_cmd
+    assert "--run-once" in live_cmd
