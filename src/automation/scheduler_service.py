@@ -62,7 +62,7 @@ def _noop_runner(pipeline_type: PipelineType, output_dir: str) -> dict[str, Any]
 
 def _orchestrator_runner(pipeline_type: PipelineType, output_dir: str) -> dict[str, Any]:
     """Real runner using the system WorkflowOrchestrator."""
-    orchestrator = WorkflowOrchestrator(output_root=Path(output_dir).parent.parent)
+    orchestrator = WorkflowOrchestrator()
     result = orchestrator.run(
         workflow=pipeline_type,
         output_root=output_dir,
