@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import {
   CalendarClock, Clock, BellRing, Play, RefreshCcw, CheckCircle2, XCircle,
-  AlertCircle, Timer, Zap, Mail, MessageCircle, Send, Settings2, ChevronDown,
+  AlertCircle, Timer, Zap, Mail, MessageCircle, Send, ChevronDown,
   ChevronUp, ToggleLeft, ToggleRight, Loader2
 } from 'lucide-react';
 
@@ -40,6 +40,7 @@ interface RunRecord {
   duration_seconds: number | null;
   linked_artifacts: string[];
   error_message: string | null;
+  error_details: string | null;
 }
 
 interface ChannelPref {
@@ -121,6 +122,7 @@ export function AutomationPage() {
   const [prefs, setPrefs] = useState<NotifPrefs | null>(null);
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState<string | null>(null);
+  const [triggerMessage, setTriggerMessage] = useState<{ type: 'success' | 'error' | 'cooldown'; text: string } | null>(null);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -142,14 +144,22 @@ export function AutomationPage() {
 
   const triggerPipeline = async (pipelineType: string) => {
     setTriggering(pipelineType);
+    setTriggerMessage(null);
     try {
       await axios.post(`${API}/trigger/${pipelineType}`, { trigger_source: 'manual_ui' });
+      setTriggerMessage({ type: 'success', text: `${pipelineType.replace(/_/g, ' ')} triggered successfully.` });
       setTimeout(loadData, 500);
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || 'Trigger failed';
-      alert(msg);
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail || 'Trigger failed';
+      if (status === 429) {
+        setTriggerMessage({ type: 'cooldown', text: `Cooldown active — ${detail}` });
+      } else {
+        setTriggerMessage({ type: 'error', text: detail });
+      }
     } finally {
       setTriggering(null);
+      setTimeout(() => setTriggerMessage(null), 8000);
     }
   };
 
@@ -310,6 +320,20 @@ export function AutomationPage() {
             ))}
           </div>
 
+          {/* Trigger feedback banner */}
+          {triggerMessage && (
+            <div className={`px-4 py-3 rounded-lg border text-sm font-medium flex items-center gap-2 ${
+              triggerMessage.type === 'success' ? 'bg-green-500/10 border-green-500/30 text-green-600' :
+              triggerMessage.type === 'cooldown' ? 'bg-amber-500/10 border-amber-500/30 text-amber-600' :
+              'bg-red-500/10 border-red-500/30 text-red-500'
+            }`}>
+              {triggerMessage.type === 'success' && <CheckCircle2 className="w-4 h-4" />}
+              {triggerMessage.type === 'cooldown' && <Clock className="w-4 h-4" />}
+              {triggerMessage.type === 'error' && <XCircle className="w-4 h-4" />}
+              {triggerMessage.text}
+            </div>
+          )}
+
           {/* ─── Run History ─── */}
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             <div className="px-6 py-4 border-b border-border bg-muted/20 flex items-center gap-2">
@@ -328,6 +352,7 @@ export function AutomationPage() {
                     <th className="px-6 py-3 font-medium">Started</th>
                     <th className="px-6 py-3 font-medium">Duration</th>
                     <th className="px-6 py-3 font-medium">Mode</th>
+                    <th className="px-6 py-3 font-medium">Error</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -344,10 +369,19 @@ export function AutomationPage() {
                           {r.execution_mode}
                         </span>
                       </td>
+                      <td className="px-6 py-3">
+                        {r.status === 'failed' && r.error_message ? (
+                          <span className="text-xs text-red-500" title={r.error_details ?? r.error_message}>
+                            {r.error_message.length > 60 ? r.error_message.slice(0, 60) + '…' : r.error_message}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   {runs.length === 0 && (
-                    <tr><td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">No runs recorded yet. Trigger a pipeline above.</td></tr>
+                    <tr><td colSpan={8} className="px-6 py-8 text-center text-muted-foreground">No runs recorded yet. Trigger a pipeline above.</td></tr>
                   )}
                 </tbody>
               </table>
