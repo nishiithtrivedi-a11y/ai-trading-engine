@@ -16,6 +16,7 @@ from src.automation.run_store import RunStore
 from src.automation.scheduler_service import (
     AutomationSchedulerService,
     CooldownViolationError,
+    MarketClosedError,
 )
 from src.automation.notification.service import NotificationService
 from src.automation.notification.models import (
@@ -116,6 +117,8 @@ def trigger_pipeline(pipeline_type: str, body: Optional[TriggerRequest] = None) 
         return {"run": record.to_dict()}
     except CooldownViolationError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
+    except MarketClosedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Pipeline dispatch failed: {exc}")
 

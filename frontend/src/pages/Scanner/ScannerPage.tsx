@@ -4,14 +4,35 @@ import { Search, Filter, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 export function ScannerPage() {
   const [data, setData] = useState<any>(null);
+  const [platform, setPlatform] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    axios.get('http://localhost:8000/api/v1/scanner/latest')
-      .then(res => setData(res.data))
-      .catch(err => console.error(err))
-      .finally(() => setLoading(false));
-  }, []);
+  const loadAll = () => {
+    setLoading(true);
+    Promise.all([
+      axios.get('http://localhost:8000/api/v1/scanner/latest').catch(() => ({ data: null })),
+      axios.get('http://localhost:8000/api/v1/platform/status').catch(() => ({ data: null }))
+    ]).then(([scanRes, platRes]) => {
+      setData(scanRes.data);
+      setPlatform(platRes.data);
+    }).finally(() => setLoading(false));
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  const handleRescan = () => {
+    // Basic UI-level check for market state if we have it
+    if (platform?.market_session?.phase === 'closed' || platform?.market_session?.phase === 'weekend') {
+      if (!confirm("Market is currently CLOSED. A rescan now will use cached or EOD data. Proceed?")) return;
+    }
+
+    axios.post('http://localhost:8000/api/v1/automation/trigger/manual_rescan')
+      .then(() => alert('Manual rescan pipeline triggered successfully. Check Automation page for progress.'))
+      .catch(err => {
+        const msg = err.response?.data?.detail || err.message;
+        alert(`Failed to trigger rescan: ${msg}`);
+      });
+  };
 
   return (
     <div className="space-y-6">
@@ -23,18 +44,27 @@ export function ScannerPage() {
           </p>
         </div>
         <div className="flex space-x-3">
-          <button className="flex items-center space-x-2 px-3 py-2 bg-card border border-border rounded-md text-sm hover:bg-muted">
-            <Filter className="w-4 h-4" />
-            <span>Filter</span>
-          </button>
+          {platform && (
+            <div className="hidden md:flex items-center gap-4 px-4 border-r border-border mr-2">
+              <div className="flex flex-col items-end">
+                <span className="text-[10px] uppercase text-muted-foreground font-bold leading-none">Market Session</span>
+                <span className={`text-xs font-bold ${platform.market_session?.phase === 'open' ? 'text-green-500' : 'text-amber-500'}`}>
+                  {platform.market_session?.label}
+                </span>
+              </div>
+              <div className="flex flex-col items-end border-l border-border pl-4">
+                <span className="text-[10px] uppercase text-muted-foreground font-bold leading-none">Data Source</span>
+                <span className="text-xs font-bold text-primary flex items-center gap-1 uppercase">
+                  {platform.runtime_data_source}
+                  {platform.feature_availability === 'fallback_active' && <span className="text-[8px] bg-amber-500/20 text-amber-500 px-1 rounded">FALLBACK</span>}
+                </span>
+              </div>
+            </div>
+          )}
           <button 
             title="Trigger a manual rescan pipeline (Safe / Non-live)"
-            onClick={() => {
-              axios.post('http://localhost:8000/api/v1/automation/trigger/manual_rescan')
-                .then(() => alert('Rescan triggered successfully! Check Automation page for progress.'))
-                .catch(err => alert('Failed to trigger rescan: ' + err.message));
-            }}
-            className="flex items-center space-x-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 transition-colors"
+            onClick={handleRescan}
+            className="flex items-center space-x-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm font-bold hover:bg-primary/90 transition-colors shadow-sm"
           >
             <Search className="w-4 h-4" />
             <span>Rescan Now</span>

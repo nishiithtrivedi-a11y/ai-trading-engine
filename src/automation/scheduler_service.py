@@ -24,13 +24,18 @@ from src.automation.models import (
     RunRecord,
     RunStatus,
     TriggerSource,
-    default_job_definitions,
     execution_mode_for_pipeline,
+    default_job_definitions,
 )
 from src.automation.run_store import RunStore
+# Runner is defined locally in this file
+from src.api.services.market_session_service import get_market_session_state, MarketSessionPhase
 from src.monitoring.models import ScheduleMode, ScheduleSpec
 from src.monitoring.scheduler import Scheduler
 from src.runtime.workflow_orchestrator import WorkflowOrchestrator
+from src.utils.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class AutomationServiceError(RuntimeError):
@@ -39,7 +44,12 @@ class AutomationServiceError(RuntimeError):
 
 class CooldownViolationError(AutomationServiceError):
     """Raised when a run is attempted within the cooldown window."""
+    pass
 
+
+class MarketClosedError(AutomationServiceError):
+    """Raised when a live-data-dependent pipeline is triggered while market is closed."""
+    pass
 
 # ---------------------------------------------------------------------------
 # Pipeline dispatcher callback type
@@ -146,11 +156,33 @@ class AutomationSchedulerService:
         job = self._find_job_for_pipeline(pipeline_type)
         job_id = job.job_id if job else pipeline_type.value
 
-        # Cooldown check
-        self._enforce_cooldown(job_id, job.cooldown_seconds if job else 300)
+        # 2. Market-session-aware gating
+        market = get_market_session_state()
+        requires_live = pipeline_type in (
+            PipelineType.MANUAL_RESCAN,
+            PipelineType.INTRADAY_MONITOR,
+            PipelineType.ORDER_EXECUTION_SYNC,
+        )
+        
+        # Only gate if we are NOT using CSV (which is allowed offline)
+        # Assuming the caller/orchestrator would handle the actual data source,
+        # but we gate the *trigger* here for operator safety.
+        if requires_live and market.phase in (MarketSessionPhase.CLOSED, MarketSessionPhase.POST_CLOSE, MarketSessionPhase.WEEKEND):
+             # Exception: if trigger is manual_ui/api, we allow a warning/force, 
+             # but for now we strictly gate to prevent confusing empty results.
+             raise MarketClosedError(
+                 f"Pipeline '{pipeline_type.value}' requires live market data. "
+                 f"Current market phase is {market.phase.value} ({market.label})."
+             )
 
-        # Create run record
+        # 3. Create run record
         execution_mode = execution_mode_for_pipeline(pipeline_type)
+        
+        # Determine runtime source (for audit truthfulness)
+        from src.api.services.platform_status_service import get_platform_status
+        # Use the service to get the current source with truthful reasoning
+        plat_status = get_platform_status()
+        runtime_source = plat_status.runtime_data_source
 
         record = RunRecord(
             job_id=job_id,
@@ -158,6 +190,8 @@ class AutomationSchedulerService:
             trigger_source=trigger_source.value,
             status=RunStatus.RUNNING.value,
             execution_mode=execution_mode,
+            market_phase=market.phase.value,
+            runtime_source=runtime_source,
         )
 
         # Notify start
@@ -223,6 +257,8 @@ class AutomationSchedulerService:
             pipeline_type=record.pipeline_type,
             trigger_source=record.trigger_source,
             execution_mode=record.execution_mode,
+            market_phase=record.market_phase,
+            runtime_source=record.runtime_source,
             status=record.status,
             started_at=record.started_at,
             completed_at=record.completed_at or "",

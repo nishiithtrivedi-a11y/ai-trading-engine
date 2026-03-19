@@ -70,34 +70,31 @@ def get_providers_health() -> Dict[str, Any]:
         )
 
         # Determine truthful status
-        if prov_name == active_default and (enabled or session_active):
-            status = "active_primary"
+        if prov_name == active_default:
+            if session_active:
+                status = "active_primary"
+                detail_text = "Primary runtime source — session ACTIVE."
+            elif enabled:
+                status = "primary_unavailable"
+                detail_text = f"Primary source — session {session.session_status if session else 'offline'}. Falling back to CSV."
+            else:
+                status = "primary_misconfigured"
+                detail_text = "Primary source — not enabled in config. Falling back to CSV."
         elif session_active:
             status = "session_active"
+            detail_text = f"Session active — ready for promotion (primary: {active_default})"
         elif enabled:
             status = "healthy"
+            detail_text = f"Enabled in config. Base URL: {base_url}"
         elif session is not None and session.credentials_present:
             status = "configured"
+            detail_text = f"Credentials present. Session: {session.session_status}"
         else:
             status = "offline"
-
-        # Determine detail text
-        if session_active and prov_name != active_default:
-            detail_text = (
-                f"Session active — not primary runtime source "
-                f"(primary: {active_default})"
-            )
-        elif session_active:
-            detail_text = "Session active — primary runtime source"
-        elif enabled:
-            detail_text = f"Enabled in config. Base URL: {base_url}"
-        else:
             detail_text = f"Base URL: {base_url}"
 
         latency = "—"
-        if status in ("active_primary", "session_active"):
-            latency = "12ms"
-        elif status == "healthy":
+        if status in ("active_primary", "session_active", "healthy"):
             latency = "12ms"
 
         diagnostics.append({
@@ -108,6 +105,7 @@ def get_providers_health() -> Dict[str, Any]:
             "latency": latency,
             "details": detail_text,
             "session_status": session.session_status if session else None,
+            "runtime_role": status, # Simplified for UI mapping
         })
 
     for module_name, prov_name in analysis_providers.items():

@@ -42,8 +42,10 @@ const STATUS_MAP: Record<string, { color: string; icon: typeof CheckCircle2; lab
 };
 
 const DIAGNOSTICS_STATUS_MAP: Record<string, { color: string; label: string }> = {
-  active_primary: { color: 'text-primary', label: 'PRIMARY' },
-  session_active: { color: 'text-green-500', label: 'SESSION ACTIVE' },
+  active_primary: { color: 'text-green-500 font-bold underline', label: 'PRIMARY (LIVE)' },
+  primary_unavailable: { color: 'text-orange-500', label: 'PRIMARY (FALLBACK)' },
+  primary_misconfigured: { color: 'text-red-500', label: 'PRIMARY (ERROR)' },
+  session_active: { color: 'text-blue-400', label: 'SESSION ACTIVE' },
   healthy: { color: 'text-green-500', label: 'HEALTHY' },
   configured: { color: 'text-muted-foreground', label: 'CONFIGURED' },
   offline: { color: 'text-muted-foreground', label: 'OFFLINE' },
@@ -255,16 +257,17 @@ export function DiagnosticsPage() {
                         <tr key={i} className={`hover:bg-muted/50 transition-colors ${!prov.enabled && 'opacity-60'}`}>
                             <td className="px-6 py-4 font-bold capitalize">{prov.name}</td>
                             <td className="px-6 py-4 text-muted-foreground">{prov.type?.replace('_', ' ')}</td>
-                            <td className="px-6 py-4">
-                                <span className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider ${diagStatus.color}`}>
-                                  {prov.status === 'active_primary' && <CheckCircle2 className="w-4 h-4"/>}
-                                  {prov.status === 'session_active' && <CheckCircle2 className="w-4 h-4"/>}
-                                  {prov.status === 'healthy' && <CheckCircle2 className="w-4 h-4"/>}
-                                  {prov.status === 'configured' && <AlertCircle className="w-4 h-4"/>}
-                                  {prov.status === 'offline' && <XCircle className="w-4 h-4"/>}
-                                  {diagStatus.label}
-                                </span>
-                            </td>
+                              <td className="px-6 py-4">
+                                  <span className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${diagStatus.color}`}>
+                                    {prov.status === 'active_primary' && <Zap className="w-3.5 h-3.5"/>}
+                                    {prov.status.startsWith('primary_') && <AlertCircle className="w-3.5 h-3.5"/>}
+                                    {prov.status === 'session_active' && <CheckCircle2 className="w-3.5 h-3.5"/>}
+                                    {prov.status === 'healthy' && <CheckCircle2 className="w-3.5 h-3.5"/>}
+                                    {prov.status === 'configured' && <Shield className="w-3.5 h-3.5"/>}
+                                    {prov.status === 'offline' && <XCircle className="w-3.5 h-3.5"/>}
+                                    {diagStatus.label}
+                                  </span>
+                              </td>
                             <td className="px-6 py-4">
                               {sessionStatus ? (
                                 <span className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${sessionStatus.color}`}>

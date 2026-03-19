@@ -121,6 +121,8 @@ class RunRecord:
     trigger_source: str = TriggerSource.MANUAL_UI.value
     status: str = RunStatus.QUEUED.value
     execution_mode: str = "research"
+    market_phase: str = "unknown"
+    runtime_source: str = "csv"
     started_at: str = field(default_factory=_utc_now)
     completed_at: Optional[str] = None
     duration_seconds: Optional[float] = None
@@ -138,6 +140,8 @@ class RunRecord:
             "trigger_source": self.trigger_source,
             "status": self.status,
             "execution_mode": self.execution_mode,
+            "market_phase": self.market_phase,
+            "runtime_source": self.runtime_source,
             "started_at": self.started_at,
             "completed_at": self.completed_at,
             "duration_seconds": self.duration_seconds,
@@ -162,6 +166,8 @@ class RunManifest:
     pipeline_type: str = ""
     trigger_source: str = ""
     execution_mode: str = "research"
+    market_phase: str = "unknown"
+    runtime_source: str = "csv"
     status: str = ""
     started_at: str = ""
     completed_at: str = ""
@@ -183,6 +189,8 @@ class RunManifest:
             "pipeline_type": self.pipeline_type,
             "trigger_source": self.trigger_source,
             "execution_mode": self.execution_mode,
+            "market_phase": self.market_phase,
+            "runtime_source": self.runtime_source,
             "status": self.status,
             "started_at": self.started_at,
             "completed_at": self.completed_at,

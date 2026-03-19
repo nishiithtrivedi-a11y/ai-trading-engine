@@ -68,12 +68,25 @@ Check the `README.md` for specific arguments for each command.
 
 ---
 
-## 🔑 Broker Sessions & Credentials
-The platform allows configuring API Keys and Access Tokens via the Settings panel for:
-- Zerodha (Kite)
-- DhanHQ
-- Upstox
+## ⚙️ Runtime Data Source Selection
 
-To read from your environment instead of UI configuration, set variables using the provider prefix, such as `ZERODHA_API_KEY`, `DHAN_CLIENT_ID`, `UPSTOX_ACCESS_TOKEN`, etc.
+The command center tracks which provider is currently serving as the **Primary Runtime Source**.
+
+1.  Go to the **Settings** page.
+2.  Connect a provider (e.g., Zerodha or Dhan).
+3.  Once the session is **Active**, a **"Set as Primary"** button appears.
+4.  Promoting a provider to Primary updates all scanners and monitors to use live SDK data instead of local CSV files.
+5.  **Fallback:** If your primary session expires, the system automatically reverts to **CSV Fallback** mode for safety.
+
+---
+
+## 🔑 Broker Sessions & Credentials
+The platform allows configuring API Keys and Access Tokens via the Settings panel. 
+
+- **Zerodha / Upstox:** Use the **Connect** button for OAuth-based token acquisition.
+- **DhanHQ:** Use the **Update Credentials** button for static token entry.
 
 When a session is "Validated", the backend performs a real **read-only** call (e.g. fetching your profile or margin limits) to prove the SDK auth is intact. **No orders are placed.**
+
+### Operational Audit
+Detailed audit logs for every automation trigger are stored in `output/<pipeline>/<run_id>/run_manifest.json`. These manifests capture the **Market Phase** and **Data Source** used, ensuring full truthfulness of your research history.

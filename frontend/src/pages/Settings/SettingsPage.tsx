@@ -119,6 +119,15 @@ export function SettingsPage() {
     }
   };
 
+  const handleSetPrimary = async (providerType: string) => {
+    try {
+      await axios.post(`${API}/platform/runtime-source`, { provider_type: providerType });
+      loadProviders(); // Refresh to show new primary status
+    } catch (err: any) {
+      alert(`Failed to set ${providerType} as primary: ${err.response?.data?.detail || err.message}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -229,7 +238,12 @@ export function SettingsPage() {
                 <div key={p.provider_type} className="border border-border rounded-lg overflow-hidden">
                   <div className="p-4 bg-muted/20 border-b border-border flex items-center justify-between">
                     <span className="font-semibold">{p.display_name || p.provider_type}</span>
-                    <SessionBadge status={p.session_status} />
+                    <div className="flex gap-2 items-center">
+                      {p.provider_type === runtimeSource && (
+                        <span className="bg-primary/20 text-primary text-[10px] px-2 py-0.5 rounded font-bold uppercase">Primary</span>
+                      )}
+                      <SessionBadge status={p.session_status} />
+                    </div>
                   </div>
                   <div className="p-4 space-y-3">
                     <div className="flex justify-between text-xs">
@@ -277,17 +291,6 @@ export function SettingsPage() {
                     </div>
                   )}
                   <div className="p-3 border-t border-border bg-muted/10 flex justify-end gap-2">
-                    {p.provider_type === 'zerodha' || p.provider_type === 'upstox' ? (
-                      <button
-                        onClick={() => handleOAuthConnect(p.provider_type)}
-                        title={p.session_status === 'active' ? 'Reconnect / refresh session token' : 'Open interactive login to safely acquire session token'}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-500 rounded text-xs font-bold uppercase tracking-wider hover:bg-indigo-500/20 transition-colors"
-                      >
-                        <Plug className="w-3 h-3" />
-                        {p.session_status === 'active' ? 'Reconnect' : p.session_status === 'expired' ? 'Reconnect' : 'Connect'}
-                      </button>
-                    ) : null}
-                    
                     {p.provider_type === 'dhanhq' ? (
                       <button
                         onClick={() => setDhanConfigOpen(true)}
@@ -295,21 +298,37 @@ export function SettingsPage() {
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-500 rounded text-xs font-bold uppercase tracking-wider hover:bg-indigo-500/20 transition-colors"
                       >
                         <Settings2 className="w-3 h-3" />
-                        {p.session_status === 'active' ? 'Reconfigure' : 'Config'}
+                        {p.session_status === 'active' || p.session_status === 'expired' ? 'Update Credentials' : 'Connect DhanHQ'}
                       </button>
-                    ) : null}
+                    ) : (
+                      <button
+                        onClick={() => handleOAuthConnect(p.provider_type)}
+                        title={p.session_status === 'active' ? 'Reconnect / refresh session token' : 'Open interactive login to safely acquire session token'}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-500 rounded text-xs font-bold uppercase tracking-wider hover:bg-indigo-500/20 transition-colors"
+                      >
+                        {p.session_status === 'active' || p.session_status === 'expired' ? <RefreshCcw className="w-3 h-3"/> : <Plug className="w-3 h-3"/>}
+                        {p.session_status === 'active' || p.session_status === 'expired' ? 'Reconnect' : 'Connect'}
+                      </button>
+                    )}
+
+                    {p.session_status === 'active' && p.provider_type !== runtimeSource && (
+                      <button
+                        onClick={() => handleSetPrimary(p.provider_type)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded text-xs font-bold uppercase tracking-wider hover:bg-primary/90 transition-colors"
+                        title="Promote to primary runtime data source"
+                      >
+                        Set as Primary
+                      </button>
+                    )}
 
                     <button
                       onClick={() => validateProvider(p.provider_type)}
                       disabled={validating === p.provider_type}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded text-xs font-bold uppercase tracking-wider hover:bg-primary/20 transition-colors disabled:opacity-50"
+                      title="Validate Session"
                     >
-                      {validating === p.provider_type ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <RefreshCcw className="w-3 h-3" />
-                      )}
-                      {p.session_status === 'active' ? 'Refresh Session' : 'Validate'}
+                      {validating === p.provider_type ? <Loader2 className="w-3 h-3 animate-spin"/> : <Shield className="w-3 h-3"/>}
+                      {p.session_status === 'active' ? 'Refresh' : 'Validate'}
                     </button>
                   </div>
                 </div>

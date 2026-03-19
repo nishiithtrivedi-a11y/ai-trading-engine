@@ -110,6 +110,27 @@ class DataProvidersConfig(BaseModel):
         """Return names of all enabled providers."""
         return [name for name, entry in self.providers.items() if entry.enabled]
 
+    def save_config(self, path: Optional[str | Path] = None) -> bool:
+        """Persist the current configuration back to the YAML file.
+        
+        This allows promoting connected providers to primary runtime source 
+        without manual file editing.
+        """
+        import yaml
+        target = Path(path or"config/data_providers.yaml")
+        try:
+            # Use model_dump for Pydantic v2 compatibility if available, else .dict()
+            data = self.dict() if hasattr(self, "dict") else self.model_dump()
+            
+            # Clean up default factories and empty fields for a cleaner YAML
+            with open(target, "w") as f:
+                yaml.safe_dump(data, f, sort_keys=False, default_flow_style=False)
+            logger.info(f"Saved provider configuration to {target}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save provider config to {target}: {str(e)}")
+            return False
+
 
 def _apply_env_overrides(config: DataProvidersConfig) -> DataProvidersConfig:
     """Override provider credentials from environment variables.
