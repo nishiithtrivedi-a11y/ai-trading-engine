@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pytest
@@ -50,6 +49,8 @@ def test_trigger_records_in_store(tmp_path: Path) -> None:
     loaded = svc.run_store.get_run(record.run_id)
     assert loaded is not None
     assert loaded.run_id == record.run_id
+    assert loaded.market_phase == record.market_phase
+    assert loaded.runtime_source == record.runtime_source
 
 
 def test_cooldown_enforcement(tmp_path: Path) -> None:
@@ -57,6 +58,15 @@ def test_cooldown_enforcement(tmp_path: Path) -> None:
     svc.trigger_pipeline(PipelineType.MORNING_SCAN)
     with pytest.raises(CooldownViolationError):
         svc.trigger_pipeline(PipelineType.MORNING_SCAN)
+
+
+def test_cooldown_enforced_after_service_restart(tmp_path: Path) -> None:
+    first = _make_service(tmp_path)
+    first.trigger_pipeline(PipelineType.MORNING_SCAN)
+
+    restarted = _make_service(tmp_path)
+    with pytest.raises(CooldownViolationError):
+        restarted.trigger_pipeline(PipelineType.MORNING_SCAN)
 
 
 def test_paper_pipeline_uses_paper_mode(tmp_path: Path) -> None:

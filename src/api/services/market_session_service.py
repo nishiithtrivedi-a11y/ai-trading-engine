@@ -2,10 +2,10 @@
 Market session state service.
 
 Wraps existing market_sessions and market_clock logic to expose
-a clean, API-ready market session state.  Used by the platform
+a clean, API-ready market session state. Used by the platform
 status aggregation layer and by the frontend for UX gating.
 
-SAFETY: This module is read-only — no execution paths.
+SAFETY: This module is read-only - no execution paths.
 """
 
 from __future__ import annotations
@@ -16,9 +16,12 @@ from enum import Enum
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
+from src.instruments.calendar import TradingCalendar
+
 
 class MarketSessionPhase(str, Enum):
     """Current market session phase."""
+
     PRE_OPEN = "pre_open"
     OPEN = "open"
     POST_CLOSE = "post_close"
@@ -32,11 +35,13 @@ _MARKET_TZ = "Asia/Kolkata"
 _MARKET_OPEN = time(9, 15)
 _MARKET_CLOSE = time(15, 30)
 _PRE_OPEN_START = time(9, 0)
+_TRADING_CALENDAR = TradingCalendar()
 
 
 @dataclass(frozen=True)
 class MarketSessionState:
     """Snapshot of the current market session."""
+
     phase: MarketSessionPhase
     label: str
     exchange: str = "NSE"
@@ -66,11 +71,11 @@ def get_market_session_state(
 ) -> MarketSessionState:
     """Compute the current market session phase.
 
-    Uses simple time-window logic against IST.  Does NOT consult
-    an exchange holiday calendar — if a public holiday falls on a
-    weekday, the system will report ``OPEN`` during market hours.
-    The UI should surface an appropriate note about this limitation.
+    Uses IST time-window logic plus TradingCalendar holiday checks.
+    If a weekday holiday is detected, the phase is reported as CLOSED
+    with a holiday-specific label.
     """
+
     tz = ZoneInfo(_MARKET_TZ)
 
     if now is None:
@@ -95,7 +100,18 @@ def get_market_session_state(
             next_transition="Monday 09:15 IST",
         )
 
-    # Pre-open (09:00–09:14)
+    # Exchange holiday (weekday only, weekends handled above)
+    if not _TRADING_CALENDAR.is_trading_day(local_now.date()):
+        next_trade_day = _TRADING_CALENDAR.next_trading_day(local_now.date())
+        return MarketSessionState(
+            phase=MarketSessionPhase.CLOSED,
+            label="Market Holiday",
+            current_time_ist=current_time_ist,
+            is_tradeable=False,
+            next_transition=f"Next trading session {next_trade_day.strftime('%A')} 09:15 IST",
+        )
+
+    # Pre-open (09:00-09:14)
     if _PRE_OPEN_START <= current_t < _MARKET_OPEN:
         return MarketSessionState(
             phase=MarketSessionPhase.PRE_OPEN,
@@ -105,17 +121,17 @@ def get_market_session_state(
             next_transition="Market opens at 09:15 IST",
         )
 
-    # Market open (09:15–15:30)
+    # Market open (09:15-15:30)
     if _MARKET_OPEN <= current_t <= _MARKET_CLOSE:
         return MarketSessionState(
             phase=MarketSessionPhase.OPEN,
             label="Market Open",
             current_time_ist=current_time_ist,
             is_tradeable=True,
-            next_transition=f"Closes at 15:30 IST",
+            next_transition="Closes at 15:30 IST",
         )
 
-    # Post-close (15:31–23:59)
+    # Post-close (15:31-23:59)
     if current_t > _MARKET_CLOSE:
         return MarketSessionState(
             phase=MarketSessionPhase.POST_CLOSE,
@@ -125,7 +141,7 @@ def get_market_session_state(
             next_transition="Next session 09:15 IST",
         )
 
-    # Before pre-open (00:00–08:59)
+    # Before pre-open (00:00-08:59)
     return MarketSessionState(
         phase=MarketSessionPhase.CLOSED,
         label="Closed",

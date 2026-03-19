@@ -29,7 +29,10 @@ from src.automation.models import (
 )
 from src.automation.run_store import RunStore
 # Runner is defined locally in this file
-from src.api.services.market_session_service import get_market_session_state, MarketSessionPhase
+from src.api.services.market_session_service import (
+    MarketSessionPhase,
+    get_market_session_state,
+)
 from src.monitoring.models import ScheduleMode, ScheduleSpec
 from src.monitoring.scheduler import Scheduler
 from src.runtime.workflow_orchestrator import WorkflowOrchestrator
@@ -82,7 +85,7 @@ def _orchestrator_runner(pipeline_type: PipelineType, output_dir: str) -> dict[s
     artifacts = []
     return {
         "success": result.success,
-        "artifacts": artifacts, # Artifacts can be gathered if needed
+        "artifacts": artifacts,
         "errors": result.errors,
         "message": f"Orchestrated run for {getattr(pipeline_type, 'value', pipeline_type)}",
     }
@@ -155,34 +158,43 @@ class AutomationSchedulerService:
         # Find matching job for cooldown enforcement
         job = self._find_job_for_pipeline(pipeline_type)
         job_id = job.job_id if job else pipeline_type.value
+        cooldown_seconds = int(job.cooldown_seconds) if job else 300
+
+        # Determine runtime source up-front for truthful gating and run metadata.
+        from src.api.services.platform_status_service import get_platform_status
+
+        plat_status = get_platform_status()
+        runtime_source = plat_status.runtime_data_source
+
+        # Enforce cooldown before creating a new run record.
+        self._enforce_cooldown(job_id=job_id, cooldown_seconds=cooldown_seconds)
 
         # 2. Market-session-aware gating
         market = get_market_session_state()
         requires_live = pipeline_type in (
             PipelineType.MANUAL_RESCAN,
-            PipelineType.INTRADAY_MONITOR,
-            PipelineType.ORDER_EXECUTION_SYNC,
+            PipelineType.INTRADAY_REFRESH,
+            PipelineType.LIVE_SAFE_REFRESH,
         )
-        
-        # Only gate if we are NOT using CSV (which is allowed offline)
-        # Assuming the caller/orchestrator would handle the actual data source,
-        # but we gate the *trigger* here for operator safety.
-        if requires_live and market.phase in (MarketSessionPhase.CLOSED, MarketSessionPhase.POST_CLOSE, MarketSessionPhase.WEEKEND):
-             # Exception: if trigger is manual_ui/api, we allow a warning/force, 
-             # but for now we strictly gate to prevent confusing empty results.
-             raise MarketClosedError(
-                 f"Pipeline '{pipeline_type.value}' requires live market data. "
-                 f"Current market phase is {market.phase.value} ({market.label})."
-             )
+
+        # CSV/Indian CSV modes are explicitly allowed to run offline.
+        using_offline_source = runtime_source in {"csv", "indian_csv"}
+        if (
+            requires_live
+            and not using_offline_source
+            and market.phase in (
+                MarketSessionPhase.CLOSED,
+                MarketSessionPhase.POST_CLOSE,
+                MarketSessionPhase.WEEKEND,
+            )
+        ):
+            raise MarketClosedError(
+                f"Pipeline '{pipeline_type.value}' requires live market data. "
+                f"Current market phase is {market.phase.value} ({market.label})."
+            )
 
         # 3. Create run record
         execution_mode = execution_mode_for_pipeline(pipeline_type)
-        
-        # Determine runtime source (for audit truthfulness)
-        from src.api.services.platform_status_service import get_platform_status
-        # Use the service to get the current source with truthful reasoning
-        plat_status = get_platform_status()
-        runtime_source = plat_status.runtime_data_source
 
         record = RunRecord(
             job_id=job_id,
@@ -227,7 +239,11 @@ class AutomationSchedulerService:
             else:
                 record.status = RunStatus.FAILED.value
                 errors = result.get("errors", [])
-                record.error_message = errors[0] if errors else "Unknown failure"
+                record.error_message = (
+                    errors[0]
+                    if errors
+                    else "Pipeline reported failure without detailed errors."
+                )
                 record.error_details = "\n".join(errors)
                 self._emit_notification(
                     "job_failed",
@@ -264,7 +280,7 @@ class AutomationSchedulerService:
             completed_at=record.completed_at or "",
             duration_seconds=record.duration_seconds or 0.0,
             linked_artifacts=record.linked_artifacts,
-            failure_details=record.error_details,
+            failure_details=record.error_details or record.error_message,
         )
         manifest_dir = Path(self.output_root / pipeline_type.value / record.run_id)
         manifest_dir.mkdir(parents=True, exist_ok=True)
@@ -273,7 +289,7 @@ class AutomationSchedulerService:
         record.manifest_path = str(manifest_path)
 
         # Persist final state
-        self._last_run_times[job_id] = _time.monotonic()
+        self._last_run_times[job_id] = _time.time()
         self.run_store.save_run(record)
         return record
 
@@ -284,15 +300,32 @@ class AutomationSchedulerService:
         return None
 
     def _enforce_cooldown(self, job_id: str, cooldown_seconds: int) -> None:
+        if cooldown_seconds <= 0:
+            return
+
         last = self._last_run_times.get(job_id)
-        if last is not None:
-            elapsed = _time.monotonic() - last
-            if elapsed < cooldown_seconds:
-                remaining = int(cooldown_seconds - elapsed)
-                raise CooldownViolationError(
-                    f"Job '{job_id}' is within cooldown window. "
-                    f"Try again in {remaining}s."
-                )
+
+        # Fallback to persisted run history so cooldown survives process restarts.
+        if last is None:
+            recent = self.run_store.get_runs_by_job(job_id, limit=1)
+            if recent:
+                candidate = recent[0].completed_at or recent[0].started_at
+                if candidate:
+                    try:
+                        last = datetime.fromisoformat(candidate).timestamp()
+                    except ValueError:
+                        last = None
+
+        if last is None:
+            return
+
+        elapsed = _time.time() - last
+        if elapsed < cooldown_seconds:
+            remaining = int(cooldown_seconds - elapsed)
+            raise CooldownViolationError(
+                f"Job '{job_id}' is within cooldown window. "
+                f"Try again in {remaining}s."
+            )
 
     def _compute_next_run(self, job: JobDefinition) -> Optional[str]:
         if not job.enabled or job.schedule_mode == "manual":

@@ -79,3 +79,15 @@ def test_configure_unknown_credential_type() -> None:
     assert resp.status_code == 200  # returns error state in body, not HTTP 500
     body = resp.json()
     assert body["provider"]["session_status"] == "error"
+
+
+def test_configure_multiple_dhan_credentials_uses_dhan_provider_id() -> None:
+    resp = client.post(
+        "/api/v1/providers/sessions/dhan/credentials",
+        json={"credentials": {"CLIENT_ID": "demo_client", "ACCESS_TOKEN": "demo_token"}},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["provider"]["provider_type"] == "dhan"
+    assert "demo_client" not in resp.text
+    assert "demo_token" not in resp.text

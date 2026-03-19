@@ -37,6 +37,7 @@ class WorkflowStep:
     command: list[str]
     run_mode: RunMode
     output_dir: Path
+    contract_id: str | None = None
     required_overrides: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -91,12 +92,12 @@ class WorkflowOrchestrator:
 
     def run(
         self,
-        workflow: WorkflowType | str,
+        workflow: WorkflowType | PipelineType | str,
         *,
         output_root: str | Path,
         symbols_limit: int = 5,
     ) -> WorkflowRunResult:
-        workflow_type = workflow if isinstance(workflow, WorkflowType) else WorkflowType(str(workflow))
+        workflow_type = self._normalize_workflow(workflow)
         root = Path(output_root)
         root.mkdir(parents=True, exist_ok=True)
 
@@ -112,12 +113,46 @@ class WorkflowOrchestrator:
             result.steps.append(step_result)
             if not step_result.success:
                 result.success = False
-                result.errors.append(
-                    f"{step.name} failed (return_code={step_result.return_code})"
-                )
+                if step_result.contract_errors:
+                    result.errors.extend(
+                        [f"{step.name}: {err}" for err in step_result.contract_errors]
+                    )
+                else:
+                    result.errors.append(
+                        f"{step.name} failed (return_code={step_result.return_code})"
+                    )
                 break
 
         return result
+
+    def _normalize_workflow(
+        self,
+        workflow: WorkflowType | PipelineType | str,
+    ) -> WorkflowType | PipelineType:
+        """Normalize incoming workflow to supported enum types.
+
+        Automation dispatch passes PipelineType values, while smoke paths use
+        WorkflowType values. This adapter keeps both contracts explicit.
+        """
+        if isinstance(workflow, (WorkflowType, PipelineType)):
+            return workflow
+
+        if isinstance(workflow, str):
+            normalized = workflow.strip().lower()
+            if not normalized:
+                raise WorkflowOrchestratorError("Workflow cannot be empty.")
+            try:
+                return PipelineType(normalized)
+            except ValueError:
+                pass
+            try:
+                return WorkflowType(normalized)
+            except ValueError as exc:
+                raise WorkflowOrchestratorError(
+                    f"Unsupported workflow: {workflow}"
+                ) from exc
+
+        raise WorkflowOrchestratorError(f"Unsupported workflow type: {type(workflow)}")
 
     def run_release_smoke(
         self,
@@ -154,13 +189,17 @@ class WorkflowOrchestrator:
 
         if success:
             try:
-                assert_artifact_contract(
-                    run_mode=step.run_mode,
-                    output_dir=step.output_dir,
-                    manifest_path=step.output_dir / "run_manifest.json",
-                    require_manifest=True,
-                    required_overrides=step.required_overrides or None,
-                )
+                validation_kwargs: dict[str, object] = {
+                    "output_dir": step.output_dir,
+                    "manifest_path": step.output_dir / "run_manifest.json",
+                    "require_manifest": True,
+                    "required_overrides": step.required_overrides or None,
+                }
+                if step.contract_id:
+                    validation_kwargs["contract_id"] = step.contract_id
+                else:
+                    validation_kwargs["run_mode"] = step.run_mode
+                assert_artifact_contract(**validation_kwargs)
                 contract_valid = True
             except ArtifactContractValidationError as exc:
                 success = False
@@ -189,28 +228,151 @@ class WorkflowOrchestrator:
 
     def _build_steps(
         self,
-        workflow: WorkflowType | str,
+        workflow: WorkflowType | PipelineType | str,
         output_root: Path,
         *,
         symbols_limit: int,
     ) -> list[WorkflowStep]:
+        if isinstance(workflow, str):
+            workflow = self._normalize_workflow(workflow)
+
+        effective_symbols_limit = symbols_limit if symbols_limit > 0 else 5
+
         # Handle PipelineType orchestration
         if isinstance(workflow, PipelineType):
             out_dir = output_root
             if workflow == PipelineType.MORNING_SCAN:
-                return [WorkflowStep(name=workflow.value, run_mode=RunMode.RESEARCH, output_dir=out_dir, command=[self.python_executable, "scripts/run_scanner.py", "--profile", "morning", "--output-dir", str(out_dir)])]
+                return [
+                    WorkflowStep(
+                        name=workflow.value,
+                        run_mode=RunMode.RESEARCH,
+                        output_dir=out_dir,
+                        contract_id="scanner_runner_v1",
+                        command=[
+                            self.python_executable,
+                            "scripts/run_scanner.py",
+                            "--profile",
+                            "morning",
+                            "--no-timestamped-output",
+                            "--output-dir",
+                            str(out_dir),
+                        ],
+                    )
+                ]
             if workflow == PipelineType.INTRADAY_REFRESH:
-                return [WorkflowStep(name=workflow.value, run_mode=RunMode.RESEARCH, output_dir=out_dir, command=[self.python_executable, "scripts/run_monitoring.py", "--profile", "intraday", "--output-dir", str(out_dir)])]
+                return [
+                    WorkflowStep(
+                        name=workflow.value,
+                        run_mode=RunMode.RESEARCH,
+                        output_dir=out_dir,
+                        contract_id="monitoring_runner_v1",
+                        command=[
+                            self.python_executable,
+                            "scripts/run_monitoring.py",
+                            "--profile",
+                            "intraday",
+                            "--no-timestamped-output",
+                            "--output-dir",
+                            str(out_dir),
+                        ],
+                    )
+                ]
             if workflow == PipelineType.DECISION_REFRESH:
-                return [WorkflowStep(name=workflow.value, run_mode=RunMode.RESEARCH, output_dir=out_dir, command=[self.python_executable, "scripts/run_decision.py", "--profile", "intraday", "--output-dir", str(out_dir)])]
+                return [
+                    WorkflowStep(
+                        name=workflow.value,
+                        run_mode=RunMode.RESEARCH,
+                        output_dir=out_dir,
+                        contract_id="decision_runner_v1",
+                        command=[
+                            self.python_executable,
+                            "scripts/run_decision.py",
+                            "--profile",
+                            "intraday",
+                            "--no-timestamped-output",
+                            "--output-dir",
+                            str(out_dir),
+                        ],
+                    )
+                ]
             if workflow == PipelineType.EOD_PROCESSING:
-                return [WorkflowStep(name=workflow.value, run_mode=RunMode.RESEARCH, output_dir=out_dir, command=[self.python_executable, "scripts/run_decision.py", "--profile", "eod", "--output-dir", str(out_dir)])]
+                return [
+                    WorkflowStep(
+                        name=workflow.value,
+                        run_mode=RunMode.RESEARCH,
+                        output_dir=out_dir,
+                        contract_id="decision_runner_v1",
+                        command=[
+                            self.python_executable,
+                            "scripts/run_decision.py",
+                            "--profile",
+                            "eod",
+                            "--no-timestamped-output",
+                            "--output-dir",
+                            str(out_dir),
+                        ],
+                    )
+                ]
             if workflow == PipelineType.PAPER_REFRESH:
-                return [WorkflowStep(name=workflow.value, run_mode=RunMode.PAPER, output_dir=out_dir, command=[self.python_executable, "scripts/run_paper_trading.py", "--paper-output-dir", str(out_dir)])]
+                return [
+                    WorkflowStep(
+                        name=workflow.value,
+                        run_mode=RunMode.PAPER,
+                        output_dir=out_dir,
+                        command=[
+                            self.python_executable,
+                            "scripts/run_paper_trading.py",
+                            "--paper-trading",
+                            "--provider",
+                            "indian_csv",
+                            "--symbols-limit",
+                            str(effective_symbols_limit),
+                            "--interval",
+                            "day",
+                            "--paper-output-dir",
+                            str(out_dir),
+                        ],
+                    )
+                ]
             if workflow == PipelineType.LIVE_SAFE_REFRESH:
-                return [WorkflowStep(name=workflow.value, run_mode=RunMode.LIVE_SAFE, output_dir=out_dir, command=[self.python_executable, "scripts/run_live_signal_pipeline.py", "--output-dir", str(out_dir)])]
+                return [
+                    WorkflowStep(
+                        name=workflow.value,
+                        run_mode=RunMode.LIVE_SAFE,
+                        output_dir=out_dir,
+                        command=[
+                            self.python_executable,
+                            "scripts/run_live_signal_pipeline.py",
+                            "--live-signals",
+                            "--provider",
+                            "indian_csv",
+                            "--symbols-limit",
+                            str(effective_symbols_limit),
+                            "--interval",
+                            "day",
+                            "--run-once",
+                            "--output-dir",
+                            str(out_dir),
+                        ],
+                    )
+                ]
             if workflow == PipelineType.MANUAL_RESCAN:
-                return [WorkflowStep(name=workflow.value, run_mode=RunMode.RESEARCH, output_dir=out_dir, command=[self.python_executable, "scripts/run_scanner.py", "--run-once", "--output-dir", str(out_dir)])]
+                return [
+                    WorkflowStep(
+                        name=workflow.value,
+                        run_mode=RunMode.RESEARCH,
+                        output_dir=out_dir,
+                        contract_id="scanner_runner_v1",
+                        command=[
+                            self.python_executable,
+                            "scripts/run_scanner.py",
+                            "--run-once",
+                            "--no-timestamped-output",
+                            "--output-dir",
+                            str(out_dir),
+                        ],
+                    )
+                ]
 
         # Handle existing WorkflowType smoke tests
         if workflow == WorkflowType.RESEARCH_SMOKE:
@@ -224,7 +386,7 @@ class WorkflowOrchestrator:
                         self.python_executable,
                         "scripts/run_nifty50_zerodha_research.py",
                         "--symbols-limit",
-                        str(symbols_limit),
+                        str(effective_symbols_limit),
                         "--output-dir",
                         str(out_dir),
                     ],
@@ -340,7 +502,9 @@ class WorkflowOrchestrator:
                 )
             ]
 
-        raise WorkflowOrchestratorError(f"Unsupported workflow: {workflow.value}")
+        raise WorkflowOrchestratorError(
+            f"Unsupported workflow: {getattr(workflow, 'value', workflow)}"
+        )
 
 
 def _tail_text(value: str, max_lines: int = 25) -> str:

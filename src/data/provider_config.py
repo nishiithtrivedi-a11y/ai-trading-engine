@@ -19,6 +19,7 @@ logger = setup_logger("provider_config")
 
 # Default config file location (relative to project root)
 DEFAULT_CONFIG_PATH = "config/data_providers.yaml"
+_SECRET_FIELDS = ("api_key", "api_secret", "access_token")
 
 
 class ProviderCredentials(BaseModel):
@@ -112,24 +113,47 @@ class DataProvidersConfig(BaseModel):
 
     def save_config(self, path: Optional[str | Path] = None) -> bool:
         """Persist the current configuration back to the YAML file.
-        
-        This allows promoting connected providers to primary runtime source 
+
+        This allows promoting connected providers to primary runtime source
         without manual file editing.
+
+        SECURITY: Secret credential fields are always scrubbed before write.
+        Runtime credentials must come from environment/.env sources only.
         """
         import yaml
-        target = Path(path or"config/data_providers.yaml")
+
+        target = Path(path or DEFAULT_CONFIG_PATH)
         try:
             # Use model_dump for Pydantic v2 compatibility if available, else .dict()
-            data = self.dict() if hasattr(self, "dict") else self.model_dump()
-            
-            # Clean up default factories and empty fields for a cleaner YAML
-            with open(target, "w") as f:
+            data = self.model_dump() if hasattr(self, "model_dump") else self.dict()
+            data = _sanitize_for_persistence(data)
+
+            with open(target, "w", encoding="utf-8") as f:
                 yaml.safe_dump(data, f, sort_keys=False, default_flow_style=False)
             logger.info(f"Saved provider configuration to {target}")
             return True
         except Exception as e:
             logger.error(f"Failed to save provider config to {target}: {str(e)}")
             return False
+
+
+def _sanitize_for_persistence(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a persistence-safe config payload with secrets removed."""
+    cleaned: Dict[str, Any] = dict(data)
+    providers = cleaned.get("providers", {})
+    if isinstance(providers, dict):
+        sanitized_providers: Dict[str, Any] = {}
+        for name, entry in providers.items():
+            if not isinstance(entry, dict):
+                sanitized_providers[name] = entry
+                continue
+            item = dict(entry)
+            for secret_key in _SECRET_FIELDS:
+                if secret_key in item:
+                    item[secret_key] = ""
+            sanitized_providers[name] = item
+        cleaned["providers"] = sanitized_providers
+    return cleaned
 
 
 def _apply_env_overrides(config: DataProvidersConfig) -> DataProvidersConfig:
