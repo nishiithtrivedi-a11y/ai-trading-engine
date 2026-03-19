@@ -103,19 +103,21 @@ It is not a live execution system today.
     - Designed with explicit execution separation (broker routing controls remain disabled visual placeholders).
 
 15. **Automation & Scheduling Layer (`src/automation/`)** — Phase 21
-    - `scheduler_service.py` — `AutomationSchedulerService` for safe pipeline dispatch with cooldown enforcement
-    - `run_store.py` — File-based JSON run history persistence with retention
-    - `models.py` — `PipelineType`, `TriggerSource`, `RunStatus`, `JobDefinition`, `RunRecord`, `RunManifest`
-    - `notification/` — Outbound notification framework with email (SMTP) and Telegram (Bot API) channels
-    - All pipelines run in research/paper/live_safe mode — no live execution reachable
-    - See [AUTOMATION.md](AUTOMATION.md) for details
+     - `scheduler_service.py` — `AutomationSchedulerService` for safe pipeline dispatch with cooldown enforcement
+     - Dispatch uses `WorkflowOrchestrator` with explicit `PipelineType` to workflow mapping
+     - `run_store.py` — File-based JSON run history persistence with retention
+     - `models.py` — `PipelineType`, `TriggerSource`, `RunStatus`, `JobDefinition`, `RunRecord`, `RunManifest`
+     - `notification/` — Outbound notification framework with email (SMTP) and Telegram (Bot API) channels
+     - All pipelines run in research/paper/live_safe mode — no live execution reachable
+     - See [AUTOMATION.md](AUTOMATION.md) for details
 
 16. **Provider Session Control Layer (`src/providers/`)** — Phase 21.x
-    - `session_manager.py` — Provider auth/session lifecycle management
-    - `credential_store.py` — Safe masked credential handling via env vars and `.env` file
-    - `models.py` — `ProviderType`, `SessionStatus`, `ProviderConfig`, `PROVIDER_REGISTRY` (Zerodha/Dhan/Upstox)
-    - Connecting a provider does NOT enable live trading — execution disabled independently
-    - See [PROVIDER_SESSIONS.md](PROVIDER_SESSIONS.md) for details
+     - `session_manager.py` — Provider auth/session lifecycle management
+     - `credential_store.py` — Safe masked credential handling via env vars and `.env` file
+     - `models.py` — `ProviderType`, `SessionStatus`, `ProviderConfig`, `PROVIDER_REGISTRY` (Zerodha/Dhan/Upstox)
+     - Runtime-source persistence scrubs provider secret fields before writing YAML
+     - Connecting a provider does NOT enable live trading — execution disabled independently
+     - See [PROVIDER_SESSIONS.md](PROVIDER_SESSIONS.md) for details
 
 ### How Provider-to-Canonical Mapping Works
 

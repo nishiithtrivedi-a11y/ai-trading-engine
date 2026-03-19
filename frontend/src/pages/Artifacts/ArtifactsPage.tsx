@@ -123,7 +123,15 @@ export function ArtifactsPage() {
           <div className="md:col-span-2 bg-card border border-border rounded-xl flex flex-col overflow-hidden">
              <div className="p-4 border-b border-border bg-muted/20 font-semibold flex justify-between items-center">
                  <span>Preview {selectedFile ? `- ${selectedFile}` : ''}</span>
-                 {selectedFile && <button className="p-1 hover:bg-muted rounded"><Download className="w-4 h-4 text-muted-foreground"/></button>}
+                 {selectedFile && (
+                   <button
+                     disabled
+                     title="Download endpoint is not implemented in this build."
+                     className="p-1 rounded opacity-50 cursor-not-allowed"
+                   >
+                     <Download className="w-4 h-4 text-muted-foreground" />
+                   </button>
+                 )}
              </div>
              <div className="overflow-y-auto flex-1 p-4 bg-muted/5 font-mono text-sm relative">
                  {previewLoading && <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-10">Loading...</div>}

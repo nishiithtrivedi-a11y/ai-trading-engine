@@ -1,25 +1,50 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Activity, Database, BarChart2, Layers } from 'lucide-react';
 import axios from 'axios';
 
+const API = 'http://localhost:8000/api/v1';
+
+interface PlatformStatus {
+  feature_availability: string;
+  feature_availability_label: string;
+}
+
 export function OverviewPage() {
   const [data, setData] = useState<any>(null);
+  const [platform, setPlatform] = useState<PlatformStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axios.get('http://localhost:8000/api/v1/overview')
-      .then(res => setData(res.data))
-      .catch(err => console.error(err))
+    setLoading(true);
+    Promise.all([
+      axios.get(`${API}/overview`).catch(() => ({ data: null })),
+      axios.get(`${API}/platform/status`).catch(() => ({ data: null })),
+    ])
+      .then(([overviewRes, platformRes]) => {
+        setData(overviewRes.data);
+        setPlatform(platformRes.data);
+      })
       .finally(() => setLoading(false));
   }, []);
+
+  const statusColor = useMemo(() => {
+    const feature = platform?.feature_availability;
+    if (feature === 'realtime_analysis') {
+      return 'text-green-500 bg-green-500/10';
+    }
+    if (feature === 'post_market' || feature === 'session_ready') {
+      return 'text-amber-500 bg-amber-500/10';
+    }
+    return 'text-muted-foreground bg-muted';
+  }, [platform]);
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold tracking-tight">Platform Overview</h2>
-        <div className="flex items-center space-x-2 text-sm text-foreground bg-primary/10 px-3 py-1 rounded-full">
-          <Activity className="w-4 h-4 text-primary" />
-          <span>System Active</span>
+        <div className={`flex items-center space-x-2 text-sm px-3 py-1 rounded-full ${statusColor}`}>
+          <Activity className="w-4 h-4" />
+          <span>{platform?.feature_availability_label || 'Platform status unavailable'}</span>
         </div>
       </div>
 
@@ -60,7 +85,7 @@ export function OverviewPage() {
               <BarChart2 className="w-4 h-4 text-primary" />
             </div>
             <div className={`text-2xl font-bold mt-2 ${data?.availability?.scanner ? 'text-green-500' : 'text-muted-foreground'}`}>
-              {data?.availability?.scanner ? 'Active' : 'No Data'}
+              {data?.availability?.scanner ? 'Artifact Available' : 'No Data'}
             </div>
           </div>
         </div>

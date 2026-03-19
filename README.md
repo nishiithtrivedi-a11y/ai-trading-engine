@@ -184,6 +184,8 @@ manifests, validates scanner/monitoring/decision artifact contracts, and writes
 - Artifact contracts and validation are centralized in `src/runtime/artifact_contracts.py` and `src/runtime/contract_validation.py`.
 - Mid-pipeline scanner/monitoring/decision contract validation is available via the daily dry-run orchestrator.
 - Portfolio planning outputs are recommendation-only and do not route broker orders.
+- Provider credentials are sourced from environment settings (`.env` / process env), not persisted as plaintext YAML secrets.
+- Market-session status includes holiday-aware checks via the trading calendar layer.
 
 Safety details: [`docs/SAFETY.md`](docs/SAFETY.md)
 

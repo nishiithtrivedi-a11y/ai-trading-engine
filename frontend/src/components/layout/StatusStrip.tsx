@@ -5,17 +5,18 @@ import { Database, Wifi } from 'lucide-react';
 const API = 'http://localhost:8000/api/v1';
 
 export function StatusStrip() {
-  const [source, setSource] = useState('—');
+  const [source, setSource] = useState('N/A');
   const [connected, setConnected] = useState(0);
   const [total, setTotal] = useState(0);
   const [feature, setFeature] = useState('');
   const [featureLabel, setFeatureLabel] = useState('');
 
   useEffect(() => {
-    axios.get(`${API}/platform/status`)
-      .then(res => {
+    axios
+      .get(`${API}/platform/status`)
+      .then((res) => {
         const d = res.data;
-        setSource(d.runtime_data_source ?? '—');
+        setSource(d.runtime_data_source ?? 'N/A');
         setConnected(d.connected_sessions ?? 0);
         setTotal(d.total_sessions ?? 0);
         setFeature(d.feature_availability ?? '');
@@ -25,10 +26,13 @@ export function StatusStrip() {
   }, []);
 
   const featureColor =
-    feature === 'realtime_analysis' ? 'text-green-500' :
-    feature === 'post_market' ? 'text-amber-500' :
-    feature === 'fallback_active' ? 'text-blue-400' :
-    'text-muted-foreground';
+    feature === 'realtime_analysis'
+      ? 'text-green-500'
+      : feature === 'post_market'
+        ? 'text-amber-500'
+        : feature === 'fallback_active'
+          ? 'text-blue-400'
+          : 'text-muted-foreground';
 
   return (
     <div className="h-8 border-t border-border bg-card flex items-center justify-between px-4 text-xs font-mono text-muted-foreground z-20 relative shadow-[0_-2px_10px_rgba(0,0,0,0.1)]">
@@ -43,26 +47,23 @@ export function StatusStrip() {
           <span className="font-bold text-red-500/90 tracking-widest uppercase text-[10px]">Execute Locked</span>
         </span>
         <span className="opacity-30 hidden md:inline">|</span>
-        {/* Runtime Data Source */}
         <span className="hidden md:flex items-center space-x-1.5 text-[10px] uppercase font-sans font-bold tracking-widest">
           <Database className="w-3 h-3" />
           <span>Source: {source.toUpperCase()}</span>
         </span>
         <span className="opacity-30 hidden md:inline">|</span>
-        {/* Connected Providers */}
         <span className="hidden md:flex items-center space-x-1.5 text-[10px] uppercase font-sans font-bold tracking-widest">
           <Wifi className="w-3 h-3" />
           <span>Providers: {connected}/{total}</span>
         </span>
         <span className="opacity-30 hidden lg:inline">|</span>
-        {/* Feature Availability */}
         <span className={`hidden lg:flex items-center space-x-1.5 text-[10px] uppercase font-sans font-bold tracking-widest ${featureColor}`}>
-          <span>{featureLabel || 'Loading…'}</span>
+          <span>{featureLabel || 'Loading...'}</span>
         </span>
       </div>
       <div className="flex items-center space-x-4">
-        <span className="hidden lg:inline text-[10px] uppercase tracking-widest opacity-50">Local Engine • Port: 8000</span>
-        <span className="font-bold tracking-wider text-primary/50">Vite SPA • Phase 22.x</span>
+        <span className="hidden lg:inline text-[10px] uppercase tracking-widest opacity-50">Local Engine - Port: 8000</span>
+        <span className="font-bold tracking-wider text-primary/50">Vite SPA - Execution Disabled</span>
       </div>
     </div>
   );
