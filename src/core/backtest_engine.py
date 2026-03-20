@@ -16,7 +16,7 @@ from src.core.data_handler import DataHandler
 from src.core.metrics import PerformanceMetrics, compute_buy_and_hold
 from src.core.portfolio import Portfolio
 from src.core.reporting import ReportGenerator
-from src.strategies.base_strategy import BaseStrategy, Signal
+from src.strategies.base_strategy import BaseStrategy, Signal, StrategySignal
 from src.utils.config import BacktestConfig, DataSource, ExecutionMode
 from src.utils.logger import setup_logger
 from src.utils.market_sessions import is_market_open, MarketSessionConfig
@@ -166,7 +166,12 @@ class BacktestEngine:
             # 4. Generate signal from strategy
             #    Strategy only sees data up to current bar
             available_data = dh.get_data_up_to_current()
-            signal = self.strategy.on_bar(available_data, bar, i)
+            signal_payload = self.strategy.generate_signal(
+                available_data,
+                bar,
+                i,
+            )
+            signal = BaseStrategy.normalize_signal(signal_payload)
 
             # 5. Handle signal
             can_enter = self._can_enter_on_bar(timestamp)
@@ -233,7 +238,7 @@ class BacktestEngine:
 
     def _handle_signal(
         self,
-        signal: Signal,
+        signal: Signal | StrategySignal | str,
         bar: pd.Series,
         timestamp: pd.Timestamp,
         can_enter: bool = True,
@@ -246,20 +251,22 @@ class BacktestEngine:
             timestamp: Current bar timestamp.
             can_enter: Whether fresh entries are allowed on this bar.
         """
-        if signal == Signal.BUY:
+        normalized_signal = BaseStrategy.normalize_signal(signal)
+
+        if normalized_signal == Signal.BUY:
             if can_enter:
                 self.broker.submit_buy(
                     signal_price=bar["close"],
                     timestamp=timestamp,
                     reason="strategy_buy",
                 )
-        elif signal == Signal.SELL:
+        elif normalized_signal == Signal.SELL:
             self.broker.submit_sell(
                 signal_price=bar["close"],
                 timestamp=timestamp,
                 reason="strategy_sell",
             )
-        elif signal == Signal.EXIT:
+        elif normalized_signal == Signal.EXIT:
             self.broker.submit_sell(
                 signal_price=bar["close"],
                 timestamp=timestamp,

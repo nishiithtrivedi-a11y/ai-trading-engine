@@ -56,6 +56,47 @@ class ExitOnlyStrategy(BaseStrategy):
         return Signal.HOLD
 
 
+class StructuredBuyExitStrategy(BaseStrategy):
+    def on_bar(self, data: pd.DataFrame, current_bar: pd.Series, bar_index: int) -> Signal:
+        return Signal.HOLD
+
+    def generate_signal(
+        self,
+        data: pd.DataFrame,
+        current_bar: pd.Series,
+        bar_index: int,
+        *,
+        symbol: str | None = None,
+        timeframe: str | None = None,
+    ):
+        if bar_index == 1:
+            return self.build_signal(
+                action=Signal.BUY,
+                current_bar=current_bar,
+                symbol=symbol,
+                timeframe=timeframe,
+                confidence=0.9,
+                rationale="structured_buy",
+            )
+        if bar_index == 3:
+            return self.build_signal(
+                action=Signal.EXIT,
+                current_bar=current_bar,
+                symbol=symbol,
+                timeframe=timeframe,
+                confidence=0.7,
+                rationale="structured_exit",
+            )
+        return self.build_signal(
+            action=Signal.HOLD,
+            current_bar=current_bar,
+            symbol=symbol,
+            timeframe=timeframe,
+            confidence=0.0,
+            rationale="hold",
+        )
+
+
 def _registry(strategy_cls: type[BaseStrategy]) -> dict[str, dict[str, object]]:
     return {"test": {"class": strategy_cls, "params": {}}}
 
@@ -298,6 +339,24 @@ def test_paper_engine_applies_portfolio_override_quantity_cap() -> None:
     buy_order = result.state.orders[0]
     assert buy_order.quantity == 1
     assert buy_order.metadata.get("portfolio_override_applied") is True
+
+
+def test_paper_engine_accepts_structured_strategy_signal_contract() -> None:
+    engine = _engine(
+        StructuredBuyExitStrategy,
+        PaperTradingConfig(
+            enabled=True,
+            use_next_bar_fill=False,
+            persist_state=False,
+            default_stop_loss_pct=None,
+            default_take_profit_pct=None,
+        ),
+    )
+    result = engine.run({"RELIANCE.NS": DataHandler(_make_ohlcv())}, persist=False)
+
+    assert result.state is not None
+    assert len(result.state.orders) == 2
+    assert len(result.state.fills) == 2
 
 
 # ---------------------------------------------------------------------------

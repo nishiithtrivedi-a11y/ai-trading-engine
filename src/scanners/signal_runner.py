@@ -15,7 +15,7 @@ import pandas as pd
 from src.core.data_handler import DataHandler
 from src.scanners.config import StrategyScanSpec, normalize_timeframe
 from src.scanners.models import SignalSnapshot
-from src.strategies.base_strategy import BaseStrategy, Signal
+from src.strategies.base_strategy import BaseStrategy, Signal, StrategySignal
 
 
 class SignalRunnerError(Exception):
@@ -72,14 +72,20 @@ class SignalRunner:
         bar_index = len(full_data) - 1
 
         try:
-            raw_signal = strategy.on_bar(full_data, latest_bar, bar_index)
+            raw_signal = strategy.generate_signal(
+                full_data,
+                latest_bar,
+                bar_index,
+                symbol=symbol,
+                timeframe=tf,
+            )
         except Exception as exc:  # noqa: BLE001
             raise SignalRunnerError(
                 f"Strategy '{strategy_spec.strategy_name}' failed on latest bar: {exc}"
             ) from exc
 
         normalized_signal = self._normalize_signal(raw_signal)
-        confidence = self._estimate_confidence(normalized_signal)
+        confidence = self._extract_confidence(raw_signal, normalized_signal)
 
         extras: dict[str, Any] = {
             "bars_available": len(data_handler),
@@ -92,6 +98,13 @@ class SignalRunner:
             "latest_volume": float(latest_bar.get("volume", 0.0)),
             "bars_since_trigger": None,
         }
+        if isinstance(raw_signal, StrategySignal):
+            if raw_signal.rationale:
+                extras["rationale"] = raw_signal.rationale
+            if raw_signal.tags:
+                extras["tags"] = list(raw_signal.tags)
+            if raw_signal.metadata:
+                extras["signal_metadata"] = dict(raw_signal.metadata)
 
         if normalized_signal == "buy":
             extras["bars_since_trigger"] = self._bars_since_trigger(
@@ -122,12 +135,21 @@ class SignalRunner:
         if isinstance(value, Signal):
             return value.value
 
+        if isinstance(value, StrategySignal):
+            return value.action.value
+
         if isinstance(value, str):
             clean = value.strip().lower()
             if clean in {"buy", "sell", "exit", "hold"}:
                 return clean
 
         raise SignalRunnerError(f"Unsupported strategy signal output: {value!r}")
+
+    @classmethod
+    def _extract_confidence(cls, value: Any, normalized_signal: str) -> float:
+        if isinstance(value, StrategySignal) and value.confidence is not None:
+            return max(0.0, min(1.0, float(value.confidence)))
+        return cls._estimate_confidence(normalized_signal)
 
     @staticmethod
     def _estimate_confidence(signal: str) -> float:
@@ -151,7 +173,7 @@ class SignalRunner:
             for idx in range(len(full_data) - 1, -1, -1):
                 window = full_data.iloc[: idx + 1]
                 bar = window.iloc[-1]
-                raw_signal = strategy.on_bar(window, bar, idx)
+                raw_signal = strategy.generate_signal(window, bar, idx)
                 norm = self._normalize_signal(raw_signal)
                 if norm == "buy":
                     streak += 1

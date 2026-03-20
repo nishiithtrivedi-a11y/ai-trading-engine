@@ -28,7 +28,7 @@ from src.paper_trading.models import (
 )
 from src.paper_trading.state_store import PaperStateStore
 from src.risk.risk_engine import PortfolioRiskManager
-from src.strategies.base_strategy import Signal
+from src.strategies.base_strategy import BaseStrategy, Signal
 from src.utils.config import BacktestConfig
 
 
@@ -230,11 +230,13 @@ class PaperTradingEngine:
         strategy = strategy_cls(**params)
         strategy.initialize(params)
 
-        signal = strategy.on_bar(
+        signal_payload = strategy.generate_signal(
             data=data_slice,
             current_bar=current_bar,
             bar_index=len(data_slice) - 1,
+            symbol=symbol,
         )
+        signal = BaseStrategy.normalize_signal(signal_payload)
         if signal == Signal.HOLD:
             return 0
 

@@ -48,6 +48,56 @@ Current layers:
 
 See detailed architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
+## Strategy Contract
+
+Strategy code is signal-generation only. It must not perform order execution,
+broker side effects, portfolio sizing, or notifications.
+
+Current standardized contract in `src/strategies/base_strategy.py`:
+
+- `on_bar(data, current_bar, bar_index) -> Signal` (legacy-compatible path)
+- `generate_signal(...) -> StrategySignal` (structured contract)
+- `generate_signals(...) -> list[StrategySignal]` (fan-out friendly list form)
+
+`StrategySignal` fields:
+
+- `action` (`buy`, `sell`, `exit`, `hold`)
+- `strategy_name`
+- optional context: `symbol`, `timestamp`, `timeframe`
+- optional quality metadata: `confidence`, `rationale`, `tags`, `metadata`
+
+The engine normalizes both legacy and structured outputs so existing workflows
+remain compatible while new strategies can adopt structured signals directly.
+
+Minimal strategy example:
+
+```python
+from src.strategies.base_strategy import BaseStrategy, Signal
+
+
+class ExampleStrategy(BaseStrategy):
+    def on_bar(self, data, current_bar, bar_index):
+        if bar_index < 20:
+            return Signal.HOLD
+        return Signal.BUY if float(current_bar["close"]) > float(data["close"].iloc[-2]) else Signal.HOLD
+```
+
+Consumers can call either `on_bar(...)` (legacy) or `generate_signal(...)`
+(structured). Strategy modules should remain execution-disabled and side-effect free.
+
+### Adding a New Strategy
+
+1. Create a class under `src/strategies/` that subclasses `BaseStrategy`.
+2. Implement `on_bar(...) -> Signal` for legacy compatibility.
+3. Optionally override `generate_signal(...) -> StrategySignal` to provide richer metadata.
+4. Keep strategy code signal-only (no broker calls, no order placement, no notifications).
+5. Register the class in `src/strategies/registry.py` if it should be discoverable by name.
+
+Compatibility behavior:
+
+- Legacy consumers can still use enum outputs.
+- Updated consumers normalize both enum and structured outputs via `BaseStrategy.normalize_signal(...)`.
+
 ## Capability Matrix
 
 | Feature | Supported | Notes |
