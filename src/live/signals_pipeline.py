@@ -28,7 +28,7 @@ from src.market_intelligence.relative_strength import compute_relative_strength
 from src.risk.risk_engine import PortfolioRiskManager
 from src.scanners.data_gateway import DataGateway
 from src.scanners.config import normalize_timeframe
-from src.strategies.base_strategy import Signal
+from src.strategies.base_strategy import BaseStrategy, Signal
 
 
 class LiveSignalPipelineError(Exception):
@@ -487,12 +487,19 @@ class LiveSignalPipeline:
         strategy = strategy_cls(**params)
         strategy.initialize(params)
         bar = df.iloc[-1]
-        result = strategy.on_bar(df, bar, len(df) - 1)
-        if not isinstance(result, Signal):
+        result = strategy.generate_signal(
+            df,
+            bar,
+            len(df) - 1,
+            symbol=None,
+            timeframe=self.config.timeframe,
+        )
+        try:
+            return BaseStrategy.normalize_signal(result)
+        except ValueError as exc:
             raise LiveSignalPipelineError(
-                f"Strategy '{strategy_name}' returned unsupported signal type: {type(result)}"
-            )
-        return result
+                f"Strategy '{strategy_name}' returned unsupported signal output: {result!r}"
+            ) from exc
 
     @staticmethod
     def _freshness_seconds(timestamp: pd.Timestamp) -> float:

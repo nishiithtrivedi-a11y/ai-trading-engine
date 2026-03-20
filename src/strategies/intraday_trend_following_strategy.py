@@ -21,11 +21,13 @@ Expected CSV columns:
 Timestamp should be parseable by pandas.
 """
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+from src.strategies.base_strategy import BaseStrategy, Signal, StrategySignal
 
 
 @dataclass
@@ -40,6 +42,146 @@ class StrategyConfig:
     timezone: str = "Asia/Kolkata"
     initial_capital: float = 100000.0
     position_size_pct: float = 0.10  # 10% of equity per trade
+
+
+class IntradayTrendFollowingStrategy(BaseStrategy):
+    """
+    Engine-ready strategy wrapper for intraday trend-following signal generation.
+
+    This class emits standardized StrategySignal outputs only; execution,
+    position management, and portfolio sizing remain outside strategy scope.
+    """
+
+    config: StrategyConfig
+
+    @property
+    def name(self) -> str:
+        return "IntradayTrendFollowingStrategy"
+
+    def initialize(self, params: Optional[dict[str, object]] = None) -> None:
+        super().initialize(params)
+
+        config_values = asdict(StrategyConfig())
+        for key in config_values:
+            if key in self._params:
+                config_values[key] = self._params[key]
+
+        self.config = StrategyConfig(
+            st_period=int(config_values["st_period"]),
+            st_factor=float(config_values["st_factor"]),
+            ema_length=int(config_values["ema_length"]),
+            tp_percent=float(config_values["tp_percent"]),
+            sl_percent=float(config_values["sl_percent"]),
+            session_start=str(config_values["session_start"]),
+            session_end=str(config_values["session_end"]),
+            timezone=str(config_values["timezone"]),
+            initial_capital=float(config_values["initial_capital"]),
+            position_size_pct=float(config_values["position_size_pct"]),
+        )
+
+        if self.config.st_period <= 0:
+            raise ValueError("st_period must be positive")
+        if self.config.ema_length <= 0:
+            raise ValueError("ema_length must be positive")
+        if self.config.st_factor <= 0:
+            raise ValueError("st_factor must be positive")
+
+    def generate_signal(
+        self,
+        data: pd.DataFrame,
+        current_bar: pd.Series,
+        bar_index: int,
+        *,
+        symbol: Optional[str] = None,
+        timeframe: Optional[str] = None,
+    ) -> StrategySignal:
+        if not getattr(self, "_is_initialized", False):
+            self.initialize()
+
+        prepared = prepare_strategy_dataframe(data, self.config)
+        if prepared.empty:
+            return self.build_signal(
+                action=Signal.HOLD,
+                current_bar=current_bar,
+                symbol=symbol,
+                timeframe=timeframe,
+                confidence=0.0,
+                rationale="no_data",
+            )
+
+        latest = prepared.iloc[-1]
+        in_session_now = bool(latest["is_in_session"])
+
+        if not in_session_now:
+            return self.build_signal(
+                action=Signal.HOLD,
+                current_bar=current_bar,
+                symbol=symbol,
+                timeframe=timeframe,
+                confidence=0.0,
+                rationale="outside_trading_session",
+                metadata={"is_in_session": False},
+            )
+
+        indicator_values = (
+            latest.get("vwap"),
+            latest.get("ema"),
+            latest.get("direction"),
+        )
+        if any(pd.isna(value) for value in indicator_values):
+            return self.build_signal(
+                action=Signal.HOLD,
+                current_bar=current_bar,
+                symbol=symbol,
+                timeframe=timeframe,
+                confidence=0.0,
+                rationale="indicator_warmup",
+                metadata={"is_in_session": True},
+            )
+
+        long_signal = bool(latest["long_signal"])
+        short_signal = bool(latest["short_signal"])
+
+        action = Signal.HOLD
+        rationale = "no_intraday_setup"
+        if long_signal and not short_signal:
+            action = Signal.BUY
+            rationale = "long_trend_setup"
+        elif short_signal and not long_signal:
+            action = Signal.SELL
+            rationale = "short_trend_setup"
+
+        confidence = 0.0 if action == Signal.HOLD else 0.75
+        return self.build_signal(
+            action=action,
+            current_bar=current_bar,
+            symbol=symbol,
+            timeframe=timeframe,
+            confidence=confidence,
+            rationale=rationale,
+            tags=("intraday", "trend_following"),
+            metadata={
+                "is_in_session": in_session_now,
+                "close": float(latest["close"]),
+                "vwap": float(latest["vwap"]),
+                "ema": float(latest["ema"]),
+                "direction": int(latest["direction"]),
+                "long_signal": long_signal,
+                "short_signal": short_signal,
+            },
+        )
+
+    def on_bar(
+        self,
+        data: pd.DataFrame,
+        current_bar: pd.Series,
+        bar_index: int,
+    ) -> Signal:
+        return self.generate_signal(
+            data=data,
+            current_bar=current_bar,
+            bar_index=bar_index,
+        ).action
 
 
 def _ensure_datetime_index(df: pd.DataFrame, timestamp_col: str = "timestamp") -> pd.DataFrame:

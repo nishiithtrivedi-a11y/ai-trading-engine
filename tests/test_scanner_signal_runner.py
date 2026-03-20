@@ -41,6 +41,31 @@ class ThresholdBuyStrategy(BaseStrategy):
         return Signal.BUY if float(current_bar["close"]) > threshold else Signal.HOLD
 
 
+class StructuredBuyStrategy(BaseStrategy):
+    def on_bar(self, data, current_bar, bar_index):
+        return Signal.HOLD
+
+    def generate_signal(
+        self,
+        data,
+        current_bar,
+        bar_index,
+        *,
+        symbol=None,
+        timeframe=None,
+    ):
+        return self.build_signal(
+            action=Signal.BUY,
+            current_bar=current_bar,
+            symbol=symbol,
+            timeframe=timeframe,
+            confidence=0.42,
+            rationale="structured_buy",
+            tags=("scanner",),
+            metadata={"source": "test"},
+        )
+
+
 def _build_data(num_bars: int = 20) -> DataHandler:
     df = pd.DataFrame(
         {
@@ -135,3 +160,17 @@ def test_rsi_strategy_metrics_attached() -> None:
     snap = runner.run_signal("RELIANCE.NS", "1D", spec, dh)
     # Signal can be hold/buy depending on data; metric attachment should still work.
     assert "oversold_threshold" in snap.extras or "rsi_current" in snap.extras
+
+
+def test_structured_signal_metadata_and_confidence_are_preserved() -> None:
+    dh = _build_data(30)
+    spec = StrategyScanSpec(strategy_class=StructuredBuyStrategy, params={})
+    runner = SignalRunner()
+
+    snap = runner.run_signal("TCS.NS", "1D", spec, dh)
+
+    assert snap.signal == "buy"
+    assert float(snap.extras["confidence"]) == 0.42
+    assert snap.extras["rationale"] == "structured_buy"
+    assert snap.extras["tags"] == ["scanner"]
+    assert snap.extras["signal_metadata"]["source"] == "test"

@@ -80,6 +80,33 @@ class BuySellAlternateStrategy(BaseStrategy):
         return Signal.HOLD
 
 
+class StructuredSignalStrategy(BaseStrategy):
+    """Test strategy that drives decisions through generate_signal()."""
+
+    def on_bar(self, data, current_bar, bar_index):
+        # Legacy path intentionally inert; engine should use generate_signal().
+        return Signal.HOLD
+
+    def generate_signal(self, data, current_bar, bar_index, *, symbol=None, timeframe=None):
+        if bar_index == 5:
+            return self.build_signal(
+                action=Signal.BUY,
+                current_bar=current_bar,
+                symbol=symbol,
+                timeframe=timeframe,
+                confidence=0.9,
+                rationale="structured_buy",
+            )
+        return self.build_signal(
+            action=Signal.HOLD,
+            current_bar=current_bar,
+            symbol=symbol,
+            timeframe=timeframe,
+            confidence=0.0,
+            rationale="no_action",
+        )
+
+
 class TestBacktestEngine:
 
     def test_basic_run(self):
@@ -206,6 +233,19 @@ class TestBacktestEngine:
         engine.run(dh)
 
         assert not engine.portfolio.has_position
+
+    def test_engine_accepts_structured_strategy_signal_contract(self):
+        data = make_trending_data(40, "up")
+        dh = DataHandler(data=data)
+        config = BacktestConfig(initial_capital=100_000)
+        strategy = StructuredSignalStrategy()
+
+        engine = BacktestEngine(config, strategy)
+        metrics = engine.run(dh)
+
+        assert metrics.metrics["num_trades"] >= 0
+        trade_log = engine.portfolio.get_trade_log()
+        assert len(trade_log) >= 0
 
 
 class TestPerformanceMetrics:

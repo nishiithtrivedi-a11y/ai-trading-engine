@@ -8,6 +8,7 @@ the on_bar() method.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
@@ -24,6 +25,44 @@ class Signal(Enum):
     HOLD = "hold"
 
 
+@dataclass
+class StrategySignal:
+    """
+    Standardized strategy output contract for engine and tooling consumers.
+
+    This remains advisory-only metadata and never triggers execution by itself.
+    """
+
+    action: Signal
+    strategy_name: str
+    symbol: Optional[str] = None
+    timestamp: Optional[pd.Timestamp] = None
+    timeframe: Optional[str] = None
+    confidence: Optional[float] = None
+    rationale: str = ""
+    tags: tuple[str, ...] = ()
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.confidence is not None and not (0.0 <= float(self.confidence) <= 1.0):
+            raise ValueError("confidence must be between 0.0 and 1.0 when provided")
+        if self.timestamp is not None and not isinstance(self.timestamp, pd.Timestamp):
+            self.timestamp = pd.Timestamp(self.timestamp)
+        if self.tags is None:
+            self.tags = ()
+        else:
+            self.tags = tuple(str(tag) for tag in self.tags)
+        if self.metadata is None:
+            self.metadata = {}
+
+    @property
+    def is_actionable(self) -> bool:
+        return self.action in {Signal.BUY, Signal.SELL, Signal.EXIT}
+
+    def to_legacy_signal(self) -> Signal:
+        return self.action
+
+
 class BaseStrategy(ABC):
     """Abstract base class for trading strategies.
 
@@ -33,6 +72,7 @@ class BaseStrategy(ABC):
     Optionally override:
         - initialize(): Set up indicators and state.
         - name: Property for the strategy name.
+        - generate_signal(): Structured signal payload.
 
     The strategy receives only data available up to the current bar,
     preventing lookahead bias by design.
@@ -72,6 +112,10 @@ class BaseStrategy(ABC):
         """
         return self._params.get(key, default)
 
+    def get_params(self) -> dict[str, Any]:
+        """Return a shallow copy of strategy parameters."""
+        return dict(self._params)
+
     @abstractmethod
     def on_bar(
         self,
@@ -95,6 +139,109 @@ class BaseStrategy(ABC):
             A Signal indicating the desired action.
         """
         ...
+
+    def generate_signal(
+        self,
+        data: pd.DataFrame,
+        current_bar: pd.Series,
+        bar_index: int,
+        *,
+        symbol: Optional[str] = None,
+        timeframe: Optional[str] = None,
+    ) -> StrategySignal:
+        """
+        Standardized structured signal output.
+
+        Default adapter keeps legacy strategy implementations compatible by
+        delegating to ``on_bar`` and wrapping the resulting action.
+        """
+        action = self.normalize_signal(
+            self.on_bar(
+                data=data,
+                current_bar=current_bar,
+                bar_index=bar_index,
+            )
+        )
+        return self.build_signal(
+            action=action,
+            current_bar=current_bar,
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+
+    def generate_signals(
+        self,
+        data: pd.DataFrame,
+        current_bar: pd.Series,
+        bar_index: int,
+        *,
+        symbol: Optional[str] = None,
+        timeframe: Optional[str] = None,
+    ) -> list[StrategySignal]:
+        """
+        Return strategy outputs in list form for fan-out friendly consumers.
+
+        Current engine strategies emit at most one signal per bar.
+        """
+        signal = self.generate_signal(
+            data=data,
+            current_bar=current_bar,
+            bar_index=bar_index,
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+        if signal.action == Signal.HOLD:
+            return []
+        return [signal]
+
+    @staticmethod
+    def normalize_signal(value: Signal | StrategySignal | str) -> Signal:
+        """Normalize legacy/structured signal outputs to ``Signal`` enum."""
+        if isinstance(value, StrategySignal):
+            return value.action
+
+        if isinstance(value, Signal):
+            return value
+
+        if isinstance(value, str):
+            clean = value.strip().lower()
+            for candidate in Signal:
+                if candidate.value == clean:
+                    return candidate
+            raise ValueError(f"Unsupported strategy signal output: {value!r}")
+
+        raise ValueError(f"Unsupported strategy signal output: {value!r}")
+
+    def build_signal(
+        self,
+        *,
+        action: Signal,
+        current_bar: Optional[pd.Series] = None,
+        symbol: Optional[str] = None,
+        timeframe: Optional[str] = None,
+        confidence: Optional[float] = None,
+        rationale: str = "",
+        tags: Optional[list[str] | tuple[str, ...]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> StrategySignal:
+        """Helper for consistent StrategySignal construction in subclasses."""
+        timestamp: Optional[pd.Timestamp] = None
+        if current_bar is not None:
+            bar_name = getattr(current_bar, "name", None)
+            if bar_name is not None:
+                timestamp = pd.Timestamp(bar_name)
+
+        return StrategySignal(
+            action=action,
+            strategy_name=self.name,
+            symbol=symbol,
+            timestamp=timestamp,
+            timeframe=timeframe,
+            confidence=confidence,
+            rationale=rationale,
+            tags=tuple(tags or ()),
+            metadata=dict(metadata or {}),
+        )
 
     @staticmethod
     def sma(series: pd.Series, period: int) -> pd.Series:
