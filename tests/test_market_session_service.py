@@ -5,14 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from src.api.services.market_session_service import (
-    MarketSessionPhase,
-    MarketSessionState,
-    get_market_session_state,
-)
+from src.api.services.market_session_service import MarketSessionPhase, get_market_session_state
 
 
 _IST = ZoneInfo("Asia/Kolkata")
+_HELSINKI = ZoneInfo("Europe/Helsinki")
 
 
 def _ist(hour: int, minute: int, *, weekday: int = 0) -> datetime:
@@ -57,6 +54,38 @@ def test_post_close_phase() -> None:
     assert state.is_tradeable is False
 
 
+def test_regression_2026_03_19_is_not_market_holiday() -> None:
+    """2026-03-19 is a normal trading day, so after-hours should be post-close."""
+    now = datetime(2026, 3, 19, 16, 0, tzinfo=_IST)
+    state = get_market_session_state(now)
+    assert state.phase == MarketSessionPhase.POST_CLOSE
+    assert state.label == "Post-Close"
+
+
+def test_regression_late_2026_03_19_local_time_not_holiday() -> None:
+    """Late local time on 2026-03-19 (Europe/Helsinki) maps to IST 2026-03-20 03:00."""
+    now = datetime(2026, 3, 19, 23, 30, tzinfo=_HELSINKI)
+    state = get_market_session_state(now)
+    assert state.phase == MarketSessionPhase.CLOSED
+    assert state.label == "Closed"
+
+
+def test_real_2026_holiday_is_classified_as_market_holiday() -> None:
+    """Holi (2026-03-03) is an NSE weekday trading holiday."""
+    now = datetime(2026, 3, 3, 10, 0, tzinfo=_IST)
+    state = get_market_session_state(now)
+    assert state.phase == MarketSessionPhase.CLOSED
+    assert state.label == "Market Holiday"
+
+
+def test_2026_03_20_is_regular_trading_day_during_market_hours() -> None:
+    """Regression: 2026-03-20 should not be treated as a holiday."""
+    now = datetime(2026, 3, 20, 10, 0, tzinfo=_IST)
+    state = get_market_session_state(now)
+    assert state.phase == MarketSessionPhase.OPEN
+    assert state.label == "Market Open"
+
+
 def test_closed_early_morning() -> None:
     now = _ist(7, 0, weekday=0)  # Mon 07:00
     state = get_market_session_state(now)
@@ -69,6 +98,7 @@ def test_weekend_saturday() -> None:
     state = get_market_session_state(now)
     assert state.phase == MarketSessionPhase.WEEKEND
     assert "Saturday" in state.label
+    assert "Holiday" not in state.label
     assert state.is_tradeable is False
 
 
