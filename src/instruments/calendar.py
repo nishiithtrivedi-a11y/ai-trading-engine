@@ -50,15 +50,21 @@ class TradingCalendar:
         date(2025, 10, 21),  # Diwali Balipratipada
         date(2025, 11, 5),   # Gurunanak Jayanti
         date(2025, 12, 25),  # Christmas
-        # 2026 NSE Holidays (standard market holidays - subject to NSE circular)
+        # 2026 NSE trading holidays (NSE Circular Ref. No. 212/2025, dated 2025-12-12)
         date(2026, 1, 26),   # Republic Day
-        date(2026, 3, 20),   # Holi (approximate)
-        date(2026, 4, 3),    # Good Friday (approximate)
+        date(2026, 3, 3),    # Holi
+        date(2026, 3, 26),   # Shri Ram Navami
+        date(2026, 3, 31),   # Shri Mahavir Jayanti
+        date(2026, 4, 3),    # Good Friday
         date(2026, 4, 14),   # Dr. Baba Saheb Ambedkar Jayanti
         date(2026, 5, 1),    # Maharashtra Day
-        date(2026, 8, 15),   # Independence Day
+        date(2026, 5, 28),   # Bakri Id
+        date(2026, 6, 26),   # Muharram
+        date(2026, 9, 14),   # Ganesh Chaturthi
         date(2026, 10, 2),   # Mahatma Gandhi Jayanti
-        date(2026, 11, 14),  # Diwali (approximate)
+        date(2026, 10, 20),  # Dussehra
+        date(2026, 11, 10),  # Diwali-Balipratipada
+        date(2026, 11, 24),  # Prakash Gurpurb Sri Guru Nanak Dev
         date(2026, 12, 25),  # Christmas
     )
 
