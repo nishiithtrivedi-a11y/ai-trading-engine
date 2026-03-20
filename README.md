@@ -98,6 +98,42 @@ Compatibility behavior:
 - Legacy consumers can still use enum outputs.
 - Updated consumers normalize both enum and structured outputs via `BaseStrategy.normalize_signal(...)`.
 
+## Strategy Library and Spreadsheet Traceability
+
+The strategy library is now organized by category under `src/strategies/`:
+
+- `intraday/`, `swing/`, `positional/`, `quant/`
+- scaffolds for `options/`, `futures/`, `commodities/`, `forex/`, `etf_index/`, `event_driven/`, `volatility/`, `relative_value/`, `unsupported/`
+
+Spreadsheet traceability is explicit and machine-readable:
+
+- Master manifest: `src/strategies/strategy_manifest.json`
+- Human summary: `docs/strategy_support_matrix.md`
+
+Each spreadsheet row is classified as one of:
+
+- `full`: directly implemented runnable strategy
+- `limited`: runnable but intentionally scoped proxy with explicit limitations
+- `deferred`: not runnable yet; requires additional data/infrastructure
+- `not_strategy_layer`: belongs to portfolio/execution/overlay layers
+
+Registry and discovery helpers in `src/strategies/registry.py`:
+
+- `get_strategy_catalog()`
+- `get_runtime_strategy_registry()`
+- `list_strategy_keys()`
+- `get_strategies_by_category()`
+- `load_strategy_manifest()`
+- `list_manifest_entries()`
+- `list_unsupported_strategies()`
+
+Adding a new strategy should include:
+
+1. strategy implementation in the appropriate folder
+2. registration in `src/strategies/registry.py`
+3. spreadsheet manifest mapping update in `src/strategies/strategy_manifest.json`
+4. tests for contract + behavior
+
 ## Capability Matrix
 
 | Feature | Supported | Notes |
