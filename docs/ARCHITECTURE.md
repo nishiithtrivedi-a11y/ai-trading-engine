@@ -26,6 +26,7 @@ It is not a live execution system today.
    - Standardized signal contract: `StrategySignal` via `generate_signal(...)`
    - Legacy-compatible `on_bar(...) -> Signal` remains supported through adapters
    - Small strategy registry helper (`src/strategies/registry.py`) for shared lookup/instantiation
+   - Compatibility adapters in consumers normalize both legacy enum and structured signals (`BaseStrategy.normalize_signal(...)`)
 
 4. **Scanner/Monitoring/Decision Layer** (`src/scanners/`, `src/monitoring/`, `src/decision/`)
    - Opportunity generation and scoring

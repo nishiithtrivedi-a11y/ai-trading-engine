@@ -212,10 +212,40 @@ def get_platform_status(
 
 def _compute_feature_availability(
     runtime_source: str,
-    provider_statuses: list[ProviderDiagnosticEntry],
     market_phase: MarketSessionPhase,
+    provider_statuses: Optional[list[ProviderDiagnosticEntry]] = None,
+    connected: Optional[int] = None,
 ) -> FeatureAvailability:
-    """Determine what features can safely be used right now."""
+    """
+    Determine what features can safely be used right now.
+
+    Backward compatibility:
+    - Legacy callers may provide ``connected`` without ``provider_statuses``.
+    - New callers should provide ``provider_statuses`` for richer truthfulness.
+    """
+    if provider_statuses is None:
+        connected_count = max(0, int(connected or 0))
+        has_broker_source = runtime_source not in ("csv", "indian_csv")
+        market_open = market_phase == MarketSessionPhase.OPEN
+
+        if has_broker_source:
+            if connected_count > 0:
+                if market_open:
+                    return FeatureAvailability.REALTIME_ANALYSIS
+                return FeatureAvailability.POST_MARKET
+            return FeatureAvailability.PRIMARY_OFFLINE
+
+        if connected_count > 0:
+            return FeatureAvailability.FALLBACK_ACTIVE
+
+        if market_phase in (
+            MarketSessionPhase.POST_CLOSE,
+            MarketSessionPhase.PRE_OPEN,
+        ):
+            return FeatureAvailability.POST_MARKET
+
+        return FeatureAvailability.OFFLINE_ANALYSIS
+
     has_broker_source = runtime_source not in ("csv", "indian_csv")
     market_open = market_phase == MarketSessionPhase.OPEN
 

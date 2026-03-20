@@ -85,6 +85,19 @@ class ExampleStrategy(BaseStrategy):
 Consumers can call either `on_bar(...)` (legacy) or `generate_signal(...)`
 (structured). Strategy modules should remain execution-disabled and side-effect free.
 
+### Adding a New Strategy
+
+1. Create a class under `src/strategies/` that subclasses `BaseStrategy`.
+2. Implement `on_bar(...) -> Signal` for legacy compatibility.
+3. Optionally override `generate_signal(...) -> StrategySignal` to provide richer metadata.
+4. Keep strategy code signal-only (no broker calls, no order placement, no notifications).
+5. Register the class in `src/strategies/registry.py` if it should be discoverable by name.
+
+Compatibility behavior:
+
+- Legacy consumers can still use enum outputs.
+- Updated consumers normalize both enum and structured outputs via `BaseStrategy.normalize_signal(...)`.
+
 ## Capability Matrix
 
 | Feature | Supported | Notes |
