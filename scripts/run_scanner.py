@@ -40,9 +40,11 @@ from src.scanners import (  # noqa: E402
     StrategyScanSpec,
     normalize_timeframe,
 )
-from src.strategies.breakout import BreakoutStrategy  # noqa: E402
-from src.strategies.rsi_reversion import RSIReversionStrategy  # noqa: E402
-from src.strategies.sma_crossover import SMACrossoverStrategy  # noqa: E402
+from src.strategies.registry import (  # noqa: E402
+    UnsupportedStrategyError,
+    resolve_package,
+    resolve_strategy,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,11 +85,16 @@ def parse_args() -> argparse.Namespace:
         help="Optional analysis profile name (for example: intraday_equity, swing_equity, macro_swing).",
     )
     parser.add_argument(
-        "--strategies",
+        "--strategy",
         nargs="+",
-        choices=["rsi", "sma", "breakout"],
-        default=["rsi", "sma"],
-        help="Strategies to scan.",
+        default=[],
+        help="Specific strategies to scan (e.g. 'rsi_reversion').",
+    )
+    parser.add_argument(
+        "--package",
+        nargs="+",
+        default=[],
+        help="Packages of strategies to scan (e.g. 'intraday', 'swing').",
     )
     parser.add_argument("--log-level", default="INFO", help="Reserved for future logging control.")
     parser.add_argument(
@@ -126,34 +133,36 @@ def _interval_to_timeframe(interval: str, profile_interval: str) -> str:
     return normalize_timeframe(mapping.get(str(interval).strip(), str(interval).strip()))
 
 
-def _strategy_specs(selected: list[str], timeframe: str) -> list[StrategyScanSpec]:
-    specs: list[StrategyScanSpec] = []
-    for name in selected:
-        if name == "rsi":
-            specs.append(
-                StrategyScanSpec(
-                    strategy_class=RSIReversionStrategy,
-                    params={"rsi_period": 14, "oversold": 30, "overbought": 70},
-                    timeframes=[timeframe],
-                )
-            )
-        elif name == "sma":
-            specs.append(
-                StrategyScanSpec(
-                    strategy_class=SMACrossoverStrategy,
-                    params={"fast_period": 20, "slow_period": 50},
-                    timeframes=[timeframe],
-                )
-            )
-        elif name == "breakout":
-            specs.append(
-                StrategyScanSpec(
-                    strategy_class=BreakoutStrategy,
-                    params={"entry_period": 20, "exit_period": 10},
-                    timeframes=[timeframe],
-                )
-            )
-    return specs
+def _strategy_specs(strategies: list[str], packages: list[str], timeframe: str) -> list[StrategyScanSpec]:
+    unique_specs = {}
+
+    for pkg in packages:
+        for spec in resolve_package(pkg):
+            unique_specs[spec.key] = spec
+
+    for strat in strategies:
+        try:
+            spec = resolve_strategy(strat)
+            unique_specs[spec.key] = spec
+        except UnsupportedStrategyError as e:
+            print(f"Warning: {e}")
+
+    if not unique_specs:
+        if not strategies and not packages:
+            for strat in ["rsi_reversion", "sma_crossover"]:
+                spec = resolve_strategy(strat)
+                unique_specs[spec.key] = spec
+        else:
+            raise ValueError("No runnable strategies resolved from the provided arguments.")
+
+    return [
+        StrategyScanSpec(
+            strategy_class=spec.strategy_class,
+            params=dict(spec.params),
+            timeframes=[timeframe],
+        )
+        for spec in unique_specs.values()
+    ]
 
 
 def _resolve_symbols(args: argparse.Namespace, loader: NSEUniverseLoader) -> list[str]:
@@ -241,7 +250,7 @@ def main() -> int:
         provider_name=args.provider,
         data_dir=args.data_dir,
         timeframes=[timeframe],
-        strategy_specs=_strategy_specs(args.strategies, timeframe),
+        strategy_specs=_strategy_specs(args.strategy, args.package, timeframe),
         top_n=max(1, top_n),
         enable_analysis_features=bool(args.enable_analysis_features),
         analysis_profile=str(args.analysis_profile).strip(),
@@ -275,7 +284,8 @@ def main() -> int:
             "symbols": symbols,
             "universe_source": ("symbols_file" if args.symbols_file else ("symbols" if args.symbols else args.universe)),
             "top_n": scanner_config.top_n,
-            "strategies": list(args.strategies),
+            "strategies": list(args.strategy),
+            "packages": list(args.package),
         },
     )
     artifacts["scanner_artifacts_meta"] = meta_path

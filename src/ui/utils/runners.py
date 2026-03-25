@@ -53,21 +53,23 @@ class RunResult:
 def _default_strategy_specs() -> list:
     """Return default RSI + SMA strategy scan specs."""
     from src.scanners.config import StrategyScanSpec
-    from src.strategies.rsi_reversion import RSIReversionStrategy
-    from src.strategies.sma_crossover import SMACrossoverStrategy
+    from src.strategies.registry import resolve_strategy
 
-    return [
-        StrategyScanSpec(
-            strategy_class=RSIReversionStrategy,
-            params={"rsi_period": 14, "oversold": 30, "overbought": 70},
-            timeframes=["1D"],
-        ),
-        StrategyScanSpec(
-            strategy_class=SMACrossoverStrategy,
-            params={"fast_period": 10, "slow_period": 30},
-            timeframes=["1D"],
-        ),
-    ]
+    specs = []
+    for strat_key in ["rsi_reversion", "sma_crossover"]:
+        try:
+            s = resolve_strategy(strat_key)
+            specs.append(
+                StrategyScanSpec(
+                    strategy_class=s.strategy_class,
+                    params=dict(s.params),
+                    timeframes=["1D"],
+                )
+            )
+        except Exception:
+            pass
+
+    return specs
 
 
 def _default_scanner_config(output_dir: str = "output") -> "ScannerConfig":

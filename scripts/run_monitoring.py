@@ -100,6 +100,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Write artifacts directly into --output-dir.",
     )
+    parser.add_argument(
+        "--strategy", nargs="+",
+        default=[],
+        help="Specific strategies for the inline scanner.",
+    )
+    parser.add_argument(
+        "--package", nargs="+",
+        default=[],
+        help="Strategy packages for the inline scanner.",
+    )
     args = parser.parse_args()
 
     validate_symbol_inputs(
@@ -136,6 +146,43 @@ def _resolve_symbols_from_inputs(args: argparse.Namespace) -> list[str]:
     if args.symbols_file:
         return loader.get_custom_universe(args.symbols_file)
     return loader.get_universe(args.universe)
+
+
+def _build_standalone_strategy_specs(strategies: list[str], packages: list[str], timeframe: str) -> list[StrategyScanSpec]:
+    from src.strategies.registry import resolve_package, resolve_strategy
+
+    unique_specs = {}
+
+    for pkg in packages:
+        for spec in resolve_package(pkg):
+            unique_specs[spec.key] = spec
+
+    for strat in strategies:
+        try:
+            spec = resolve_strategy(strat)
+            unique_specs[spec.key] = spec
+        except Exception as e:
+            print(f"Warning: {e}")
+
+    if not unique_specs:
+        if not strategies and not packages:
+            for strat in ["sma_crossover", "rsi_reversion"]:
+                try:
+                    spec = resolve_strategy(strat)
+                    unique_specs[spec.key] = spec
+                except Exception:
+                    pass
+        if not unique_specs:
+            raise ValueError("No runnable strategies resolved.")
+
+    return [
+        StrategyScanSpec(
+            strategy_class=spec.strategy_class,
+            params=dict(spec.params),
+            timeframes=[timeframe],
+        )
+        for spec in unique_specs.values()
+    ]
 
 
 def _resolve_scanner_input_dir(args: argparse.Namespace) -> Path | None:
@@ -270,18 +317,11 @@ def main() -> int:
         provider_name=args.provider,
         data_dir=args.data_dir,
         timeframes=[timeframe],
-        strategy_specs=[
-            StrategyScanSpec(
-                strategy_class=RSIReversionStrategy,
-                params={"rsi_period": 14, "oversold": 30, "overbought": 70},
-                timeframes=[timeframe],
-            ),
-            StrategyScanSpec(
-                strategy_class=SMACrossoverStrategy,
-                params={"fast_period": 20, "slow_period": 50},
-                timeframes=[timeframe],
-            ),
-        ],
+        strategy_specs=_build_standalone_strategy_specs(
+            strategies=getattr(args, "strategy", []),
+            packages=getattr(args, "package", []),
+            timeframe=timeframe,
+        ),
         enable_analysis_features=bool(args.enable_analysis_features),
         analysis_profile=str(args.analysis_profile).strip(),
     )

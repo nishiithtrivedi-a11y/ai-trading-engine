@@ -104,10 +104,14 @@ def parse_args() -> argparse.Namespace:
         help="Bar interval (default: day).",
     )
     p.add_argument(
-        "--strategies", nargs="+",
-        choices=["sma", "rsi", "breakout"],
-        default=["sma", "rsi", "breakout"],
-        help="Which strategies to run (default: all three).",
+        "--strategy", nargs="+",
+        default=[],
+        help="Specific strategies to run (e.g. 'sma_crossover').",
+    )
+    p.add_argument(
+        "--package", nargs="+",
+        default=[],
+        help="Strategy packages to run (e.g. 'positional', 'swing').",
     )
     p.add_argument(
         "--top-n", type=int, default=20,
@@ -405,43 +409,64 @@ def interval_to_timeframe(interval: str):
 # ---------------------------------------------------------------------------
 # Strategy registry
 # ---------------------------------------------------------------------------
-def build_strategy_registry(optimize: bool) -> dict[str, dict[str, Any]]:
+def build_strategy_registry(strategies: list[str], packages: list[str]) -> dict[str, dict[str, Any]]:
     """
-    Returns a dict keyed by strategy short name containing:
+    Returns a dict keyed by canonical strategy name containing:
       class      - the strategy class
       params     - default parameters for single-run mode
       param_grid - grid for StrategyOptimizer (used when --optimize)
     """
-    from src.strategies.sma_crossover import SMACrossoverStrategy
-    from src.strategies.rsi_reversion import RSIReversionStrategy
-    from src.strategies.breakout import BreakoutStrategy
+    from src.strategies.registry import resolve_package, resolve_strategy, UnsupportedStrategyError
 
-    return {
-        "sma": {
-            "class": SMACrossoverStrategy,
-            "params": {"fast_period": 20, "slow_period": 50},
-            "param_grid": {
-                "fast_period": [10, 20],
-                "slow_period": [30, 50, 100],
-            },
+    unique_specs = {}
+
+    for pkg in packages:
+        for spec in resolve_package(pkg):
+            unique_specs[spec.key] = spec
+
+    for strat in strategies:
+        try:
+            spec = resolve_strategy(strat)
+            unique_specs[spec.key] = spec
+        except UnsupportedStrategyError as e:
+            warn(f"Warning: {e}")
+
+    if not unique_specs:
+        if not strategies and not packages:
+            # Default fallback for simple runs
+            for strat in ["sma_crossover", "rsi_reversion", "breakout"]:
+                try:
+                    spec = resolve_strategy(strat)
+                    unique_specs[spec.key] = spec
+                except Exception:
+                    pass
+        if not unique_specs:
+            raise ValueError("No runnable strategies resolved.")
+
+    # Apply known parameter grids for historical compatibility, otherwise fallback to single-point grid
+    _KNOWN_GRIDS = {
+        "sma_crossover": {
+            "fast_period": [10, 20],
+            "slow_period": [30, 50, 100],
         },
-        "rsi": {
-            "class": RSIReversionStrategy,
-            "params": {"rsi_period": 14, "oversold": 30, "overbought": 70},
-            "param_grid": {
-                "rsi_period": [14],
-                "oversold":   [25, 30],
-                "overbought": [70, 75],
-            },
+        "rsi_reversion": {
+            "rsi_period": [14],
+            "oversold":   [25, 30],
+            "overbought": [70, 75],
         },
         "breakout": {
-            "class": BreakoutStrategy,
-            "params": {"entry_period": 20, "exit_period": 10},
-            "param_grid": {
-                "entry_period": [20, 40],
-                "exit_period":  [10, 15],
-            },
+            "entry_period": [20, 40],
+            "exit_period":  [10, 15],
         },
+    }
+
+    return {
+        key: {
+            "class": spec.strategy_class,
+            "params": dict(spec.params),
+            "param_grid": _KNOWN_GRIDS.get(key, {k: [v] for k, v in spec.params.items()}),
+        }
+        for key, spec in unique_specs.items()
     }
 
 
@@ -461,9 +486,9 @@ MIN_TRADES  = 3     # minimum trades required to be included in ranking
 # regime never blocks a strategy (conservative / safe default).
 # Keyed by the same strings used in build_strategy_registry().
 _REGIME_ALLOWED: dict[str, frozenset] = {
-    "sma":      frozenset({"bullish_trending", "bullish_sideways", "unknown"}),
-    "breakout": frozenset({"bullish_trending", "bullish_sideways", "unknown"}),
-    "rsi":      frozenset({"rangebound",       "bullish_sideways", "unknown"}),
+    "sma_crossover": frozenset({"bullish_trending", "bullish_sideways", "unknown"}),
+    "breakout":      frozenset({"bullish_trending", "bullish_sideways", "unknown"}),
+    "rsi_reversion": frozenset({"rangebound",       "bullish_sideways", "unknown"}),
 }
 
 # CompositeRegime.value -> nearest RegimeState.value.
@@ -896,7 +921,8 @@ def export_results(
     lines.append(f"**Elapsed:** {elapsed:.1f}s  ")
     lines.append(f"**Interval:** {args.interval}  ")
     lines.append(f"**Look-back:** {args.days} days  ")
-    lines.append(f"**Strategies tested:** {', '.join(args.strategies)}  ")
+    lines.append(f"**Strategy arguments:** {', '.join(args.strategy)}  ")
+    lines.append(f"**Package arguments:** {', '.join(args.package)}  ")
     lines.append(f"**Optimised:** {'Yes' if args.optimize else 'No'}  ")
     lines.append(f"**Total results:** {len(df_all)} ({len(df_valid)} passed min-trades filter)  ")
     if regime_filter_active:
@@ -1021,7 +1047,8 @@ def main() -> None:
     section("NIFTY 50 ZERODHA RESEARCH RUNNER")
     info(f"Interval     : {args.interval}")
     info(f"Look-back    : {args.days} days")
-    info(f"Strategies   : {', '.join(args.strategies)}")
+    info(f"Strategy     : {', '.join(args.strategy)}")
+    info(f"Package      : {', '.join(args.package)}")
     info(f"Optimize     : {args.optimize}")
     info(f"Symbols limit: {args.symbols_limit or 'all'}")
     info(f"Top-N        : {args.top_n}")
@@ -1074,8 +1101,7 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # Strategy registry
     # -----------------------------------------------------------------------
-    registry = build_strategy_registry(args.optimize)
-    selected = {k: v for k, v in registry.items() if k in args.strategies}
+    selected = build_strategy_registry(strategies=args.strategy, packages=args.package)
     ok(f"Loaded {len(selected)} strategy definitions: {list(selected)}")
 
     # -----------------------------------------------------------------------
@@ -1366,7 +1392,7 @@ def main() -> None:
             "interval":         args.interval,
             "days":             args.days,
             "symbols_tested":   len(symbols),
-            "strategies":       ", ".join(args.strategies),
+            "strategies":       ", ".join(list(selected.keys())),
             "regime_label_scope": "per-symbol end-of-period composite regime",
             "output_dir":       str(output_dir),
         }
@@ -1407,7 +1433,7 @@ def main() -> None:
             "interval":       args.interval,
             "days":           args.days,
             "symbols_tested": len(symbols),
-            "strategies":     ", ".join(args.strategies),
+            "strategies":     ", ".join(list(selected.keys())),
             "source_report":  "research/regime_validation.md",
         }
         try:
@@ -1484,7 +1510,7 @@ def main() -> None:
             "interval":       args.interval,
             "days":           args.days,
             "symbols_tested": len(symbols_df_cache),
-            "strategies":     ", ".join(args.strategies),
+            "strategies":     ", ".join(list(selected.keys())),
             "train_days":     wf_train_days,
             "test_days":      wf_test_days,
             "step_days":      wf_step_days,
@@ -1493,7 +1519,7 @@ def main() -> None:
         try:
             wf_records = _run_wf(
                 symbols_data=symbols_df_cache,
-                strategies=registry,
+                strategies=selected,
                 train_days=wf_train_days,
                 test_days=wf_test_days,
                 step_days=wf_step_days,
@@ -1669,7 +1695,7 @@ def main() -> None:
         _portfolio_output = str(output_dir / "portfolio")
         _pb = _PBacktester(
             base_config=base_config,
-            strategy_registry=registry,
+            strategy_registry=selected,
             symbol_to_data=_sym_to_dh,
             max_positions=_max_pos,
             regime_policy=_portfolio_policy,
@@ -1698,7 +1724,7 @@ def main() -> None:
                 "interval":      args.interval,
                 "days":          args.days,
                 "symbols_tested": len(_sym_to_dh),
-                "strategies":    ", ".join(args.strategies),
+                "strategies":    ", ".join(list(selected.keys())),
                 "max_positions": _max_pos,
                 "regime_policy_used": bool(_portfolio_policy),
             }
@@ -1789,7 +1815,7 @@ def main() -> None:
                 "interval":           args.interval,
                 "days":               args.days,
                 "symbols_tested":     len(symbols),
-                "strategies":         ", ".join(args.strategies),
+                "strategies":         ", ".join(list(selected.keys())),
                 "portfolio_backtest": portfolio_backtest_active,
             }
             _gen_risk_report(
@@ -1895,7 +1921,7 @@ def main() -> None:
                     "interval":           args.interval,
                     "days":               args.days,
                     "symbols_tested":     len(symbols),
-                    "strategies":         ", ".join(args.strategies),
+                    "strategies":         ", ".join(list(selected.keys())),
                     "commission_bps":     _commission_bps,
                     "slippage_bps":       _slippage_bps,
                     "fill_mode":          "next_bar_open" if _next_bar_fill else "current_bar_close",

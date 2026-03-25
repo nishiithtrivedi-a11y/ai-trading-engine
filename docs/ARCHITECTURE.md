@@ -25,8 +25,8 @@ It is not a live execution system today.
    - Category-organized strategy implementations (intraday/swing/positional/quant + focused futures/forex/relative-value proxies)
    - Standardized signal contract: `StrategySignal` via `generate_signal(...)`
    - Legacy-compatible `on_bar(...) -> Signal` remains supported through adapters
-   - Metadata-backed strategy registry helper (`src/strategies/registry.py`) for shared lookup/instantiation/catalog access
-   - Spreadsheet traceability via `src/strategies/strategy_manifest.json` and `docs/strategy_support_matrix.md`
+   - Dynamic Strategy Discovery (`src/strategies/registry.py`) provides generic lookup, instantiation, and package-based resolution (`resolve_package`, `resolve_strategy`) with fuzzy-matching and alias support.
+   - Manifest traceability via `src/strategies/strategy_manifest.json` handles production readiness filtering and spreadsheet documentation links.
    - Compatibility adapters in consumers normalize both legacy enum and structured signals (`BaseStrategy.normalize_signal(...)`)
 
 4. **Scanner/Monitoring/Decision Layer** (`src/scanners/`, `src/monitoring/`, `src/decision/`)

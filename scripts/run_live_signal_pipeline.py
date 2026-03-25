@@ -35,9 +35,11 @@ from src.runtime import (  # noqa: E402
     validate_symbol_inputs,
     write_output_manifest,
 )
-from src.strategies.breakout import BreakoutStrategy  # noqa: E402
-from src.strategies.rsi_reversion import RSIReversionStrategy  # noqa: E402
-from src.strategies.sma_crossover import SMACrossoverStrategy  # noqa: E402
+from src.strategies.registry import (  # noqa: E402
+    UnsupportedStrategyError,
+    resolve_package,
+    resolve_strategy,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,11 +62,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--poll-seconds", type=int, default=0, help="Optional polling interval in seconds")
     parser.add_argument("--max-cycles", type=int, default=3, help="Max cycles when polling is enabled")
     parser.add_argument(
-        "--strategies",
-        nargs="+",
-        choices=["sma", "rsi", "breakout"],
-        default=["sma", "rsi", "breakout"],
-        help="Available strategy set for signal generation",
+        "--strategy", nargs="+",
+        default=[],
+        help="Specific strategies for signal generation",
+    )
+    parser.add_argument(
+        "--package", nargs="+",
+        default=[],
+        help="Strategy packages for signal generation",
     )
 
     args = parser.parse_args()
@@ -90,22 +95,38 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def build_strategy_registry(selected: list[str]) -> dict[str, dict[str, Any]]:
-    all_strategies: dict[str, dict[str, Any]] = {
-        "sma": {
-            "class": SMACrossoverStrategy,
-            "params": {"fast_period": 20, "slow_period": 50},
-        },
-        "rsi": {
-            "class": RSIReversionStrategy,
-            "params": {"rsi_period": 14, "oversold": 30, "overbought": 70},
-        },
-        "breakout": {
-            "class": BreakoutStrategy,
-            "params": {"entry_period": 20, "exit_period": 10},
-        },
+def build_strategy_registry(strategies: list[str], packages: list[str]) -> dict[str, dict[str, Any]]:
+    unique_specs = {}
+
+    for pkg in packages:
+        for spec in resolve_package(pkg):
+            unique_specs[spec.key] = spec
+
+    for strat in strategies:
+        try:
+            spec = resolve_strategy(strat)
+            unique_specs[spec.key] = spec
+        except UnsupportedStrategyError as e:
+            print(f"Warning: {e}")
+
+    if not unique_specs:
+        if not strategies and not packages:
+            for strat in ["sma_crossover", "rsi_reversion", "breakout"]:
+                try:
+                    spec = resolve_strategy(strat)
+                    unique_specs[spec.key] = spec
+                except Exception:
+                    pass
+        if not unique_specs:
+            raise ValueError("No runnable strategies resolved.")
+
+    return {
+        key: {
+            "class": spec.strategy_class,
+            "params": dict(spec.params),
+        }
+        for key, spec in unique_specs.items()
     }
-    return {name: all_strategies[name] for name in selected}
 
 
 def print_cycle_summary(cycle_num: int, report) -> None:
@@ -190,7 +211,7 @@ def main() -> int:
 
     pipeline = LiveSignalPipeline(
         config=config,
-        strategy_registry=build_strategy_registry(args.strategies),
+        strategy_registry=build_strategy_registry(strategies=args.strategy, packages=args.package),
         regime_policy=regime_policy,
     )
 

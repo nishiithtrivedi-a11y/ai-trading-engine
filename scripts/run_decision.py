@@ -230,6 +230,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Write artifacts directly into --output-dir.",
     )
+    parser.add_argument(
+        "--strategy", nargs="+",
+        default=[],
+        help="Specific strategies for standalone scanner run.",
+    )
+    parser.add_argument(
+        "--package", nargs="+",
+        default=[],
+        help="Strategy packages for standalone scanner run.",
+    )
     args = parser.parse_args()
 
     validate_symbol_inputs(
@@ -412,6 +422,7 @@ def _resolve_symbols_from_inputs(args: argparse.Namespace) -> list[str]:
 
 def _build_monitoring_from_symbols(
     *,
+    args: argparse.Namespace,
     symbols: list[str],
     provider_name: str,
     data_dir: str,
@@ -425,18 +436,11 @@ def _build_monitoring_from_symbols(
         provider_name=provider_name,
         data_dir=data_dir,
         timeframes=[timeframe],
-        strategy_specs=[
-            StrategyScanSpec(
-                strategy_class=RSIReversionStrategy,
-                params={"rsi_period": 14, "oversold": 30, "overbought": 70},
-                timeframes=[timeframe],
-            ),
-            StrategyScanSpec(
-                strategy_class=SMACrossoverStrategy,
-                params={"fast_period": 20, "slow_period": 50},
-                timeframes=[timeframe],
-            ),
-        ],
+        strategy_specs=_build_standalone_strategy_specs(
+            strategies=getattr(args, "strategy", []),
+            packages=getattr(args, "package", []),
+            timeframe=timeframe,
+        ),
         enable_analysis_features=bool(enable_analysis_features),
         analysis_profile=str(analysis_profile).strip(),
     )
@@ -762,6 +766,7 @@ def main() -> int:
         if not symbols:
             raise ValueError("No symbols resolved for standalone decision run")
         monitoring_result = _build_monitoring_from_symbols(
+            args=args,
             symbols=symbols,
             provider_name=args.provider,
             data_dir=args.data_dir,

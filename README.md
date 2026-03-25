@@ -119,18 +119,16 @@ Each spreadsheet row is classified as one of:
 
 Registry and discovery helpers in `src/strategies/registry.py`:
 
+- `resolve_strategy(name)`: Exact, alias, or fuzzy matching for a specific strategy
+- `resolve_package(category)`: Dynamic generic discovery of all production-ready strategies within a folder/category
 - `get_strategy_catalog()`
-- `get_runtime_strategy_registry()`
-- `list_strategy_keys()`
-- `get_strategies_by_category()`
 - `load_strategy_manifest()`
-- `list_manifest_entries()`
 - `list_unsupported_strategies()`
 
 Adding a new strategy should include:
 
-1. strategy implementation in the appropriate folder
-2. registration in `src/strategies/registry.py`
+1. strategy implementation in the appropriate category folder
+2. class and metadata registration in `src/strategies/registry.py`
 3. spreadsheet manifest mapping update in `src/strategies/strategy_manifest.json`
 4. tests for contract + behavior
 

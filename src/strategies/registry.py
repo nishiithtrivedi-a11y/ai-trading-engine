@@ -9,6 +9,7 @@ This module keeps strategy discovery explicit and engine-safe:
 
 from __future__ import annotations
 
+import difflib
 import json
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -585,7 +586,8 @@ _MANIFEST_PATH = Path(__file__).resolve().parent / "strategy_manifest.json"
 
 
 def _normalize_name(name: str) -> str:
-    return str(name).strip().lower()
+    # Handle spaces vs underscores for user inputs like "intraday trend following"
+    return str(name).strip().lower().replace(" ", "_")
 
 
 def _resolve_key(name: str) -> str:
@@ -594,8 +596,86 @@ def _resolve_key(name: str) -> str:
         return key
     if key in _ALIAS_TO_KEY:
         return _ALIAS_TO_KEY[key]
+        
+    # Check for close matches
+    available_keys = list(_SPEC_BY_KEY.keys()) + list(_ALIAS_TO_KEY.keys())
+    matches = difflib.get_close_matches(key, available_keys, n=3, cutoff=0.6)
+    
+    if matches:
+        suggestion = ", ".join(f"'{m}'" for m in matches)
+        raise ValueError(f"Unknown strategy '{name}'. Did you mean: {suggestion}?")
+        
     available = ", ".join(sorted(_SPEC_BY_KEY.keys()))
     raise ValueError(f"Unknown strategy '{name}'. Available strategies: {available}")
+
+
+class UnsupportedStrategyError(ValueError):
+    """Raised when a strategy is found but marked unsupported/deferred in manifest."""
+    pass
+
+
+def resolve_strategy(name: str) -> StrategySpec:
+    """
+    Resolve a strategy spec by exact name or alias.
+    Raises ValueError if unknown.
+    Raises UnsupportedStrategyError if found but unsupported/deferred.
+    """
+    key = _resolve_key(name)
+    spec = _SPEC_BY_KEY[key]
+    
+    # Check manifest for unsupported status
+    manifest = load_strategy_manifest()
+    rows = manifest.get("strategies", [])
+    for row in rows:
+        if str(row.get("key", "")).strip().lower() == key:
+            classification = str(row.get("classification", "")).strip().lower()
+            if classification in {"deferred", "not_strategy_layer", "unsupported"}:
+                reason = row.get("notes", "No reason provided")
+                raise UnsupportedStrategyError(
+                    f"Strategy '{name}' (key: '{key}') is currently unsupported/deferred. "
+                    f"Classification: {classification}. Reason: {reason}."
+                )
+            break
+            
+    return spec
+
+
+def resolve_package(category: str) -> list[StrategySpec]:
+    """
+    Return all runnable strategies in the given category/package.
+    Excludes unsupported/deferred strategies.
+    Raises ValueError if category does not exist.
+    """
+    cat_norm = _normalize_name(category).strip("_")
+    if not cat_norm:
+        raise ValueError("Package/category name cannot be empty")
+        
+    specs = [s for s in _SPECS if _normalize_name(s.category) == cat_norm]
+    if not specs:
+        categories = sorted({_normalize_name(s.category) for s in _SPECS})
+        # Check close matches for category
+        matches = difflib.get_close_matches(cat_norm, categories, n=3, cutoff=0.6)
+        if matches:
+            suggestion = ", ".join(f"'{m}'" for m in matches)
+            raise ValueError(f"Unknown package '{category}'. Did you mean: {suggestion}?")
+        raise ValueError(f"Unknown package '{category}'. Available packages: {', '.join(categories)}")
+        
+    # Filter out unsupported from manifest
+    manifest = load_strategy_manifest()
+    rows = manifest.get("strategies", [])
+    unsupported_keys = {
+        str(r.get("key", "")).strip().lower() 
+        for r in rows 
+        if str(r.get("classification", "")).strip().lower() in {"deferred", "not_strategy_layer", "unsupported"}
+    }
+    
+    runnable = [s for s in specs if s.key not in unsupported_keys]
+    return runnable
+
+
+def list_packages() -> list[str]:
+    """Return a sorted list of all available strategy packages/categories."""
+    return sorted({s.category for s in _SPECS})
 
 
 def get_strategy_registry() -> dict[str, StrategyClass]:
