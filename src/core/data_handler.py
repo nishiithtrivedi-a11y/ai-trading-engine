@@ -147,9 +147,38 @@ class DataHandler:
         self._data = df.copy()
         self._current_index = 0
 
+        # Pre-compute timezone/session columns for intraday optimisation
+        self._precompute_session_columns()
+
         logger.info(
             f"Data loaded: {len(df)} bars from {df.index[0]} to {df.index[-1]}"
         )
+
+    # ------------------------------------------------------------------
+    # Session column caching (performance)
+    # ------------------------------------------------------------------
+    def _precompute_session_columns(self) -> None:
+        """Cache timezone-aware session columns to avoid repeated recomputation.
+
+        Adds ``_cached_session_date`` and ``_cached_local_ts`` columns when
+        the index is a DatetimeIndex.  Strategies and engine helpers that
+        would otherwise call ``tz_localize`` / ``tz_convert`` / ``normalize``
+        on every bar can read these cached columns instead.
+        """
+        idx = self._data.index
+        if not isinstance(idx, pd.DatetimeIndex):
+            return
+
+        try:
+            if idx.tz is not None:
+                local_idx = idx.tz_convert("Asia/Kolkata")
+            else:
+                local_idx = idx.tz_localize("Asia/Kolkata")
+        except Exception:
+            return  # Cannot determine timezone; skip caching
+
+        self._data["_cached_session_date"] = local_idx.normalize()
+        self._data["_cached_local_ts"] = local_idx
 
     @property
     def data(self) -> pd.DataFrame:

@@ -119,7 +119,7 @@ class Portfolio:
             entry_fees=order.fees,
         )
 
-        logger.info(
+        logger.debug(
             f"Opened {self.position.side} position: "
             f"{order.quantity:.4f} @ {order.fill_price:.4f} "
             f"(cost={cost:.2f}, fees={order.fees:.4f})"
@@ -194,7 +194,7 @@ class Portfolio:
         self.trades.append(trade)
         self.position = None
 
-        logger.info(
+        logger.debug(
             f"Closed position: {pos.side} {pos.quantity:.4f} "
             f"@ {order.fill_price:.4f} | PnL={net_pnl:.2f} ({return_pct:.2%}) "
             f"| reason={exit_reason}"

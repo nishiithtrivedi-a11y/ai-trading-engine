@@ -338,15 +338,21 @@ class BaseStrategy(ABC):
         if missing:
             raise ValueError(f"Missing required columns for VWAP: {sorted(missing)}")
 
-        df = data.copy()
-        df[timestamp_col] = pd.to_datetime(df[timestamp_col])
-
-        if getattr(df[timestamp_col].dt, "tz", None) is None:
-            df[timestamp_col] = df[timestamp_col].dt.tz_localize(timezone)
+        # Fast path: use pre-cached session_date from DataHandler
+        if "_cached_session_date" in data.columns:
+            df = data.copy()
+            df["session_date"] = df["_cached_session_date"]
         else:
-            df[timestamp_col] = df[timestamp_col].dt.tz_convert(timezone)
+            df = data.copy()
+            df[timestamp_col] = pd.to_datetime(df[timestamp_col])
 
-        df["session_date"] = df[timestamp_col].dt.normalize()
+            if getattr(df[timestamp_col].dt, "tz", None) is None:
+                df[timestamp_col] = df[timestamp_col].dt.tz_localize(timezone)
+            else:
+                df[timestamp_col] = df[timestamp_col].dt.tz_convert(timezone)
+
+            df["session_date"] = df[timestamp_col].dt.normalize()
+
         df["_pv"] = df[price_col].astype(float) * df[volume_col].astype(float)
 
         if window is None:

@@ -79,7 +79,9 @@ class OpeningRangeBreakoutStrategy(BaseStrategy):
             )
 
         idx = data.index
-        if idx.tz is None:
+        if "_cached_local_ts" in data.columns:
+            local_idx = pd.DatetimeIndex(data["_cached_local_ts"])
+        elif idx.tz is None:
             local_idx = idx.tz_localize("UTC").tz_convert(self.config.timezone)
         else:
             local_idx = idx.tz_convert(self.config.timezone)

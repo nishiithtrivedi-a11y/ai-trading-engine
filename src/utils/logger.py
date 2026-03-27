@@ -14,6 +14,7 @@ def setup_logger(
     name: str = "backtest",
     level: int = logging.INFO,
     log_file: Optional[str] = None,
+    quiet: bool = False,
 ) -> logging.Logger:
     """Create and configure a logger.
 
@@ -21,10 +22,13 @@ def setup_logger(
         name: Logger name.
         level: Logging level.
         log_file: Optional file path for log output.
+        quiet: If True, override level to WARNING for batch runs.
 
     Returns:
         Configured logger instance.
     """
+    if quiet:
+        level = logging.WARNING
     logger = logging.getLogger(name)
 
     # Avoid adding duplicate handlers on repeated calls
