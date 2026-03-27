@@ -31,8 +31,13 @@ Outputs (all written to --output-dir, default: output/nifty50_research/):
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import hashlib
+import json
+import logging
 import os
 import sys
+import threading
 import time
 import traceback
 from datetime import datetime, timedelta
@@ -348,6 +353,24 @@ def parse_args() -> argparse.Namespace:
     )
     p.set_defaults(use_next_bar_fill=True)
 
+    # ---- Performance & Reliability ----
+    p.add_argument(
+        "--resume", action="store_true",
+        help="Resume from last checkpoint (skip completed symbols).",
+    )
+    p.add_argument(
+        "--quiet", action="store_true",
+        help="Reduce logging verbosity for batch runs.",
+    )
+    p.add_argument(
+        "--workers", type=int, default=1, metavar="N",
+        help="Number of parallel workers for symbol processing (default: 1 = serial).",
+    )
+    p.add_argument(
+        "--prefetch-workers", type=int, default=4, metavar="N",
+        help="Number of threads for concurrent data prefetch (default: 4).",
+    )
+
     args = p.parse_args()
 
     if args.symbols_limit < 0:
@@ -547,6 +570,169 @@ def is_strategy_allowed(
         f"{strategy_name} blocked in '{composite_regime_value}' "
         f"(allowed: {sorted(allowed_set)})"
     )
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint / resume helpers (A + B)
+# ---------------------------------------------------------------------------
+def _run_config_hash(args: argparse.Namespace, strategy_keys: list[str]) -> str:
+    """Deterministic hash of the key run parameters.
+
+    Prevents resuming a run with different settings (which would produce
+    incoherent result files).
+    """
+    blob = json.dumps(
+        {
+            "interval": args.interval,
+            "days": args.days,
+            "strategies": sorted(strategy_keys),
+            "optimize": args.optimize,
+            "fee_rate": args.fee_rate,
+            "slippage_rate": args.slippage_rate,
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
+def _write_checkpoint(
+    path: Path,
+    completed_symbols: set[str],
+    config_hash: str,
+) -> None:
+    """Atomically write a checkpoint file (tmp + rename)."""
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps(
+            {
+                "completed_symbols": sorted(completed_symbols),
+                "run_config_hash": config_hash,
+                "last_updated": datetime.now().isoformat(),
+            },
+            indent=2,
+        )
+    )
+    tmp.replace(path)
+
+
+def _load_checkpoint(
+    output_dir: Path,
+    config_hash: str,
+) -> tuple[set[str], list[dict]]:
+    """Load checkpoint state and any incremental results from a prior run.
+
+    Returns
+    -------
+    (completed_symbols, prior_rows)
+    """
+    completed: set[str] = set()
+    prior_rows: list[dict] = []
+
+    ckpt_path = output_dir / "_checkpoint.json"
+    inc_path = output_dir / "_incremental_results.csv"
+
+    if not ckpt_path.exists():
+        return completed, prior_rows
+
+    try:
+        ckpt = json.loads(ckpt_path.read_text())
+    except Exception:
+        return completed, prior_rows
+
+    if ckpt.get("run_config_hash") != config_hash:
+        warn(
+            "Checkpoint config mismatch — starting fresh "
+            f"(expected {config_hash}, got {ckpt.get('run_config_hash')})"
+        )
+        return set(), []
+
+    completed = set(ckpt.get("completed_symbols", []))
+
+    if inc_path.exists():
+        try:
+            df_prior = pd.read_csv(inc_path)
+            prior_rows = df_prior.to_dict(orient="records")
+        except Exception:
+            pass
+
+    return completed, prior_rows
+
+
+def _write_incremental(
+    rows: list[dict],
+    inc_path: Path,
+) -> None:
+    """Append symbol-level result rows to the incremental CSV."""
+    if not rows:
+        return
+    df_inc = pd.DataFrame(rows)
+    header = not inc_path.exists()
+    df_inc.to_csv(inc_path, mode="a", header=header, index=False)
+
+
+def _cleanup_checkpoint_files(output_dir: Path) -> None:
+    """Remove transient checkpoint files after a successful run."""
+    for name in ("_checkpoint.json", "_checkpoint.tmp", "_incremental_results.csv"):
+        p = output_dir / name
+        if p.exists():
+            p.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Symbol-level worker for multiprocessing (E)
+# ---------------------------------------------------------------------------
+def _process_symbol(
+    symbol: str,
+    df: pd.DataFrame,
+    selected: dict[str, dict[str, Any]],
+    base_config,
+    optimize: bool,
+    output_dir: Path,
+    regime_analysis_active: bool,
+    regime_snap_value: Optional[str],
+    composite_value: str,
+    regime_filter_active: bool,
+) -> tuple[str, list[dict]]:
+    """Process all strategies for one symbol.  Designed to be safe for use
+    in a separate process (no shared mutable state).
+
+    Returns (symbol, list_of_result_rows).
+    """
+    rows: list[dict] = []
+    for strat_name, strat_def in selected.items():
+        if regime_filter_active:
+            allowed_flag, _reason = is_strategy_allowed(strat_name, composite_value)
+            if not allowed_flag:
+                continue
+        try:
+            if optimize:
+                row = run_optimized(
+                    symbol=symbol,
+                    df=df,
+                    strategy_name=strat_name,
+                    strategy_class=strat_def["class"],
+                    param_grid=strat_def["param_grid"],
+                    base_config=base_config,
+                    output_dir=output_dir,
+                )
+            else:
+                row = run_single(
+                    symbol=symbol,
+                    df=df,
+                    strategy_name=strat_name,
+                    strategy_class=strat_def["class"],
+                    params=strat_def["params"],
+                    base_config=base_config,
+                )
+        except Exception as exc:
+            warn(f"    Backtest failed for {symbol}/{strat_name}: {exc}")
+            row = None
+
+        if row is not None:
+            if regime_analysis_active or regime_snap_value is not None:
+                row["regime_label"] = composite_value
+            rows.append(row)
+    return symbol, rows
 
 
 # ---------------------------------------------------------------------------
@@ -1044,6 +1230,11 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # --quiet: reduce logging noise from core modules during batch runs
+    if getattr(args, "quiet", False):
+        for _logger_name in ("portfolio", "engine", "broker", "data_handler"):
+            logging.getLogger(_logger_name).setLevel(logging.WARNING)
+
     section("NIFTY 50 ZERODHA RESEARCH RUNNER")
     info(f"Interval     : {args.interval}")
     info(f"Look-back    : {args.days} days")
@@ -1250,106 +1441,230 @@ def main() -> None:
     symbols_df_cache: dict[str, Any] = {}
 
     # -----------------------------------------------------------------------
+    # Checkpoint / resume (A)
+    # -----------------------------------------------------------------------
+    config_hash = _run_config_hash(args, list(selected.keys()))
+    completed_symbols: set[str] = set()
+    incremental_path = output_dir / "_incremental_results.csv"
+
+    all_rows: list[dict] = []
+    if getattr(args, "resume", False):
+        completed_symbols, prior_rows = _load_checkpoint(output_dir, config_hash)
+        if completed_symbols:
+            all_rows = prior_rows
+            ok(f"Resuming: {len(completed_symbols)} symbols already completed, "
+               f"{len(prior_rows)} prior result rows loaded")
+
+    # -----------------------------------------------------------------------
+    # Concurrent data prefetch (D)
+    # -----------------------------------------------------------------------
+    prefetch_workers = getattr(args, "prefetch_workers", 4)
+    prefetched: dict[str, Optional[pd.DataFrame]] = {}
+
+    if prefetch_workers > 1 and len(symbols) > 1:
+        section("DATA PREFETCH")
+        _api_semaphore = threading.Semaphore(3)  # Zerodha rate limit ~3 req/s
+
+        def _fetch_one(sym: str) -> tuple[str, Optional[pd.DataFrame]]:
+            with _api_semaphore:
+                try:
+                    return sym, fetch_symbol_df(sym, z_source, timeframe, start_dt, end_dt, fallback_dfs)
+                except Exception as exc:
+                    warn(f"  Prefetch failed for {sym}: {exc}")
+                    return sym, None
+
+        _pw = min(prefetch_workers, len(symbols))
+        _t0 = time.time()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=_pw) as pool:
+            futures = {pool.submit(_fetch_one, sym): sym for sym in symbols}
+            for future in concurrent.futures.as_completed(futures):
+                sym, _df = future.result()
+                prefetched[sym] = _df
+                if _df is not None:
+                    info(f"  Prefetched {sym}: {len(_df)} bars")
+                else:
+                    warn(f"  Prefetch returned no data for {sym}")
+        _fetch_elapsed = time.time() - _t0
+        ok(f"Prefetched {sum(1 for v in prefetched.values() if v is not None)}"
+           f"/{len(symbols)} symbols in {_fetch_elapsed:.1f}s")
+    else:
+        # Sequential fetch (original behaviour) — populate prefetched dict
+        for sym in symbols:
+            prefetched[sym] = None  # will be fetched inline in the serial path
+
+    # -----------------------------------------------------------------------
     # Main research loop
     # -----------------------------------------------------------------------
     section("RUNNING BACKTESTS")
-    all_rows: list[dict] = []
     total_combos = len(symbols) * len(selected)
     combo_num    = 0
     skipped      = 0
     regime_skipped = 0
+    num_workers  = getattr(args, "workers", 1)
 
-    for sym_idx, symbol in enumerate(symbols):
-        print(f"\n  [{sym_idx + 1}/{len(symbols)}] {symbol}")
+    if num_workers > 1 and len(symbols) > 1:
+        # ===================================================================
+        # Parallel path (E): symbol-level multiprocessing
+        # ===================================================================
+        from concurrent.futures import ProcessPoolExecutor
 
-        # Fetch data for this symbol
-        df = fetch_symbol_df(symbol, z_source, timeframe, start_dt, end_dt, fallback_dfs)
-        if df is None or df.empty:
-            warn(f"    No data for {symbol} - skipping all strategies")
-            skipped += len(selected)
-            continue
+        pending_symbols = [
+            sym for sym in symbols
+            if sym not in completed_symbols and prefetched.get(sym) is not None
+        ]
+        info(f"Parallel mode: {num_workers} workers, {len(pending_symbols)} symbols to process")
 
-        info(f"    Data: {len(df)} bars  ({df.index[0]} -> {df.index[-1]})")
+        _regime_snap_val = composite_value if regime_snap is not None else None
 
-        # Cache DataFrame for walk-forward validation (when active)
-        if walk_forward_active:
-            symbols_df_cache[symbol] = df
-
-        # -------------------------------------------------------------------
-        # Per-symbol regime label for result row tagging
-        #
-        # --regime-analysis: detect regime from THIS symbol's own OHLCV data
-        #   → accurate historical label for each symbol's test period
-        # --include-regime only: reuse the global (first-symbol) regime label
-        #   → preserves original single-regime-per-run behaviour
-        # Neither flag: no regime_label added to rows
-        # -------------------------------------------------------------------
-        sym_regime_label = "unknown"   # safe default used only when analysis active
-        if regime_analysis_active:
-            sym_snap = detect_market_regime(df, symbol=symbol)
-            if sym_snap is not None:
-                sym_regime_label = sym_snap.composite_regime.value
-                info(
-                    f"    Regime ({symbol}): {sym_regime_label} "
-                    f"| trend={sym_snap.trend_regime.value} "
-                    f"| vol={sym_snap.volatility_regime.value}"
-                )
-            else:
-                warn(f"    Regime detection failed for {symbol}; label set to 'unknown'")
-        elif regime_snap is not None:
-            # --include-regime only: uniform label from first-symbol detection
-            sym_regime_label = composite_value
-
-        # Run each strategy
-        for strat_name, strat_def in selected.items():
-            combo_num += 1
-
-            # --- Regime gate (active only when --regime-filter was given) ---
-            if regime_filter_active:
-                allowed_flag, filter_reason = is_strategy_allowed(strat_name, composite_value)
-                if not allowed_flag:
-                    print(
-                        f"    ({combo_num}/{total_combos}) Strategy: {strat_name}"
-                        f"  -> SKIPPED [{filter_reason}]"
-                    )
-                    regime_skipped += 1
+        with ProcessPoolExecutor(max_workers=min(num_workers, len(pending_symbols) or 1)) as pool:
+            future_to_sym = {
+                pool.submit(
+                    _process_symbol,
+                    sym,
+                    prefetched[sym],
+                    selected,
+                    base_config,
+                    args.optimize,
+                    output_dir,
+                    regime_analysis_active,
+                    _regime_snap_val,
+                    composite_value,
+                    regime_filter_active,
+                ): sym
+                for sym in pending_symbols
+            }
+            for future in concurrent.futures.as_completed(future_to_sym):
+                sym = future_to_sym[future]
+                try:
+                    _sym, rows = future.result()
+                except Exception as exc:
+                    warn(f"  Worker failed for {sym}: {exc}")
+                    skipped += len(selected)
                     continue
 
-            print(f"    ({combo_num}/{total_combos}) Strategy: {strat_name}", end="  ", flush=True)
+                all_rows.extend(rows)
+                completed_symbols.add(sym)
 
-            if args.optimize:
-                row = run_optimized(
-                    symbol=symbol,
-                    df=df,
-                    strategy_name=strat_name,
-                    strategy_class=strat_def["class"],
-                    param_grid=strat_def["param_grid"],
-                    base_config=base_config,
-                    output_dir=output_dir,
-                )
-            else:
-                row = run_single(
-                    symbol=symbol,
-                    df=df,
-                    strategy_name=strat_name,
-                    strategy_class=strat_def["class"],
-                    params=strat_def["params"],
-                    base_config=base_config,
-                )
+                # Incremental write (B) + checkpoint (A)
+                _write_incremental(rows, incremental_path)
+                _write_checkpoint(output_dir / "_checkpoint.json", completed_symbols, config_hash)
 
-            if row is not None:
-                # Tag regime_label when any regime detection was active.
-                # When --regime-analysis: per-symbol label (most precise).
-                # When --include-regime only: global label (original behaviour).
-                if regime_analysis_active or regime_snap is not None:
-                    row["regime_label"] = sym_regime_label
-                all_rows.append(row)
-                trades = row.get("num_trades", 0) or 0
-                score  = row.get("score", float("nan"))
-                print(f"-> trades={trades}  score={score:.3f}")
+                # Cache for walk-forward
+                if walk_forward_active and sym in prefetched and prefetched[sym] is not None:
+                    symbols_df_cache[sym] = prefetched[sym]
+
+                trades_total = sum(r.get("num_trades", 0) or 0 for r in rows)
+                print(f"  [{len(completed_symbols)}/{len(symbols)}] {sym} done "
+                      f"({len(rows)} results, {trades_total} trades)")
+
+        # Count skipped symbols with no data
+        for sym in symbols:
+            if sym not in completed_symbols and prefetched.get(sym) is None:
+                skipped += len(selected)
+
+    else:
+        # ===================================================================
+        # Serial path (original behaviour, with checkpoint + incremental)
+        # ===================================================================
+        for sym_idx, symbol in enumerate(symbols):
+            print(f"\n  [{sym_idx + 1}/{len(symbols)}] {symbol}")
+
+            # Skip already-completed symbols (resume)
+            if symbol in completed_symbols:
+                info(f"    Already completed (resume) - skipping")
+                combo_num += len(selected)
+                continue
+
+            # Fetch data — use prefetched if available, otherwise fetch inline
+            if prefetched.get(symbol) is not None:
+                df = prefetched[symbol]
             else:
-                print("-> FAILED")
-                skipped += 1
+                df = fetch_symbol_df(symbol, z_source, timeframe, start_dt, end_dt, fallback_dfs)
+
+            if df is None or df.empty:
+                warn(f"    No data for {symbol} - skipping all strategies")
+                skipped += len(selected)
+                combo_num += len(selected)
+                continue
+
+            info(f"    Data: {len(df)} bars  ({df.index[0]} -> {df.index[-1]})")
+
+            # Cache DataFrame for walk-forward validation (when active)
+            if walk_forward_active:
+                symbols_df_cache[symbol] = df
+
+            # ---------------------------------------------------------------
+            # Per-symbol regime label for result row tagging
+            # ---------------------------------------------------------------
+            sym_regime_label = "unknown"
+            if regime_analysis_active:
+                sym_snap = detect_market_regime(df, symbol=symbol)
+                if sym_snap is not None:
+                    sym_regime_label = sym_snap.composite_regime.value
+                    info(
+                        f"    Regime ({symbol}): {sym_regime_label} "
+                        f"| trend={sym_snap.trend_regime.value} "
+                        f"| vol={sym_snap.volatility_regime.value}"
+                    )
+                else:
+                    warn(f"    Regime detection failed for {symbol}; label set to 'unknown'")
+            elif regime_snap is not None:
+                sym_regime_label = composite_value
+
+            # Run each strategy
+            symbol_rows: list[dict] = []
+            for strat_name, strat_def in selected.items():
+                combo_num += 1
+
+                # --- Regime gate ---
+                if regime_filter_active:
+                    allowed_flag, filter_reason = is_strategy_allowed(strat_name, composite_value)
+                    if not allowed_flag:
+                        print(
+                            f"    ({combo_num}/{total_combos}) Strategy: {strat_name}"
+                            f"  -> SKIPPED [{filter_reason}]"
+                        )
+                        regime_skipped += 1
+                        continue
+
+                print(f"    ({combo_num}/{total_combos}) Strategy: {strat_name}", end="  ", flush=True)
+
+                if args.optimize:
+                    row = run_optimized(
+                        symbol=symbol,
+                        df=df,
+                        strategy_name=strat_name,
+                        strategy_class=strat_def["class"],
+                        param_grid=strat_def["param_grid"],
+                        base_config=base_config,
+                        output_dir=output_dir,
+                    )
+                else:
+                    row = run_single(
+                        symbol=symbol,
+                        df=df,
+                        strategy_name=strat_name,
+                        strategy_class=strat_def["class"],
+                        params=strat_def["params"],
+                        base_config=base_config,
+                    )
+
+                if row is not None:
+                    if regime_analysis_active or regime_snap is not None:
+                        row["regime_label"] = sym_regime_label
+                    all_rows.append(row)
+                    symbol_rows.append(row)
+                    trades = row.get("num_trades", 0) or 0
+                    score  = row.get("score", float("nan"))
+                    print(f"-> trades={trades}  score={score:.3f}")
+                else:
+                    print("-> FAILED")
+                    skipped += 1
+
+            # Per-symbol: incremental write (B) + checkpoint (A)
+            completed_symbols.add(symbol)
+            _write_incremental(symbol_rows, incremental_path)
+            _write_checkpoint(output_dir / "_checkpoint.json", completed_symbols, config_hash)
 
     # -----------------------------------------------------------------------
     # Results summary (console)
@@ -1981,6 +2296,9 @@ def main() -> None:
             fail(f"Artifact contract validation failed: {exc}")
             raise SystemExit(1)
         ok(f"Written: {_manifest_path}")
+
+    # Clean up transient checkpoint/incremental files after successful export
+    _cleanup_checkpoint_files(output_dir)
 
     elapsed = time.time() - start_time
     section("DONE")
