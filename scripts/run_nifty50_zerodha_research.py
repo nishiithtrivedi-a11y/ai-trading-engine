@@ -698,6 +698,14 @@ def _process_symbol(
 
     Returns (symbol, list_of_result_rows).
     """
+    sym_regime_label = "unknown"
+    if regime_analysis_active:
+        sym_snap = detect_market_regime(df, symbol=symbol)
+        if sym_snap is not None:
+            sym_regime_label = sym_snap.composite_regime.value
+    elif regime_snap_value is not None:
+        sym_regime_label = composite_value
+
     rows: list[dict] = []
     for strat_name, strat_def in selected.items():
         if regime_filter_active:
@@ -730,7 +738,7 @@ def _process_symbol(
 
         if row is not None:
             if regime_analysis_active or regime_snap_value is not None:
-                row["regime_label"] = composite_value
+                row["regime_label"] = sym_regime_label
             rows.append(row)
     return symbol, rows
 
