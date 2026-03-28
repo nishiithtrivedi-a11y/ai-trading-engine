@@ -46,3 +46,18 @@ analysis_providers:
   sentiment_provider: none
   intermarket_provider: derived
   allow_derived_sentiment_fallback: true
+
+# Kite (Zerodha) API constraints
+# Maximum calendar-day span per historical data request, keyed by Kite interval string.
+# ZerodhaDataSource._max_days_per_request() reads these at runtime.
+# If a key is absent the code falls back to the hardcoded defaults.
+kite:
+  historical_range_days:
+    minute: 60
+    3minute: 60
+    5minute: 100
+    10minute: 100
+    15minute: 100
+    30minute: 200
+    60minute: 400
+    day: 2000
