@@ -64,8 +64,16 @@ class PivotPointReversalStrategy(BaseStrategy):
 
         day_keys = pd.Series(local_idx.date, index=data.index)
         current_day = day_keys.iloc[-1]
-        prev_mask = day_keys < current_day
-        if not prev_mask.any():
+
+        # B3 fix: use only the *most recent* completed session (the last day
+        # strictly before current_day), not all prior history.
+        # Using all prior days would produce extreme H/L values pulled from
+        # weeks/months of history, not the prior-session pivots that the
+        # strategy is intended to trade.
+        all_prior_days = sorted(
+            {d for d in day_keys.unique() if d < current_day}
+        )
+        if not all_prior_days:
             return self.build_signal(
                 action=Signal.HOLD,
                 current_bar=current_bar,
@@ -75,7 +83,10 @@ class PivotPointReversalStrategy(BaseStrategy):
                 rationale="no_previous_session",
             )
 
+        prior_session_day = all_prior_days[-1]  # most recent completed session
+        prev_mask = day_keys == prior_session_day
         prev_data = data.loc[prev_mask]
+
         prev_high = float(prev_data["high"].max())
         prev_low = float(prev_data["low"].min())
         prev_close = float(prev_data["close"].iloc[-1])

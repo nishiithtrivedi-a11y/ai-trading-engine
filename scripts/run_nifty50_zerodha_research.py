@@ -662,12 +662,33 @@ def _write_incremental(
     rows: list[dict],
     inc_path: Path,
 ) -> None:
-    """Append symbol-level result rows to the incremental CSV."""
+    """Atomically append symbol-level result rows to the incremental CSV.
+
+    B2 fix: writes are now crash-safe.  New rows are appended in memory then
+    written to a sibling ``.tmp`` file before being atomically renamed over
+    the real file via ``Path.replace()``.  A partial write can never corrupt
+    the existing incremental CSV because the rename only happens after the
+    temp file is fully flushed and closed.
+    """
     if not rows:
         return
-    df_inc = pd.DataFrame(rows)
-    header = not inc_path.exists()
-    df_inc.to_csv(inc_path, mode="a", header=header, index=False)
+
+    df_new = pd.DataFrame(rows)
+    # Strip internal bookkeeping keys (e.g. _engine_results, _row_score)
+    # that must not appear in the CSV output.
+    df_new = df_new[[c for c in df_new.columns if not c.startswith("_")]]
+
+    tmp_path = inc_path.with_suffix(".tmp")
+
+    if inc_path.exists():
+        # Read existing data, append new rows, write all to tmp, then replace.
+        existing = pd.read_csv(inc_path)
+        combined = pd.concat([existing, df_new], ignore_index=True)
+        combined.to_csv(tmp_path, index=False)
+    else:
+        df_new.to_csv(tmp_path, index=False)
+
+    tmp_path.replace(inc_path)
 
 
 def _cleanup_checkpoint_files(output_dir: Path) -> None:
@@ -692,9 +713,16 @@ def _process_symbol(
     regime_snap_value: Optional[str],
     composite_value: str,
     regime_filter_active: bool,
+    portfolio_backtest_active: bool = False,
 ) -> tuple[str, list[dict]]:
-    """Process all strategies for one symbol.  Designed to be safe for use
-    in a separate process (no shared mutable state).
+    """Process all strategies for one symbol.
+
+    B5: Shared worker used by BOTH the serial and parallel runner paths to
+    ensure identical per-symbol behaviour (regime detection, strategy
+    execution, row construction).  The function is safe for use in a
+    subprocess (no shared mutable state), which is required by the parallel
+    path.  Runner-level concerns (progress counters, walk-forward cache,
+    checkpoint writes) are handled by the caller.
 
     Returns (symbol, list_of_result_rows).
     """
@@ -724,6 +752,7 @@ def _process_symbol(
                     output_dir=output_dir,
                 )
             else:
+                # B1: capture engine results when portfolio reuse is needed
                 row = run_single(
                     symbol=symbol,
                     df=df,
@@ -731,6 +760,7 @@ def _process_symbol(
                     strategy_class=strat_def["class"],
                     params=strat_def["params"],
                     base_config=base_config,
+                    return_engine_results=portfolio_backtest_active,
                 )
         except Exception as exc:
             warn(f"    Backtest failed for {symbol}/{strat_name}: {exc}")
@@ -753,10 +783,18 @@ def run_single(
     strategy_class,
     params: dict[str, Any],
     base_config,
+    *,
+    return_engine_results: bool = False,
 ) -> Optional[dict[str, Any]]:
     """
     Run a single backtest for one symbol + strategy + param set.
     Returns a flat result dict or None on failure.
+
+    When ``return_engine_results=True``, the returned dict also contains an
+    ``"_engine_results"`` key with the full ``BacktestEngine.get_results()``
+    payload (equity_curve, trade_log DataFrames).  This allows the portfolio
+    backtester to reuse already-computed results (B1) instead of re-running.
+    The key is prefixed with ``_`` so it is ignored by downstream CSV writers.
     """
     from src.core.data_handler import DataHandler
     from src.core.backtest_engine import BacktestEngine
@@ -791,6 +829,11 @@ def run_single(
             row[key] = m.get(key)
 
         row["score"] = compute_score(row)
+
+        # B1: optionally attach full engine results for portfolio reuse
+        if return_engine_results:
+            row["_engine_results"] = engine.get_results()
+
         return row
 
     except Exception as exc:
@@ -1448,6 +1491,17 @@ def main() -> None:
     # Cache pre-fetched DataFrames for walk-forward (populated in loop below)
     symbols_df_cache: dict[str, Any] = {}
 
+    # B1: Cache per-symbol engine results (equity_curve + trade_log) for
+    # portfolio backtester reuse.  Keyed by symbol; value is the dict returned
+    # by BacktestEngine.get_results().  Only populated in non-optimise serial
+    # mode when --portfolio-backtest is active, to avoid memory overhead on
+    # large runs that don't need portfolio analysis.
+    engine_results_cache: dict[str, Any] = {}
+
+    # Resolve portfolio_backtest_active early so the main loop can use it
+    # to decide whether to capture engine results (B1).
+    portfolio_backtest_active: bool = getattr(args, "portfolio_backtest", False)
+
     # -----------------------------------------------------------------------
     # Checkpoint / resume (A)
     # -----------------------------------------------------------------------
@@ -1538,6 +1592,7 @@ def main() -> None:
                     _regime_snap_val,
                     composite_value,
                     regime_filter_active,
+                    portfolio_backtest_active,  # B1/B5: pass through for engine result capture
                 ): sym
                 for sym in pending_symbols
             }
@@ -1549,6 +1604,18 @@ def main() -> None:
                     warn(f"  Worker failed for {sym}: {exc}")
                     skipped += len(selected)
                     continue
+
+                # B1: extract engine results from rows (parallel path)
+                for _row in rows:
+                    _eng = _row.pop("_engine_results", None)
+                    if _eng is not None:
+                        prev = engine_results_cache.get(sym)
+                        if prev is None or (
+                            (_row.get("score") or 0)
+                            > (prev.get("_row_score") or 0)
+                        ):
+                            _eng["_row_score"] = _row.get("score") or 0
+                            engine_results_cache[sym] = _eng
 
                 all_rows.extend(rows)
                 completed_symbols.add(sym)
@@ -1572,8 +1639,17 @@ def main() -> None:
 
     else:
         # ===================================================================
-        # Serial path (original behaviour, with checkpoint + incremental)
+        # Serial path — uses the shared _process_symbol core (B5)
         # ===================================================================
+        # B5: The serial path now delegates per-symbol regime detection and
+        # strategy execution to the same _process_symbol function used by the
+        # parallel path.  This eliminates the duplicated inline logic and
+        # ensures both paths produce identical result rows for the same input.
+        # Progress counters and walk-forward/engine-result caching are handled
+        # here (around _process_symbol) because those concerns are runner-level
+        # and should not bleed into the reusable worker function.
+        _regime_snap_val = composite_value if regime_snap is not None else None
+
         for sym_idx, symbol in enumerate(symbols):
             print(f"\n  [{sym_idx + 1}/{len(symbols)}] {symbol}")
 
@@ -1597,82 +1673,54 @@ def main() -> None:
 
             info(f"    Data: {len(df)} bars  ({df.index[0]} -> {df.index[-1]})")
 
-            # Cache DataFrame for walk-forward validation (when active)
-            if walk_forward_active:
+            # Cache DataFrame for walk-forward and portfolio-backtest reuse
+            if walk_forward_active or portfolio_backtest_active:
                 symbols_df_cache[symbol] = df
 
-            # ---------------------------------------------------------------
-            # Per-symbol regime label for result row tagging
-            # ---------------------------------------------------------------
-            sym_regime_label = "unknown"
-            if regime_analysis_active:
-                sym_snap = detect_market_regime(df, symbol=symbol)
-                if sym_snap is not None:
-                    sym_regime_label = sym_snap.composite_regime.value
-                    info(
-                        f"    Regime ({symbol}): {sym_regime_label} "
-                        f"| trend={sym_snap.trend_regime.value} "
-                        f"| vol={sym_snap.volatility_regime.value}"
-                    )
-                else:
-                    warn(f"    Regime detection failed for {symbol}; label set to 'unknown'")
-            elif regime_snap is not None:
-                sym_regime_label = composite_value
+            # B5: delegate to the shared worker (same function as parallel path)
+            _sym_out, symbol_rows = _process_symbol(
+                symbol=symbol,
+                df=df,
+                selected=selected,
+                base_config=base_config,
+                optimize=args.optimize,
+                output_dir=output_dir,
+                regime_analysis_active=regime_analysis_active,
+                regime_snap_value=_regime_snap_val,
+                composite_value=composite_value,
+                regime_filter_active=regime_filter_active,
+                portfolio_backtest_active=portfolio_backtest_active,
+            )
 
-            # Run each strategy
-            symbol_rows: list[dict] = []
-            for strat_name, strat_def in selected.items():
-                combo_num += 1
+            # Update progress counters and report
+            combo_num += len(selected)
 
-                # --- Regime gate ---
-                if regime_filter_active:
-                    allowed_flag, filter_reason = is_strategy_allowed(strat_name, composite_value)
-                    if not allowed_flag:
-                        print(
-                            f"    ({combo_num}/{total_combos}) Strategy: {strat_name}"
-                            f"  -> SKIPPED [{filter_reason}]"
-                        )
-                        regime_skipped += 1
-                        continue
+            for row in symbol_rows:
+                # B1: cache engine results keyed by symbol (keep the
+                # highest-scoring strategy result for each symbol).
+                _eng = row.pop("_engine_results", None)
+                if _eng is not None:
+                    prev = engine_results_cache.get(symbol)
+                    if prev is None or (
+                        (row.get("score") or 0)
+                        > (prev.get("_row_score") or 0)
+                    ):
+                        _eng["_row_score"] = row.get("score") or 0
+                        engine_results_cache[symbol] = _eng
 
-                print(f"    ({combo_num}/{total_combos}) Strategy: {strat_name}", end="  ", flush=True)
+                trades = row.get("num_trades", 0) or 0
+                score  = row.get("score", float("nan"))
+                strat  = row.get("strategy", "?")
+                print(f"    {strat}  -> trades={trades}  score={score:.3f}")
 
-                if args.optimize:
-                    row = run_optimized(
-                        symbol=symbol,
-                        df=df,
-                        strategy_name=strat_name,
-                        strategy_class=strat_def["class"],
-                        param_grid=strat_def["param_grid"],
-                        base_config=base_config,
-                        output_dir=output_dir,
-                    )
-                else:
-                    row = run_single(
-                        symbol=symbol,
-                        df=df,
-                        strategy_name=strat_name,
-                        strategy_class=strat_def["class"],
-                        params=strat_def["params"],
-                        base_config=base_config,
-                    )
-
-                if row is not None:
-                    if regime_analysis_active or regime_snap is not None:
-                        row["regime_label"] = sym_regime_label
-                    all_rows.append(row)
-                    symbol_rows.append(row)
-                    trades = row.get("num_trades", 0) or 0
-                    score  = row.get("score", float("nan"))
-                    print(f"-> trades={trades}  score={score:.3f}")
-                else:
-                    print("-> FAILED")
-                    skipped += 1
+            if not symbol_rows:
+                skipped += len(selected)
 
             # Per-symbol: incremental write (B) + checkpoint (A)
             completed_symbols.add(symbol)
             _write_incremental(symbol_rows, incremental_path)
             _write_checkpoint(output_dir / "_checkpoint.json", completed_symbols, config_hash)
+            all_rows.extend(symbol_rows)
 
     # -----------------------------------------------------------------------
     # Results summary (console)
@@ -2025,14 +2073,27 @@ def main() -> None:
             output_dir=_portfolio_output,
         )
 
+        # B1: determine which symbols have pre-computed engine results and
+        # can skip a redundant backtest run.
+        _precomputed_for_portfolio = {
+            sym: engine_results_cache[sym]
+            for sym in _sym_to_dh
+            if sym in engine_results_cache
+        }
+        _has_precomputed = bool(_precomputed_for_portfolio)
         info(
             f"Running portfolio backtest: {len(_sym_to_dh)} symbols, "
             f"max_positions={_max_pos}, "
-            f"regime_policy={'Yes' if _portfolio_policy else 'No'}"
+            f"regime_policy={'Yes' if _portfolio_policy else 'No'}, "
+            f"pre-computed={'Yes (' + str(len(_precomputed_for_portfolio)) + ')' if _has_precomputed else 'No'}"
         )
 
         try:
-            _pb_result = _pb.run()
+            # B1: reuse runner results when available to avoid double work
+            if _has_precomputed:
+                _pb_result = _pb.run_from_engine_results(_precomputed_for_portfolio)
+            else:
+                _pb_result = _pb.run()
 
             ok(f"Portfolio return    : {_pb_result.portfolio_return_pct * 100:.2f}%")
             ok(f"Portfolio Sharpe    : {_pb_result.sharpe_ratio:.4f}")
