@@ -361,6 +361,149 @@ class PortfolioBacktester:
         return self._result
 
     # ------------------------------------------------------------------
+    # B1: Accept pre-computed per-symbol engine results (avoids re-running)
+    # ------------------------------------------------------------------
+
+    def run_from_engine_results(
+        self,
+        precomputed: dict[str, dict[str, Any]],
+    ) -> PortfolioBacktestResult:
+        """Build a portfolio result from already-computed per-symbol backtests.
+
+        This method mirrors ``run()`` but skips the per-symbol backtest step,
+        consuming ``equity_curve`` and ``trade_log`` DataFrames that were
+        produced by the runner's main loop.  Calling this instead of ``run()``
+        eliminates the duplicate backtest work when the runner already has
+        results available.
+
+        Parameters
+        ----------
+        precomputed:
+            Mapping of symbol -> engine results dict.  Each value must have at
+            least the keys returned by ``BacktestEngine.get_results()``:
+            ``"metrics"``, ``"equity_curve"`` (DataFrame), ``"trade_log"``
+            (DataFrame).  Symbols missing from ``precomputed`` are treated as
+            failed and skipped.
+
+        Returns
+        -------
+        PortfolioBacktestResult
+            Identical schema to ``run()`` — all downstream consumers work
+            unchanged.
+        """
+        logger.info(
+            f"Portfolio backtest (pre-computed): {len(precomputed)} symbols provided, "
+            f"max_positions={self.max_positions}"
+        )
+
+        all_symbols = sorted(self.symbol_to_data.keys())
+        active_symbols = all_symbols[: self.max_positions]
+        skipped_symbols = all_symbols[self.max_positions :]
+
+        if skipped_symbols:
+            logger.info(
+                f"Skipping {len(skipped_symbols)} symbol(s) due to max_positions limit: "
+                f"{skipped_symbols}"
+            )
+
+        num_active = len(active_symbols)
+        allocation_slots = self.max_positions if self.reserve_full_capacity else max(1, num_active)
+        per_symbol_capital = float(self.base_config.initial_capital) / allocation_slots
+
+        symbol_results: dict[str, dict[str, Any]] = {}
+        strategy_selection: dict[str, str] = {}
+        equity_frames: list[pd.DataFrame] = []
+        trade_frames: list[pd.DataFrame] = []
+
+        for symbol in active_symbols:
+            data_handler = self.symbol_to_data[symbol]
+
+            # Determine strategy name (same logic as run())
+            strategy_name = self._select_strategy_for_symbol(symbol, data_handler)
+            strategy_selection[symbol] = strategy_name
+            logger.info(f"  {symbol}: strategy={strategy_name} (pre-computed)")
+
+            # Use the pre-computed result when available; fall back to re-running.
+            if symbol in precomputed and precomputed[symbol]:
+                run_result = precomputed[symbol]
+                logger.debug(f"  {symbol}: using pre-computed engine results")
+            else:
+                logger.warning(
+                    f"  {symbol}: no pre-computed result — falling back to live backtest"
+                )
+                run_result = self._run_symbol_backtest(
+                    symbol=symbol,
+                    strategy_name=strategy_name,
+                    capital=per_symbol_capital,
+                    data_handler=data_handler,
+                )
+
+            symbol_results[symbol] = run_result
+
+            eq = run_result.get("equity_curve", pd.DataFrame())
+            if not eq.empty and "equity" in eq.columns:
+                eq_copy = eq[["equity"]].rename(columns={"equity": symbol})
+                equity_frames.append(eq_copy)
+
+            tl = run_result.get("trade_log", pd.DataFrame())
+            if not tl.empty:
+                tl = tl.copy()
+                tl["symbol"] = symbol
+                tl["strategy"] = strategy_name
+                trade_frames.append(tl)
+
+        portfolio_equity_curve = self._aggregate_equity_curves(
+            equity_frames=equity_frames,
+            initial_capital=float(self.base_config.initial_capital),
+        )
+        trade_log = self._aggregate_trade_logs(trade_frames)
+
+        metrics = self._compute_portfolio_metrics(
+            equity_curve=portfolio_equity_curve,
+            trade_log=trade_log,
+            initial_capital=float(self.base_config.initial_capital),
+        )
+        turnover = self._compute_turnover(
+            trade_log=trade_log,
+            initial_capital=float(self.base_config.initial_capital),
+        )
+
+        self._result = PortfolioBacktestResult(
+            initial_capital=float(self.base_config.initial_capital),
+            final_value=metrics.get("final_value", float(self.base_config.initial_capital)),
+            portfolio_return=metrics.get("portfolio_return", 0.0),
+            portfolio_return_pct=metrics.get("portfolio_return_pct", 0.0),
+            max_drawdown_pct=metrics.get("max_drawdown_pct", 0.0),
+            sharpe_ratio=metrics.get("sharpe_ratio", 0.0),
+            sortino_ratio=metrics.get("sortino_ratio", 0.0),
+            annualized_return=metrics.get("annualized_return", 0.0),
+            num_trades=metrics.get("num_trades", 0),
+            win_rate=metrics.get("win_rate", 0.0),
+            profit_factor=metrics.get("profit_factor", 0.0),
+            turnover=turnover,
+            num_symbols_active=num_active,
+            num_symbols_skipped=len(skipped_symbols),
+            max_positions=self.max_positions,
+            reserve_full_capacity=self.reserve_full_capacity,
+            per_symbol_capital=per_symbol_capital,
+            strategy_selection=strategy_selection,
+            symbol_results=symbol_results,
+            portfolio_equity_curve=portfolio_equity_curve,
+            trade_log=trade_log,
+        )
+
+        self._export_outputs(self._result)
+
+        logger.info(
+            f"Portfolio backtest (pre-computed) complete. "
+            f"Return: {metrics.get('portfolio_return_pct', 0):.2%}, "
+            f"Sharpe: {metrics.get('sharpe_ratio', 0):.4f}, "
+            f"MaxDD: {metrics.get('max_drawdown_pct', 0):.2%}"
+        )
+
+        return self._result
+
+    # ------------------------------------------------------------------
     # Strategy selection
     # ------------------------------------------------------------------
 
