@@ -133,6 +133,12 @@ class BacktestEngine:
         # Initialize strategy
         self.strategy.initialize(self.config.strategy_params)
 
+        # Optional precompute hook for strategies that support it.
+        # Computes all indicators once on the full dataset before the
+        # bar-by-bar loop, avoiding O(n^2) recomputation per bar.
+        if hasattr(self.strategy, "precompute"):
+            self.strategy.precompute(dh.data)
+
         total_bars = len(dh)
 
         for i in range(total_bars):

@@ -86,6 +86,21 @@ class IntradayTrendFollowingStrategy(BaseStrategy):
         if self.config.st_factor <= 0:
             raise ValueError("st_factor must be positive")
 
+        # Reset precomputed cache on re-initialization
+        self._prepared_full: Optional[pd.DataFrame] = None
+
+    def precompute(self, full_data: pd.DataFrame) -> None:
+        """Pre-compute all indicator columns on the full dataset.
+
+        Called once by the engine before the backtest loop begins.
+        Stores the prepared dataframe for fast per-bar lookups in
+        generate_signal().  Invalidated on re-initialization.
+        """
+        if not getattr(self, "_is_initialized", False):
+            self.initialize()
+        prepared = prepare_strategy_dataframe(full_data, self.config)
+        self._prepared_full = prepared
+
     def generate_signal(
         self,
         data: pd.DataFrame,
@@ -98,18 +113,25 @@ class IntradayTrendFollowingStrategy(BaseStrategy):
         if not getattr(self, "_is_initialized", False):
             self.initialize()
 
-        prepared = prepare_strategy_dataframe(data, self.config)
-        if prepared.empty:
-            return self.build_signal(
-                action=Signal.HOLD,
-                current_bar=current_bar,
-                symbol=symbol,
-                timeframe=timeframe,
-                confidence=0.0,
-                rationale="no_data",
-            )
+        # --- A1: Use precomputed data when available ---
+        prepared_full = getattr(self, "_prepared_full", None)
+        if prepared_full is not None and 0 <= bar_index < len(prepared_full):
+            # Fast path: read current bar from precomputed frame
+            latest = prepared_full.iloc[bar_index]
+        else:
+            # Legacy fallback: recompute from scratch (live mode, tests, etc.)
+            prepared = prepare_strategy_dataframe(data, self.config)
+            if prepared.empty:
+                return self.build_signal(
+                    action=Signal.HOLD,
+                    current_bar=current_bar,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    confidence=0.0,
+                    rationale="no_data",
+                )
+            latest = prepared.iloc[-1]
 
-        latest = prepared.iloc[-1]
         in_session_now = bool(latest["is_in_session"])
 
         if not in_session_now:
@@ -230,17 +252,17 @@ def intraday_vwap(df: pd.DataFrame, timezone: str = "Asia/Kolkata") -> pd.Series
     return cum_pv / cum_vol.replace(0, np.nan)
 
 
-def supertrend(
+def supertrend_legacy(
     df: pd.DataFrame, period: int = 10, factor: float = 3.0
 ) -> Tuple[pd.Series, pd.Series]:
     """
+    Original pandas/.iloc implementation — preserved for validation testing.
+
     Returns:
         supertrend_line, direction
 
-    direction convention here matches the Pine strategy logic used by the user:
-    -1 => bullish
-    +1 => bearish
-    so that long condition can use direction < 0 and short uses direction > 0.
+    direction convention:
+    -1 => bullish, +1 => bearish
     """
     a = atr(df, period)
     hl2 = (df["high"] + df["low"]) / 2.0
@@ -253,9 +275,6 @@ def supertrend(
     for i in range(1, len(df)):
         prev_close = df["close"].iloc[i - 1]
 
-        # BUG 1 FIX: seed from current band when previous is NaN (first valid ATR bar).
-        # Without this guard, NaN comparisons are always False → else branch copies NaN
-        # forward forever → final_upper/lower stay NaN → direction always -1.
         if pd.isna(final_upper.iloc[i - 1]):
             final_upper.iloc[i] = upperband.iloc[i]
         elif (upperband.iloc[i] < final_upper.iloc[i - 1]) or (prev_close > final_upper.iloc[i - 1]):
@@ -309,6 +328,99 @@ def supertrend(
                 direction.iloc[i] = 1
 
     return st, direction
+
+
+def supertrend(
+    df: pd.DataFrame, period: int = 10, factor: float = 3.0
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    Optimised SuperTrend using numpy arrays instead of pandas .iloc loops.
+
+    Same logic as supertrend_legacy(), but ~50-100x faster per element
+    because plain array indexing replaces pandas scalar access.
+
+    Returns:
+        supertrend_line, direction
+
+    direction convention:
+    -1 => bullish, +1 => bearish
+    """
+    n = len(df)
+    a = atr(df, period)
+    hl2 = (df["high"] + df["low"]) / 2.0
+    upperband_s = hl2 + factor * a
+    lowerband_s = hl2 - factor * a
+
+    # Extract to numpy for fast scalar access
+    close_arr = df["close"].to_numpy(dtype=np.float64)
+    atr_arr = a.to_numpy(dtype=np.float64)
+    upper_arr = upperband_s.to_numpy(dtype=np.float64)
+    lower_arr = lowerband_s.to_numpy(dtype=np.float64)
+
+    fu = upper_arr.copy()  # final_upper
+    fl = lower_arr.copy()  # final_lower
+
+    # --- Loop 1: compute final_upper and final_lower ---
+    for i in range(1, n):
+        prev_close = close_arr[i - 1]
+
+        # BUG 1 FIX preserved: seed from current band when previous is NaN
+        fu_prev = fu[i - 1]
+        if np.isnan(fu_prev):
+            fu[i] = upper_arr[i]
+        elif upper_arr[i] < fu_prev or prev_close > fu_prev:
+            fu[i] = upper_arr[i]
+        else:
+            fu[i] = fu_prev
+
+        fl_prev = fl[i - 1]
+        if np.isnan(fl_prev):
+            fl[i] = lower_arr[i]
+        elif lower_arr[i] > fl_prev or prev_close < fl_prev:
+            fl[i] = lower_arr[i]
+        else:
+            fl[i] = fl_prev
+
+    # --- Loop 2: compute SuperTrend line and direction ---
+    st_arr = np.empty(n, dtype=np.float64)
+    dir_arr = np.empty(n, dtype=np.int64)
+
+    for i in range(n):
+        if i == 0 or np.isnan(atr_arr[i]):
+            st_arr[i] = np.nan
+            dir_arr[i] = 1
+            continue
+
+        prev_st = st_arr[i - 1]
+        c = close_arr[i]
+
+        if np.isnan(prev_st):
+            if c <= fu[i]:
+                st_arr[i] = fu[i]
+                dir_arr[i] = 1
+            else:
+                st_arr[i] = fl[i]
+                dir_arr[i] = -1
+            continue
+
+        if np.isclose(prev_st, fu[i - 1]):
+            if c <= fu[i]:
+                st_arr[i] = fu[i]
+                dir_arr[i] = 1
+            else:
+                st_arr[i] = fl[i]
+                dir_arr[i] = -1
+        else:
+            if c >= fl[i]:
+                st_arr[i] = fl[i]
+                dir_arr[i] = -1
+            else:
+                st_arr[i] = fu[i]
+                dir_arr[i] = 1
+
+    st_series = pd.Series(st_arr, index=df.index, dtype="float64")
+    dir_series = pd.Series(dir_arr, index=df.index, dtype="int64")
+    return st_series, dir_series
 
 
 def in_session(index: pd.DatetimeIndex, start: str, end: str, timezone: str) -> pd.Series:
