@@ -1648,6 +1648,11 @@ def main() -> None:
                 print(f"  [{len(completed_symbols)}/{len(symbols)}] {sym} done "
                       f"({len(rows)} results, {trades_total} trades)")
 
+        # C2: Clean up IPC temporary files
+        import shutil
+        if _ipc_cache_dir.exists():
+            shutil.rmtree(_ipc_cache_dir, ignore_errors=True)
+
         # Count skipped symbols with no data
         for sym in symbols:
             if sym not in completed_symbols and prefetched.get(sym) is None:
@@ -1696,7 +1701,7 @@ def main() -> None:
             # B5: delegate to the shared worker (same function as parallel path)
             _sym_out, symbol_rows = _process_symbol(
                 symbol=symbol,
-                df=df,
+                df_or_path=df,
                 selected=selected,
                 base_config=base_config,
                 optimize=args.optimize,
