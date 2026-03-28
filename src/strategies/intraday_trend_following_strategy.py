@@ -86,99 +86,71 @@ class IntradayTrendFollowingStrategy(BaseStrategy):
         if self.config.st_factor <= 0:
             raise ValueError("st_factor must be positive")
 
-        # Reset precomputed cache on re-initialization
-        self._prepared_full: Optional[pd.DataFrame] = None
+    def precompute(self, full_data: pd.DataFrame, context: Optional[dict[str, Any]] = None) -> None:
+        """Pre-compute all indicator columns on the full dataset using C1 incremental API.
 
-    def precompute(self, full_data: pd.DataFrame) -> None:
-        """Pre-compute all indicator columns on the full dataset.
-
-        Called once by the engine before the backtest loop begins.
-        Stores the prepared dataframe for fast per-bar lookups in
-        generate_signal().  Invalidated on re-initialization.
+        Stores the prepared dataframe for fast per-bar lookups in context.
         """
         if not getattr(self, "_is_initialized", False):
             self.initialize()
+        
         prepared = prepare_strategy_dataframe(full_data, self.config)
-        self._prepared_full = prepared
+        if context is not None:
+            context["prepared_full"] = prepared
 
-    def generate_signal(
+    def on_bar(
         self,
-        data: pd.DataFrame,
         current_bar: pd.Series,
         bar_index: int,
-        *,
-        symbol: Optional[str] = None,
-        timeframe: Optional[str] = None,
-    ) -> StrategySignal:
+        context: Optional[dict[str, Any]] = None,
+    ) -> Signal | StrategySignal:
         if not getattr(self, "_is_initialized", False):
             self.initialize()
 
-        # --- A1: Use precomputed data when available ---
-        prepared_full = getattr(self, "_prepared_full", None)
-        if prepared_full is not None and 0 <= bar_index < len(prepared_full):
-            # Fast path: read current bar from precomputed frame
-            latest = prepared_full.iloc[bar_index]
-        else:
-            # Legacy fallback: recompute from scratch (live mode, tests, etc.)
-            prepared = prepare_strategy_dataframe(data, self.config)
-            if prepared.empty:
-                return self.build_signal(
-                    action=Signal.HOLD,
-                    current_bar=current_bar,
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    confidence=0.0,
-                    rationale="no_data",
-                )
-            latest = prepared.iloc[-1]
+        # Retrieve precomputed dataframe from context
+        prepared_full = context.get("prepared_full") if context else None
+        
+        if prepared_full is None or bar_index >= len(prepared_full):
+            # Safe fallback if precompute was somehow not called
+            return Signal.HOLD
 
-        in_session_now = bool(latest["is_in_session"])
+        latest = prepared_full.iloc[bar_index]
+
+        in_session_now = bool(latest.get("is_in_session", False))
 
         if not in_session_now:
-            return self.build_signal(
-                action=Signal.HOLD,
-                current_bar=current_bar,
-                symbol=symbol,
-                timeframe=timeframe,
-                confidence=0.0,
-                rationale="outside_trading_session",
-                metadata={"is_in_session": False},
-            )
+            return Signal.HOLD
 
         indicator_values = (
             latest.get("vwap"),
             latest.get("ema"),
             latest.get("direction"),
         )
-        if any(pd.isna(value) for value in indicator_values):
-            return self.build_signal(
-                action=Signal.HOLD,
-                current_bar=current_bar,
-                symbol=symbol,
-                timeframe=timeframe,
-                confidence=0.0,
-                rationale="indicator_warmup",
-                metadata={"is_in_session": True},
-            )
 
-        long_signal = bool(latest["long_signal"])
-        short_signal = bool(latest["short_signal"])
+        if pd.isna(indicator_values).any():
+            return Signal.HOLD
+
+        long_signal = bool(latest.get("long_signal", False))
+        short_signal = bool(latest.get("short_signal", False))
 
         action = Signal.HOLD
         rationale = "no_intraday_setup"
+        
         if long_signal and not short_signal:
             action = Signal.BUY
             rationale = "long_trend_setup"
         elif short_signal and not long_signal:
+            # We are long-only by default but keeping the semantic signal
             action = Signal.SELL
             rationale = "short_trend_setup"
 
-        confidence = 0.0 if action == Signal.HOLD else 0.75
+        if action == Signal.HOLD:
+            return Signal.HOLD
+
+        confidence = 0.75
         return self.build_signal(
             action=action,
             current_bar=current_bar,
-            symbol=symbol,
-            timeframe=timeframe,
             confidence=confidence,
             rationale=rationale,
             tags=("intraday", "trend_following"),
@@ -192,18 +164,6 @@ class IntradayTrendFollowingStrategy(BaseStrategy):
                 "short_signal": short_signal,
             },
         )
-
-    def on_bar(
-        self,
-        data: pd.DataFrame,
-        current_bar: pd.Series,
-        bar_index: int,
-    ) -> Signal:
-        return self.generate_signal(
-            data=data,
-            current_bar=current_bar,
-            bar_index=bar_index,
-        ).action
 
 
 def _ensure_datetime_index(df: pd.DataFrame, timestamp_col: str = "timestamp") -> pd.DataFrame:

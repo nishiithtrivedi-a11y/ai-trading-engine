@@ -133,11 +133,20 @@ class BacktestEngine:
         # Initialize strategy
         self.strategy.initialize(self.config.strategy_params)
 
-        # Optional precompute hook for strategies that support it.
-        # Computes all indicators once on the full dataset before the
-        # bar-by-bar loop, avoiding O(n^2) recomputation per bar.
-        if hasattr(self.strategy, "precompute"):
-            self.strategy.precompute(dh.data)
+        # Determine if the strategy uses the new incremental C1 API
+        import inspect
+        sig = inspect.signature(self.strategy.on_bar)
+        self._is_incremental = "data" not in sig.parameters
+
+        if self._is_incremental:
+            # Initialize shared strategy context
+            self.strategy._strategy_context = {}
+            if hasattr(self.strategy, "precompute"):
+                self.strategy.precompute(dh.data, context=self.strategy._strategy_context)
+        else:
+            # Fallback legacy Phase 1 hack, preserve for compat if any
+            if hasattr(self.strategy, "precompute"):
+                self.strategy.precompute(dh.data)
 
         total_bars = len(dh)
 
@@ -170,13 +179,25 @@ class BacktestEngine:
                 continue
 
             # 4. Generate signal from strategy
-            #    Strategy only sees data up to current bar
-            available_data = dh.get_data_up_to_current()
-            signal_payload = self.strategy.generate_signal(
-                available_data,
-                bar,
-                i,
-            )
+            if getattr(self, "_is_incremental", False):
+                # New C1 incremental path: avoid full dataset slicing overhead
+                action = self.strategy.on_bar(
+                    current_bar=bar,
+                    bar_index=i,
+                    context=getattr(self.strategy, "_strategy_context", {}),
+                )
+                signal_payload = self.strategy.build_signal(
+                    action=BaseStrategy.normalize_signal(action),
+                    current_bar=bar,
+                )
+            else:
+                # Legacy path calls the full data slice per bar
+                available_data = dh.get_data_up_to_current()
+                signal_payload = self.strategy.generate_signal(
+                    available_data,
+                    bar,
+                    i,
+                )
             signal = BaseStrategy.normalize_signal(signal_payload)
 
             # 5. Handle signal

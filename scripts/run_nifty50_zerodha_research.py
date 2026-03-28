@@ -704,7 +704,7 @@ def _cleanup_checkpoint_files(output_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 def _process_symbol(
     symbol: str,
-    df: pd.DataFrame,
+    df_or_path: Any,  # pd.DataFrame or str/Path to parquet file
     selected: dict[str, dict[str, Any]],
     base_config,
     optimize: bool,
@@ -726,6 +726,11 @@ def _process_symbol(
 
     Returns (symbol, list_of_result_rows).
     """
+    if isinstance(df_or_path, (str, Path)):
+        df = pd.read_parquet(df_or_path)
+    else:
+        df = df_or_path
+
     sym_regime_label = "unknown"
     if regime_analysis_active:
         sym_snap = detect_market_regime(df, symbol=symbol)
@@ -1578,12 +1583,23 @@ def main() -> None:
 
         _regime_snap_val = composite_value if regime_snap is not None else None
 
+        # C2: Serialize DataFrames to disk to avoid massive Windows ProcessPool overhead
+        _ipc_cache_dir = output_dir / "_ipc_cache"
+        _ipc_cache_dir.mkdir(parents=True, exist_ok=True)
+        ipc_payloads = {}
+        for sym in pending_symbols:
+            _df = prefetched.get(sym)
+            if _df is not None:
+                _path = _ipc_cache_dir / f"{sym}.parquet"
+                _df.to_parquet(_path)
+                ipc_payloads[sym] = str(_path)
+
         with ProcessPoolExecutor(max_workers=min(num_workers, len(pending_symbols) or 1)) as pool:
             future_to_sym = {
                 pool.submit(
                     _process_symbol,
                     sym,
-                    prefetched[sym],
+                    ipc_payloads[sym],
                     selected,
                     base_config,
                     args.optimize,
