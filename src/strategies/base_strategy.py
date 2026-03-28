@@ -116,29 +116,25 @@ class BaseStrategy(ABC):
         """Return a shallow copy of strategy parameters."""
         return dict(self._params)
 
-    @abstractmethod
-    def on_bar(
-        self,
-        data: pd.DataFrame,
-        current_bar: pd.Series,
-        bar_index: int,
-    ) -> Signal:
+    def precompute(self, full_data: pd.DataFrame, context: Optional[dict[str, Any]] = None) -> None:
+        """Optional hook to precompute indicators on the full dataset.
+        
+        Args:
+            full_data: The entire historical dataset for the backtest.
+            context: A shared dictionary for storing precomputed state.
+        """
+        pass
+
+    def on_bar(self, *args: Any, **kwargs: Any) -> Signal | StrategySignal:
         """Process a new bar and generate a trading signal.
 
-        This method is called once per bar during the backtest.
-        The `data` parameter contains ONLY bars from the start up to
-        and including the current bar — no future data.
+        Legacy signature:
+            on_bar(self, data: pd.DataFrame, current_bar: pd.Series, bar_index: int) -> Signal
 
-        Args:
-            data: All available historical data up to current bar.
-                  Use data["close"].rolling(...) etc. for indicators.
-            current_bar: The current bar's OHLCV data as a Series.
-            bar_index: The index of the current bar (0-based).
-
-        Returns:
-            A Signal indicating the desired action.
+        Incremental signature (C1):
+            on_bar(self, current_bar: pd.Series, bar_index: int, context: Optional[dict[str, Any]] = None) -> Signal
         """
-        ...
+        raise NotImplementedError("Strategies must implement either `generate_signal` or the new `on_bar` hook.")
 
     def generate_signal(
         self,
@@ -155,13 +151,25 @@ class BaseStrategy(ABC):
         Default adapter keeps legacy strategy implementations compatible by
         delegating to ``on_bar`` and wrapping the resulting action.
         """
-        action = self.normalize_signal(
-            self.on_bar(
-                data=data,
-                current_bar=current_bar,
-                bar_index=bar_index,
+        import inspect
+        sig = inspect.signature(self.on_bar)
+        if "data" in sig.parameters:
+            action = self.normalize_signal(
+                self.on_bar(
+                    data=data,
+                    current_bar=current_bar,
+                    bar_index=bar_index,
+                )
             )
-        )
+        else:
+            action = self.normalize_signal(
+                self.on_bar(
+                    current_bar=current_bar,
+                    bar_index=bar_index,
+                    context=getattr(self, "_strategy_context", None),
+                )
+            )
+            
         return self.build_signal(
             action=action,
             current_bar=current_bar,

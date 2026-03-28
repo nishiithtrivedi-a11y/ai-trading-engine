@@ -117,8 +117,13 @@ def load_config(overrides: Optional[dict[str, Any]] = None) -> BacktestConfig:
         overrides: Dict of config values to override defaults.
 
     Returns:
-        Validated BacktestConfig instance.
+        Validated BacktestConfig instance resolved via UnifiedConfig.
     """
-    if overrides is None:
-        return BacktestConfig()
-    return BacktestConfig(**overrides)
+    from src.utils.unified_config import load_unified_config
+
+    return load_unified_config(
+        model_cls=BacktestConfig,
+        overrides=overrides,
+        yaml_filename="backtest.yaml",
+        env_prefix="AITRADE_"
+    )
