@@ -127,7 +127,7 @@ class IntradayTrendFollowingStrategy(BaseStrategy):
             latest.get("direction"),
         )
 
-        if pd.isna(indicator_values).any():
+        if any(pd.isna(v) for v in indicator_values):
             return Signal.HOLD
 
         long_signal = bool(latest.get("long_signal", False))
