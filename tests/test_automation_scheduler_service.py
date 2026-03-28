@@ -12,6 +12,8 @@ from src.automation.scheduler_service import (
     AutomationSchedulerService,
     CooldownViolationError,
 )
+from unittest.mock import patch
+from src.api.services.market_session_service import MarketSessionPhase
 
 
 def mock_runner(pt: PipelineType, out: str) -> dict:
@@ -77,7 +79,9 @@ def test_paper_pipeline_uses_paper_mode(tmp_path: Path) -> None:
 
 def test_live_safe_pipeline_uses_live_safe_mode(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
-    record = svc.trigger_pipeline(PipelineType.LIVE_SAFE_REFRESH)
+    with patch("src.automation.scheduler_service.get_market_session_state") as mock_mkt:
+        mock_mkt.return_value.phase = MarketSessionPhase.OPEN
+        record = svc.trigger_pipeline(PipelineType.LIVE_SAFE_REFRESH)
     assert record.execution_mode == "live_safe"
 
 
@@ -89,7 +93,9 @@ def test_execution_mode_never_live(tmp_path: Path) -> None:
         job.cooldown_seconds = 0
 
     for pt in PipelineType:
-        record = svc.trigger_pipeline(pt, TriggerSource.MANUAL_API)
+        with patch("src.automation.scheduler_service.get_market_session_state") as mock_mkt:
+            mock_mkt.return_value.phase = MarketSessionPhase.OPEN
+            record = svc.trigger_pipeline(pt, TriggerSource.MANUAL_API)
         assert record.execution_mode != "live", f"{pt.value} produced live mode!"
 
 
@@ -119,6 +125,8 @@ def test_notification_hook_called(tmp_path: Path) -> None:
 
 def test_string_pipeline_type(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
-    record = svc.trigger_pipeline("manual_rescan", "manual_api")
+    with patch("src.automation.scheduler_service.get_market_session_state") as mock_mkt:
+        mock_mkt.return_value.phase = MarketSessionPhase.OPEN
+        record = svc.trigger_pipeline("manual_rescan", "manual_api")
     assert record.pipeline_type == "manual_rescan"
     assert record.trigger_source == "manual_api"
