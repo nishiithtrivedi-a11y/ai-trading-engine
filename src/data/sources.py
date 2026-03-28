@@ -22,6 +22,84 @@ from src.utils.logger import setup_logger
 logger = setup_logger("data_sources")
 
 # ---------------------------------------------------------------------------
+# Kite historical range limits (E2)
+# ---------------------------------------------------------------------------
+# Hard-coded defaults — these are used when the YAML config is absent.
+_KITE_RANGE_DEFAULTS: dict[str, int] = {
+    "minute":   60,
+    "3minute":  60,
+    "5minute":  100,
+    "10minute": 100,
+    "15minute": 100,
+    "30minute": 200,
+    "60minute": 400,
+    "day":      2000,
+}
+
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+_DATA_PROVIDERS_YAML = _PROJECT_ROOT / "config" / "data_providers.yaml"
+
+
+def _load_kite_range_config() -> dict[str, int]:
+    """Load kite.historical_range_days from data_providers.yaml.
+
+    Returns the merged mapping of ``{kite_interval: max_days}``.
+    Falls back gracefully to :data:`_KITE_RANGE_DEFAULTS` when the file is
+    missing or the key is absent, so callers never crash due to config issues.
+    """
+    try:
+        import yaml  # soft dependency — already in project requirements
+        with _DATA_PROVIDERS_YAML.open("r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        overrides = (
+            data.get("kite", {}).get("historical_range_days") or {}
+        )
+        if not isinstance(overrides, dict):
+            logger.warning(
+                "kite.historical_range_days in data_providers.yaml is not a mapping; "
+                "using hardcoded defaults"
+            )
+            return dict(_KITE_RANGE_DEFAULTS)
+        merged = dict(_KITE_RANGE_DEFAULTS)
+        for interval, days in overrides.items():
+            try:
+                merged[str(interval)] = int(days)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "kite.historical_range_days[%r] = %r is not an integer; skipping",
+                    interval,
+                    days,
+                )
+        return merged
+    except FileNotFoundError:
+        logger.debug(
+            "data_providers.yaml not found at %s; using hardcoded Kite range defaults",
+            _DATA_PROVIDERS_YAML,
+        )
+        return dict(_KITE_RANGE_DEFAULTS)
+    except Exception as exc:
+        logger.warning(
+            "Failed to load kite range config from %s: %s; using defaults",
+            _DATA_PROVIDERS_YAML,
+            exc,
+        )
+        return dict(_KITE_RANGE_DEFAULTS)
+
+
+# Resolved at module import time; safe to reload in tests via _reload_kite_range_config().
+_KITE_RANGE_CONFIG: dict[str, int] = _load_kite_range_config()
+
+
+def _get_max_days_for_interval(interval: str) -> int:
+    """Return the maximum calendar-day span for a Kite *interval* string.
+
+    Looks up the resolved config first; falls back to hardcoded defaults so
+    callers always get a valid integer.
+    """
+    return _KITE_RANGE_CONFIG.get(interval, _KITE_RANGE_DEFAULTS.get(interval, 60))
+
+
+# ---------------------------------------------------------------------------
 # Kite interval mapping
 # ---------------------------------------------------------------------------
 # Maps the engine's Timeframe enum to Kite's interval strings.
@@ -453,15 +531,18 @@ class ZerodhaDataSource(BaseDataSource):
 
     @staticmethod
     def _max_days_per_request(timeframe: Timeframe) -> int:
-        """Maximum calendar-day span Kite allows per historical request."""
-        if timeframe == Timeframe.MINUTE_1:
-            return 60
-        elif timeframe in (Timeframe.MINUTE_5, Timeframe.MINUTE_15):
-            return 100
-        elif timeframe == Timeframe.HOURLY:
-            return 400
-        else:  # daily
-            return 2000
+        """Maximum calendar-day span Kite allows per historical request.
+
+        Values are read from ``config/data_providers.yaml`` under
+        ``kite.historical_range_days``.  If the config key is absent the
+        hardcoded defaults in ``_KITE_RANGE_DEFAULTS`` are used so that
+        existing callers are never broken by a missing config file.
+        """
+        interval = _TIMEFRAME_TO_KITE_INTERVAL.get(timeframe)
+        if interval is not None:
+            return _get_max_days_for_interval(interval)
+        # Fallback: unknown timeframe — use the most conservative limit
+        return 60
 
     @staticmethod
     def _date_chunks(

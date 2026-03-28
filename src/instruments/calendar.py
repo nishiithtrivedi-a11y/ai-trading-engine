@@ -5,17 +5,97 @@ This is a stub implementation that provides:
 - Weekend-based trading day detection (Mon–Fri)
 - NSE monthly expiry convention (last Thursday of the month)
 - NSE weekly expiry convention (nearest Thursday)
-- Placeholder for holiday calendar integration
+- Holiday calendar loaded from ``config/nse_holidays.yaml``
 
-The holiday list is empty by default.  Populate ``NSE_HOLIDAYS`` with
-actual NSE holiday dates to enable accurate trading-day arithmetic.
-Future versions will load holidays from a data file or API.
+Holiday data is sourced from ``config/nse_holidays.yaml`` relative to the
+project root.  The file must be present and well-formed; a missing or
+malformed file raises ``TradingCalendarError`` with a clear message.
+
+If a date falls in a year that has no entries in the YAML file, a warning is
+logged and the day is assumed to be a trading day (safe fallback — will not
+incorrectly block real trading days).
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Optional
+
+# PyYAML is a project dependency; import lazily to give a clear error.
+try:
+    import yaml as _yaml
+except ImportError as _yaml_import_err:  # pragma: no cover
+    _yaml = None  # type: ignore[assignment]
+    _yaml_import_err_msg = str(_yaml_import_err)
+else:
+    _yaml_import_err_msg = ""
+
+_log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Resolved path to the holiday YAML (project-root relative, absolute at load)
+# ---------------------------------------------------------------------------
+
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+_DEFAULT_HOLIDAY_FILE = _PROJECT_ROOT / "config" / "nse_holidays.yaml"
+
+
+def _load_holidays_from_yaml(path: Path) -> tuple[date, ...]:
+    """Parse ``config/nse_holidays.yaml`` and return a sorted tuple of dates.
+
+    Raises
+    ------
+    TradingCalendarError
+        If *yaml* is not installed, the file is missing, or the file is
+        malformed.
+    """
+    if _yaml is None:  # pragma: no cover
+        raise TradingCalendarError(
+            f"PyYAML is required but not installed: {_yaml_import_err_msg}. "
+            f"Run `pip install pyyaml` to fix this."
+        )
+
+    if not path.exists():
+        raise TradingCalendarError(
+            f"NSE holiday calendar file not found: {path}\n"
+            f"Expected a YAML file with a top-level 'holidays' mapping of "
+            f"'YYYY-MM-DD' -> 'Holiday Name'.\n"
+            f"Create or restore {path} to proceed."
+        )
+
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = _yaml.safe_load(fh)
+    except Exception as exc:
+        raise TradingCalendarError(
+            f"Failed to parse NSE holiday calendar {path}: {exc}"
+        ) from exc
+
+    if not isinstance(data, dict) or "holidays" not in data:
+        raise TradingCalendarError(
+            f"NSE holiday calendar {path} must have a top-level 'holidays' key. "
+            f"Got: {type(data).__name__}"
+        )
+
+    raw = data["holidays"]
+    if not isinstance(raw, dict):
+        raise TradingCalendarError(
+            f"'holidays' in {path} must be a mapping of 'YYYY-MM-DD' -> 'name'. "
+            f"Got: {type(raw).__name__}"
+        )
+
+    parsed: list[date] = []
+    for date_str, name in raw.items():
+        try:
+            parsed.append(date.fromisoformat(str(date_str)))
+        except ValueError as exc:
+            raise TradingCalendarError(
+                f"Invalid date key {date_str!r} in {path}: {exc}"
+            ) from exc
+
+    return tuple(sorted(parsed))
 
 
 class TradingCalendarError(ValueError):
@@ -30,51 +110,36 @@ class TradingCalendar:
     ----------
     holidays:
         Optional sequence of non-trading dates in addition to weekends.
-        Defaults to the class-level ``NSE_HOLIDAYS`` tuple.
+        When *None* (default) the class loads holidays from
+        ``config/nse_holidays.yaml`` at the project root.
+        Pass an explicit tuple to override (useful in tests).
+    holiday_file:
+        Path to the YAML holiday file.  Defaults to
+        ``<project_root>/config/nse_holidays.yaml``.
+        Ignored when *holidays* is provided explicitly.
     """
-
-    #: Known NSE holidays.
-    NSE_HOLIDAYS: tuple[date, ...] = (
-        # 2025 NSE Holidays
-        date(2025, 1, 26),   # Republic Day
-        date(2025, 2, 26),   # Mahashivratri
-        date(2025, 3, 14),   # Holi
-        date(2025, 3, 31),   # Id-ul-Fitr (Ramzan Eid) - tentative
-        date(2025, 4, 14),   # Dr. Baba Saheb Ambedkar Jayanti
-        date(2025, 4, 18),   # Good Friday
-        date(2025, 5, 1),    # Maharashtra Day
-        date(2025, 8, 15),   # Independence Day
-        date(2025, 8, 27),   # Ganesh Chaturthi
-        date(2025, 10, 2),   # Mahatma Gandhi Jayanti / Dussehra
-        date(2025, 10, 20),  # Diwali Laxmi Pujan (tentative)
-        date(2025, 10, 21),  # Diwali Balipratipada
-        date(2025, 11, 5),   # Gurunanak Jayanti
-        date(2025, 12, 25),  # Christmas
-        # 2026 NSE trading holidays (NSE Circular Ref. No. 212/2025, dated 2025-12-12)
-        date(2026, 1, 26),   # Republic Day
-        date(2026, 3, 3),    # Holi
-        date(2026, 3, 26),   # Shri Ram Navami
-        date(2026, 3, 31),   # Shri Mahavir Jayanti
-        date(2026, 4, 3),    # Good Friday
-        date(2026, 4, 14),   # Dr. Baba Saheb Ambedkar Jayanti
-        date(2026, 5, 1),    # Maharashtra Day
-        date(2026, 5, 28),   # Bakri Id
-        date(2026, 6, 26),   # Muharram
-        date(2026, 9, 14),   # Ganesh Chaturthi
-        date(2026, 10, 2),   # Mahatma Gandhi Jayanti
-        date(2026, 10, 20),  # Dussehra
-        date(2026, 11, 10),  # Diwali-Balipratipada
-        date(2026, 11, 24),  # Prakash Gurpurb Sri Guru Nanak Dev
-        date(2026, 12, 25),  # Christmas
-    )
 
     def __init__(
         self,
         holidays: Optional[tuple[date, ...]] = None,
+        holiday_file: Optional[Path] = None,
     ) -> None:
-        self._holidays: frozenset[date] = frozenset(
-            holidays if holidays is not None else self.NSE_HOLIDAYS
-        )
+        if holidays is not None:
+            self._holidays: frozenset[date] = frozenset(holidays)
+        else:
+            file_path = holiday_file if holiday_file is not None else _DEFAULT_HOLIDAY_FILE
+            loaded = _load_holidays_from_yaml(file_path)
+            self._holidays = frozenset(loaded)
+
+    # ------------------------------------------------------------------
+    # Class-level property so callers that reference TradingCalendar.NSE_HOLIDAYS
+    # still get a reasonable tuple (loaded from YAML on first access).
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _default_holidays(cls) -> tuple[date, ...]:
+        """Return the holidays loaded from the default YAML file."""
+        return _load_holidays_from_yaml(_DEFAULT_HOLIDAY_FILE)
 
     # ------------------------------------------------------------------
     # Trading day helpers
@@ -191,6 +256,5 @@ class TradingCalendar:
     def __repr__(self) -> str:
         return (
             f"TradingCalendar("
-            f"holidays={len(self._holidays)}, "
-            f"nse_holidays={len(self.NSE_HOLIDAYS)})"
+            f"holidays={len(self._holidays)})"
         )

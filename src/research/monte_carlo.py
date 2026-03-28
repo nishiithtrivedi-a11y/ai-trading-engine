@@ -96,6 +96,60 @@ class MonteCarloResult:
 # MonteCarloAnalyzer
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Frequency-to-annualization mapping
+# ---------------------------------------------------------------------------
+
+#: Maps a trading frequency label to the number of bars in a trading year.
+#: Daily is the default (252 NSE trading days).
+#: Intraday counts assume NSE session of 375 minutes/day.
+BARS_PER_YEAR: dict[str, int] = {
+    "1min":    252 * 375,   # 94,500  — 1-minute bars
+    "1m":      252 * 375,
+    "minute":  252 * 375,
+    "5min":    252 * 75,    # 18,900  — 5-minute bars (375 / 5)
+    "5m":      252 * 75,
+    "15min":   252 * 25,    # 6,300   — 15-minute bars (375 / 15)
+    "15m":     252 * 25,
+    "30min":   252 * 13,    # 3,276   — 30-minute bars (375 / 30 ≈ 12.5, round to 13)
+    "30m":     252 * 13,
+    "1hour":   252 * 6,     # 1,512   — hourly bars (375 / 60 ≈ 6.25, truncate to 6)
+    "1h":      252 * 6,
+    "hourly":  252 * 6,
+    "60min":   252 * 6,
+    "daily":   252,         # 252     — daily bars (default)
+    "day":     252,
+    "1d":      252,
+    "weekly":  52,          # 52      — weekly bars
+    "1w":      52,
+    "week":    52,
+}
+
+
+def bars_per_year_for_frequency(frequency: str) -> int:
+    """Return the number of trading bars per year for *frequency*.
+
+    Args:
+        frequency: A trading frequency string such as ``"daily"``, ``"5min"``,
+            ``"1h"``, etc.  Case-insensitive.
+
+    Returns:
+        Number of bars per year.
+
+    Raises:
+        ValueError: If *frequency* is not recognised.
+    """
+    key = frequency.strip().lower()
+    if key not in BARS_PER_YEAR:
+        supported = ", ".join(sorted(BARS_PER_YEAR))
+        raise ValueError(
+            f"Unrecognised trading frequency {frequency!r}. "
+            f"Supported values: {supported}. "
+            f"Pass bars_per_year directly if you need a custom value."
+        )
+    return BARS_PER_YEAR[key]
+
+
 class MonteCarloAnalyzer:
     """Monte Carlo simulation engine for strategy robustness testing.
 
@@ -109,9 +163,19 @@ class MonteCarloAnalyzer:
         num_simulations: Number of Monte Carlo iterations.
         seed: Random seed for reproducibility.
         output_dir: Where to save exports.
+        bars_per_year: Number of trading bars per year used for Sharpe
+            annualization.  Pass an integer directly, or use the
+            convenience parameter ``frequency`` to derive it
+            automatically.  Defaults to 252 (daily bars) which preserves
+            the existing behavior.
+        frequency: Trading frequency string (e.g. ``"5min"``, ``"daily"``,
+            ``"1h"``).  When provided, *bars_per_year* is derived from
+            ``BARS_PER_YEAR``.  Ignored when *bars_per_year* is given
+            explicitly.  Unrecognised values raise ``ValueError``.
 
     Example::
 
+        # Daily strategy — same as before
         analyzer = MonteCarloAnalyzer(
             trades=trade_records,
             initial_capital=100_000,
@@ -119,6 +183,13 @@ class MonteCarloAnalyzer:
             seed=42,
         )
         result = analyzer.run(SimulationMode.TRADE_RESHUFFLE)
+
+        # 5-minute intraday strategy
+        analyzer = MonteCarloAnalyzer(
+            trades=trade_records,
+            initial_capital=100_000,
+            frequency="5min",
+        )
     """
 
     PERCENTILE_LEVELS = [5, 10, 25, 50, 75, 90, 95]
@@ -130,11 +201,23 @@ class MonteCarloAnalyzer:
         num_simulations: int = 1000,
         seed: Optional[int] = None,
         output_dir: str = "output/monte_carlo",
+        bars_per_year: Optional[int] = None,
+        frequency: Optional[str] = None,
     ) -> None:
         if initial_capital <= 0:
             raise ValueError("initial_capital must be > 0")
         if num_simulations < 1:
             raise ValueError("num_simulations must be >= 1")
+
+        # Resolve annualization factor
+        if bars_per_year is not None:
+            if bars_per_year <= 0:
+                raise ValueError("bars_per_year must be a positive integer")
+            self._bars_per_year: int = int(bars_per_year)
+        elif frequency is not None:
+            self._bars_per_year = bars_per_year_for_frequency(frequency)
+        else:
+            self._bars_per_year = 252  # daily default — preserves backward compat
 
         self.trades = trades
         self.initial_capital = initial_capital
@@ -170,7 +253,8 @@ class MonteCarloAnalyzer:
 
         logger.info(
             f"Monte Carlo: {self.num_simulations} simulations, "
-            f"mode={mode.value}, trades={len(self.trades)}"
+            f"mode={mode.value}, trades={len(self.trades)}, "
+            f"bars_per_year={self._bars_per_year}"
         )
 
         runs: list[MonteCarloRun] = []
@@ -270,13 +354,13 @@ class MonteCarloAnalyzer:
         max_dd_pct = float(np.max(drawdown_pct))
 
         # Sharpe from equity-return series (explicit annualization order):
-        # sharpe = sqrt(252) * (mean(return) / std(return))
+        # sharpe = sqrt(bars_per_year) * (mean(return) / std(return))
         returns = pd.Series(equity, dtype=float).pct_change().dropna().to_numpy()
         if len(returns) > 1:
             ret_std = float(np.std(returns))
             ret_mean = float(np.mean(returns))
             if np.isfinite(ret_std) and ret_std > 0.0 and np.isfinite(ret_mean):
-                sharpe = float((ret_mean / ret_std) * np.sqrt(252.0))
+                sharpe = float((ret_mean / ret_std) * np.sqrt(float(self._bars_per_year)))
             else:
                 sharpe = 0.0
         else:
