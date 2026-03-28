@@ -69,6 +69,7 @@ from src.scanners import (  # noqa: E402
 )
 from src.strategies.rsi_reversion import RSIReversionStrategy  # noqa: E402
 from src.strategies.sma_crossover import SMACrossoverStrategy  # noqa: E402
+from scripts.run_monitoring import _build_standalone_strategy_specs  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:

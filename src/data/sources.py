@@ -278,10 +278,10 @@ class ZerodhaDataSource(BaseDataSource):
         all_records = []
         for chunk_start, chunk_end in chunks:
             records = _call_with_retries(
-                lambda: kite.historical_data(
+                lambda cs=chunk_start, ce=chunk_end: kite.historical_data(
                     instrument_token=instrument_token,
-                    from_date=chunk_start,
-                    to_date=chunk_end,
+                    from_date=cs,
+                    to_date=ce,
                     interval=kite_interval,
                 ),
                 retries=self.request_retries,
@@ -559,7 +559,7 @@ class UpstoxDataSource(BaseDataSource):
 
         last = frame.iloc[-1]
         timestamp = pd.Timestamp(frame.index[-1])
-        ts_utc = timestamp.tz_localize("UTC") if timestamp.tzinfo is None else timestamp.tz_convert("UTC")
+        ts_utc = timestamp.tz_localize("Asia/Kolkata").tz_convert("UTC") if timestamp.tzinfo is None else timestamp.tz_convert("UTC")
         freshness_seconds = max(0.0, (pd.Timestamp.now(tz="UTC") - ts_utc).total_seconds())
         quality = {
             "schema_version": "v1",

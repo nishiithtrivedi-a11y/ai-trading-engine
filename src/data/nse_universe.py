@@ -27,7 +27,6 @@ DEFAULT_NIFTY_50 = [
     "ETERNAL.NS",
     "GRASIM.NS",
     "HCLTECH.NS",
-    "HDFC.NS",
     "HDFCBANK.NS",
     "HDFCLIFE.NS",
     "HEROMOTOCO.NS",

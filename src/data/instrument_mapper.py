@@ -82,7 +82,9 @@ class KiteInstrumentMapper:
         # Ensure cache directory exists
         self._cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-        df.to_csv(self._cache_path, index=False)
+        temp_path = self._cache_path.with_suffix('.csv.tmp')
+        df.to_csv(temp_path, index=False)
+        temp_path.replace(self._cache_path)
         logger.info(
             f"Cached {len(df)} instruments to {self._cache_path}"
         )
@@ -285,7 +287,9 @@ class KiteInstrumentMapper:
             if all_dfs:
                 combined = pd.concat(all_dfs, ignore_index=True)
                 self._cache_path.parent.mkdir(parents=True, exist_ok=True)
-                combined.to_csv(self._cache_path, index=False)
+                temp_path = self._cache_path.with_suffix('.csv.tmp')
+                combined.to_csv(temp_path, index=False)
+                temp_path.replace(self._cache_path)
                 self._instruments_df = combined
                 logger.info(f"refresh_all_segments: cached {len(combined)} total instruments")
 
