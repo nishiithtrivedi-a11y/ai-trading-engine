@@ -18,6 +18,7 @@ Usage::
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -29,11 +30,82 @@ from src.utils.logger import setup_logger
 
 logger = setup_logger("instrument_mapper")
 
-# Default cache location (relative to project root)
-DEFAULT_CACHE_PATH = "data/cache/kite_instruments.csv"
+# ---------------------------------------------------------------------------
+# Absolute project root — used so the default cache path is not CWD-relative
+# ---------------------------------------------------------------------------
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
 
-# Maximum cache age before a refresh warning (24 hours)
-CACHE_MAX_AGE_HOURS = 24
+# ---------------------------------------------------------------------------
+# InstrumentCacheConfig (E3)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class InstrumentCacheConfig:
+    """Configuration for the local Kite instrument cache.
+
+    Attributes
+    ----------
+    cache_path:
+        Absolute path to the CSV cache file.  Defaults to
+        ``<project_root>/data/cache/kite_instruments.csv``.
+        Using an absolute path derived from the project root means that
+        changing the current working directory at runtime does not silently
+        break cache lookups.
+    max_age_hours:
+        How many hours the cache is considered fresh before a staleness
+        warning is emitted.  Default: 24.
+    """
+    cache_path: Path = field(
+        default_factory=lambda: _PROJECT_ROOT / "data" / "cache" / "kite_instruments.csv"
+    )
+    max_age_hours: int = 24
+
+    @classmethod
+    def from_env(cls) -> "InstrumentCacheConfig":
+        """Build a config from environment variables.
+
+        Recognised variables:
+
+        ``INSTRUMENT_CACHE_PATH``
+            Absolute (or relative) path to the CSV cache file.
+            Relative paths are resolved against the project root, not CWD.
+
+        ``INSTRUMENT_CACHE_TTL_HOURS``
+            Integer; maximum cache age in hours.  Default: 24.
+
+        Returns
+        -------
+        InstrumentCacheConfig
+        """
+        path_env = os.environ.get("INSTRUMENT_CACHE_PATH")
+        if path_env:
+            raw = Path(path_env)
+            cache_path = raw if raw.is_absolute() else (_PROJECT_ROOT / raw)
+        else:
+            cache_path = _PROJECT_ROOT / "data" / "cache" / "kite_instruments.csv"
+
+        ttl_env = os.environ.get("INSTRUMENT_CACHE_TTL_HOURS")
+        try:
+            max_age_hours = int(ttl_env) if ttl_env is not None else 24
+        except ValueError:
+            logger.warning(
+                "INSTRUMENT_CACHE_TTL_HOURS=%r is not an integer; using 24",
+                ttl_env,
+            )
+            max_age_hours = 24
+
+        return cls(cache_path=cache_path, max_age_hours=max_age_hours)
+
+
+# ---------------------------------------------------------------------------
+# Module-level aliases kept for backward compatibility
+# ---------------------------------------------------------------------------
+
+#: Default absolute cache path (project-root based, not CWD-relative).
+DEFAULT_CACHE_PATH: Path = _PROJECT_ROOT / "data" / "cache" / "kite_instruments.csv"
+
+#: Maximum cache age in hours.
+CACHE_MAX_AGE_HOURS: int = 24
 
 
 class KiteInstrumentMapper:
@@ -52,11 +124,44 @@ class KiteInstrumentMapper:
         self,
         kite,
         exchange: str = "NSE",
-        cache_path: str = DEFAULT_CACHE_PATH,
+        cache_path: Optional[Path | str] = None,
+        cache_config: Optional[InstrumentCacheConfig] = None,
     ) -> None:
+        """Initialise the mapper.
+
+        Parameters
+        ----------
+        kite:
+            Authenticated KiteConnect client instance.
+        exchange:
+            Default exchange for lookups (default: ``"NSE"``).
+        cache_path:
+            Explicit path to the CSV cache file.  When supplied, takes
+            precedence over *cache_config*.  Relative strings are resolved
+            against the project root (not CWD).  Defaults to the project-
+            root-based path in :class:`InstrumentCacheConfig`.
+        cache_config:
+            :class:`InstrumentCacheConfig` instance.  Used when
+            *cache_path* is not given.  Defaults to
+            :meth:`InstrumentCacheConfig.from_env`.
+        """
         self._kite = kite
         self._exchange = exchange
-        self._cache_path = Path(cache_path)
+
+        if cache_path is not None:
+            raw = Path(cache_path)
+            self._cache_path: Path = raw if raw.is_absolute() else (_PROJECT_ROOT / raw)
+            self._max_age_hours: int = (
+                cache_config.max_age_hours if cache_config is not None else CACHE_MAX_AGE_HOURS
+            )
+        elif cache_config is not None:
+            self._cache_path = cache_config.cache_path
+            self._max_age_hours = cache_config.max_age_hours
+        else:
+            cfg = InstrumentCacheConfig.from_env()
+            self._cache_path = cfg.cache_path
+            self._max_age_hours = cfg.max_age_hours
+
         self._instruments_df: Optional[pd.DataFrame] = None
         self._symbol_mapper = SymbolMapper()
 
@@ -102,10 +207,10 @@ class KiteInstrumentMapper:
         mtime = datetime.fromtimestamp(self._cache_path.stat().st_mtime)
         age_hours = (datetime.now() - mtime).total_seconds() / 3600
 
-        if age_hours > CACHE_MAX_AGE_HOURS:
+        if age_hours > self._max_age_hours:
             logger.warning(
                 f"Instrument cache is {age_hours:.1f}h old "
-                f"(max={CACHE_MAX_AGE_HOURS}h). Consider running "
+                f"(max={self._max_age_hours}h). Consider running "
                 f"refresh_cache() for the latest instruments."
             )
 
