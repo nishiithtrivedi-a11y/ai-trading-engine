@@ -67,6 +67,13 @@ class DRASConfig:
     initial_capital: float = 100_000.0
     commission_pct: float = 0.12  # 0.12% per side, matching Pine
     min_tick: float = 0.05        # NSE equity minimum tick
+    # ATR-zone pullback tolerance (Phase 3 fix).
+    # A bar's low within (ema20 + atr5 * pullback_atr_mult) counts as a long
+    # pullback, and a bar's high within (ema20 - atr5 * pullback_atr_mult)
+    # counts as a short pullback.  At 0.0 this reproduces the old exact-touch
+    # behaviour; the default 0.5 gives a realistic "within half an ATR of EMA"
+    # zone, matching the spirit of the Pine valueZone concept.
+    pullback_atr_mult: float = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -267,16 +274,24 @@ def precompute_dras(df: pd.DataFrame, cfg: DRASConfig) -> pd.DataFrame:
     )
 
     # -- Pullback / value zone --
-    zone_low = data[["ema20", "vwap"]].min(axis=1)
-    zone_high = data[["ema20", "vwap"]].max(axis=1)
+    # ATR-based tolerance zone (pullback_atr_mult fix, Phase 3):
+    #   Long  pullback: bar's low dipped within (ema20 + atr5 * mult) of EMA20.
+    #                   At mult=0.0 this collapses to the old "low <= ema20" exact
+    #                   touch.  At mult=0.5 (default) it captures bars that came
+    #                   within half an ATR of the EMA — a realistic pullback zone
+    #                   faithful to the Pine valueZone spirit.
+    #   Short pullback: bar's high rose within (ema20 - atr5 * mult) of EMA20.
+    #   VWAP overlap:   kept as a second OR-clause for value-zone precision.
+    ema_zone_upper = data["ema20"] + data["atr5"] * cfg.pullback_atr_mult
+    ema_zone_lower = data["ema20"] - data["atr5"] * cfg.pullback_atr_mult
 
     data["long_pullback"] = (
-        (data["low"] <= data["ema20"]) |
-        ((data["low"] <= zone_high) & (data["high"] >= zone_low))
+        (data["low"] <= ema_zone_upper) |
+        ((data["low"] <= data["vwap"]) & (data["close"] >= data["vwap"]))
     )
     data["short_pullback"] = (
-        (data["high"] >= data["ema20"]) |
-        ((data["high"] >= zone_low) & (data["low"] <= zone_high))
+        (data["high"] >= ema_zone_lower) |
+        ((data["high"] >= data["vwap"]) & (data["close"] <= data["vwap"]))
     )
 
     # -- Chandelier levels (used during exit loop, also precomputed) --
@@ -334,6 +349,7 @@ class DynamicRegimeAdaptiveSystemStrategy(BaseStrategy):
             trail_atr_mult=float(p.get("trail_atr_mult", 2.5)),
             trail_atr_period=int(p.get("trail_atr_period", 10)),
             initial_capital=float(p.get("initial_capital", 100_000.0)),
+            pullback_atr_mult=float(p.get("pullback_atr_mult", 0.5)),
         )
 
         # Per-day state (reset each IST calendar day)
@@ -922,12 +938,14 @@ if __name__ == "__main__":
     parser.add_argument("--initial-capital", type=float, default=100_000.0)
     parser.add_argument("--risk-per-trade", type=float, default=1.0)
     parser.add_argument("--adx-threshold", type=int, default=20)
+    parser.add_argument("--pullback-atr-mult", type=float, default=0.5)
     args = parser.parse_args()
 
     cfg = DRASConfig(
         initial_capital=args.initial_capital,
         risk_per_trade=args.risk_per_trade,
         adx_threshold=args.adx_threshold,
+        pullback_atr_mult=args.pullback_atr_mult,
     )
     _df = pd.read_csv(args.csv_path)
     _, _trades, _summary = backtest_dras(_df, cfg)

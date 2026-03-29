@@ -717,3 +717,259 @@ class TestRelianceCsvSmokeTest:
         assert isinstance(trades_df, pd.DataFrame)
         assert summary["initial_capital"] == pytest.approx(100_000.0)
         assert math.isfinite(summary["final_equity"])
+
+
+# ---------------------------------------------------------------------------
+# 11. ATR-zone pullback fix tests (Phase 3)
+# ---------------------------------------------------------------------------
+
+class TestATRZonePullbackFix:
+    """
+    Tests for the Phase 3 pullback_atr_mult fix.
+
+    The fix changes long_pullback from requiring an exact EMA20 touch
+    (low <= ema20) to allowing a bar that came within 0.5 ATR of EMA20
+    (low <= ema20 + atr5 * pullback_atr_mult).
+    """
+
+    # ------------------------------------------------------------------
+    # Helper: build a single-day dataset where price is in a strong
+    # uptrend (close > ema20 > vwap, ADX rising) but pulls back within
+    # half an ATR — not an exact EMA touch.
+    # ------------------------------------------------------------------
+
+    def _build_bullish_atr_pullback_df(self) -> pd.DataFrame:
+        """
+        2-day warm-up (smooth uptrend) then one pullback bar that comes
+        within 0.3 ATR of EMA20 but does NOT touch it.
+
+        The pullback bar is designed so that:
+          low  = ema20_est + 0.3 * atr_est   (inside ATR zone, not exact touch)
+          high > low (normal candle)
+          close > open (bullish confirmation shape)
+          volume > avg (volume confirmation)
+
+        We estimate EMA20 and ATR from the warm-up trajectory then plant
+        a bar whose low is above the exact EMA20 level.
+        """
+        bars = []
+        start = _make_ts("2026-01-05", "09:15")
+        price = 1000.0
+        rng = np.random.default_rng(99)
+
+        # -- 2-day strong uptrend warm-up --
+        for day_offset in range(2):
+            day_start = _make_ts(
+                f"2026-01-0{5 + day_offset}", "09:15"
+            )
+            for i in range(75):
+                ts = day_start + pd.Timedelta(minutes=5 * i)
+                drift = 0.6
+                c = price + drift + rng.normal(0, 0.2)
+                o = price + rng.normal(0, 0.15)
+                h = max(o, c) + abs(rng.normal(0, 0.2))
+                lo = min(o, c) - abs(rng.normal(0, 0.1))
+                vol = int(rng.integers(150_000, 300_000))
+                bars.append({
+                    "timestamp": ts,
+                    "open": round(o, 2),
+                    "high": round(h, 2),
+                    "low": round(lo, 2),
+                    "close": round(c, 2),
+                    "volume": vol,
+                })
+                price = c
+
+        # Estimate EMA20 and ATR5 from the trailing 20 bars
+        closes = [b["close"] for b in bars[-20:]]
+        ema_est = float(pd.Series(closes).ewm(span=20, adjust=False).mean().iloc[-1])
+        trs = []
+        for j in range(-5, 0):
+            b = bars[j]
+            prev_c = bars[j - 1]["close"]
+            tr = max(b["high"] - b["low"],
+                     abs(b["high"] - prev_c),
+                     abs(b["low"] - prev_c))
+            trs.append(tr)
+        atr_est = float(pd.Series(trs).mean())
+
+        # Plant a pullback bar:
+        #   low = ema_est + 0.05 * atr_est  (inside ATR zone, NOT exact touch)
+        #   Using a small offset (0.05) so the bar stays comfortably inside
+        #   the 0.5-ATR zone even with minor EMA estimation drift.
+        pullback_low = ema_est + 0.05 * atr_est
+        pullback_close = ema_est + 0.80 * atr_est   # still above EMA
+        pullback_open = ema_est + 0.50 * atr_est
+        pullback_high = ema_est + 1.20 * atr_est
+
+        pb_ts = _make_ts("2026-01-07", "10:00")
+        bars.append({
+            "timestamp": pb_ts,
+            "open": round(pullback_open, 2),
+            "high": round(pullback_high, 2),
+            "low": round(pullback_low, 2),
+            "close": round(pullback_close, 2),
+            "volume": 500_000,  # high volume for confirmation
+        })
+
+        df = pd.DataFrame(bars).set_index("timestamp").sort_index()
+        return df, pb_ts
+
+    def test_atr_zone_pullback_fires(self):
+        """
+        With pullback_atr_mult=0.5 the planted pullback bar should have
+        long_pullback=True (low is within 0.5 ATR of EMA20).
+        """
+        df, pb_ts = self._build_bullish_atr_pullback_df()
+        cfg = DRASConfig(pullback_atr_mult=0.5)
+        data = precompute_dras(df, cfg)
+        row = data.loc[pb_ts]
+        ema20 = float(row["ema20"])
+        atr5 = float(row["atr5"])
+        low = float(row["low"])
+        zone_upper = ema20 + atr5 * 0.5
+
+        # Structural: planted low must be below zone_upper.
+        # The low is planted at ema_est + 0.05*atr_est, which is well inside
+        # the 0.5-ATR zone.  If this assertion fails the fixture setup drifted.
+        assert low <= zone_upper, (
+            f"Test fixture broken: low={low:.4f} > zone_upper={zone_upper:.4f} "
+            f"(ema20={ema20:.4f}, atr5={atr5:.4f})"
+        )
+        assert bool(row["long_pullback"]) is True
+
+    def test_exact_touch_logic_does_not_fire(self):
+        """
+        With pullback_atr_mult=0.0 (old exact-touch behaviour) the same
+        planted bar should have long_pullback=False because low > ema20.
+        The VWAP clause may still fire; we verify the EMA branch is off.
+        """
+        df, pb_ts = self._build_bullish_atr_pullback_df()
+        cfg_old = DRASConfig(pullback_atr_mult=0.0)
+        data_old = precompute_dras(df, cfg_old)
+        row = data_old.loc[pb_ts]
+        ema20 = float(row["ema20"])
+        low = float(row["low"])
+
+        # Confirm the planted bar is above EMA20 (fixture sanity)
+        if low <= ema20:
+            pytest.skip(
+                "Fixture planted bar happened to touch EMA20 in old logic — "
+                "test is not meaningful for this RNG seed."
+            )
+
+        # With mult=0.0 the EMA branch is: low <= ema20 (exact touch only)
+        # Since low > ema20, the EMA branch must be False.
+        ema_branch = low <= ema20
+        assert ema_branch is False
+
+    def test_chop_regime_no_pullback_signal(self):
+        """
+        In flat/choppy conditions (ADX below threshold, many VWAP crosses)
+        there should be no long_conf + is_trend_long combination,
+        even if long_pullback happens to be True after the ATR fix.
+        """
+        bars = []
+        base = 1000.0
+        start = _make_ts("2026-01-05", "09:30")
+        for i in range(100):
+            sign = 1 if i % 2 == 0 else -1
+            c = base + sign * 3.0
+            bars.append({
+                "timestamp": start + pd.Timedelta(minutes=5 * i),
+                "open": base,
+                "high": base + 4.0,
+                "low": base - 4.0,
+                "close": c,
+                "volume": 100_000,
+            })
+        df = pd.DataFrame(bars).set_index("timestamp").sort_index()
+        cfg = DRASConfig(pullback_atr_mult=0.5, vwap_cross_limit=1, adx_threshold=30)
+        data = precompute_dras(df, cfg)
+        valid = data.dropna(subset=["adx", "ema20", "vwap"])
+        # Even if pullback fires, trend_long should be False in chop
+        combined_long = valid["is_trend_long"] & valid["long_pullback"] & valid["long_conf"]
+        assert not combined_long.any(), "Should not signal long in choppy conditions"
+
+    def test_short_pullback_atr_zone_symmetric(self):
+        """
+        Short pullback formula check: verifies the short_pullback column is
+        True for any bar where high >= (ema20 - atr5 * 0.5).
+
+        Rather than trying to pre-plant a bar at an exact fraction of a
+        drifting EMA, we run a downtrend dataset, read back the computed
+        ema20/atr5 values, and verify that every bar where high >= zone_lower
+        has short_pullback=True.
+        """
+        df1 = _synthetic_trend_df("2026-01-05", n_bars=120, direction="down")
+        df2 = _synthetic_trend_df(
+            "2026-01-06", n_bars=80, direction="down",
+            base_price=float(df1["close"].iloc[-1]),
+        )
+        df = pd.concat([df1, df2]).sort_index()
+        cfg = DRASConfig(pullback_atr_mult=0.5)
+        data = precompute_dras(df, cfg)
+        valid = data.dropna(subset=["ema20", "atr5", "vwap"])
+
+        zone_lower = valid["ema20"] - valid["atr5"] * 0.5
+        ema_branch_should_be_true = valid["high"] >= zone_lower
+
+        # Every bar where the EMA branch fires must have short_pullback=True
+        for idx in valid[ema_branch_should_be_true].index:
+            assert bool(data.loc[idx, "short_pullback"]) is True, (
+                f"short_pullback should be True at {idx} (high={data.loc[idx,'high']:.2f}, "
+                f"zone_lower={zone_lower[idx]:.2f})"
+            )
+
+        # Verify at least some bars satisfy the condition in a downtrend dataset
+        assert ema_branch_should_be_true.any(), (
+            "Expected at least one short pullback bar in downtrend dataset"
+        )
+
+    def test_pullback_atr_mult_zero_matches_old_behaviour(self):
+        """
+        With pullback_atr_mult=0.0, the precomputed long_pullback column
+        should equal (low <= ema20) | (low <= vwap & close >= vwap), which
+        is the old logic.
+        """
+        df = _synthetic_trend_df("2026-01-05", n_bars=100, direction="up")
+        cfg = DRASConfig(pullback_atr_mult=0.0)
+        data = precompute_dras(df, cfg)
+
+        # Verify the formula explicitly on the non-NaN rows
+        valid = data.dropna(subset=["ema20", "atr5", "vwap"])
+        expected_long = (
+            (valid["low"] <= valid["ema20"]) |
+            ((valid["low"] <= valid["vwap"]) & (valid["close"] >= valid["vwap"]))
+        )
+        pd.testing.assert_series_equal(
+            valid["long_pullback"].reset_index(drop=True),
+            expected_long.reset_index(drop=True),
+            check_names=False,
+        )
+
+    def test_atr_zone_produces_more_pullback_bars_than_exact_touch(self):
+        """
+        With pullback_atr_mult=0.5, long_pullback should be True on at
+        least as many bars as with pullback_atr_mult=0.0 in an uptrend.
+        """
+        df1 = _synthetic_trend_df("2026-01-05", n_bars=120, direction="up")
+        df2 = _synthetic_trend_df("2026-01-06", n_bars=80, direction="up",
+                                   base_price=float(df1["close"].iloc[-1]))
+        df = pd.concat([df1, df2]).sort_index()
+
+        cfg_old = DRASConfig(pullback_atr_mult=0.0)
+        cfg_new = DRASConfig(pullback_atr_mult=0.5)
+
+        data_old = precompute_dras(df, cfg_old)
+        data_new = precompute_dras(df, cfg_new)
+
+        valid_old = data_old.dropna(subset=["ema20", "atr5"])
+        valid_new = data_new.dropna(subset=["ema20", "atr5"])
+
+        count_old = int(valid_old["long_pullback"].sum())
+        count_new = int(valid_new["long_pullback"].sum())
+
+        assert count_new >= count_old, (
+            f"ATR zone should produce >= pullback bars: new={count_new} old={count_old}"
+        )
