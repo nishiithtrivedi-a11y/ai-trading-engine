@@ -63,7 +63,7 @@
 | FastAPI Backend Adapter | **implemented** | `src/api/` | read-only adapters for core outputs | stable (Phase 20) |
 | React/Vite UI Dashboard | **implemented** | `frontend/` | scanner, decision, paper, logs, artifacts, profiles, derivatives, ai workspace, settings | stable (Phase 20/20.1) |
 | AI Workspace / Automation | placeholder | `frontend/src/pages/AI`, `Automation` | advisory-only UI, execution disabled | stable (Phase 20) |
-| Provider Auth & Sessions | placeholder (inert) | `frontend/src/pages/Settings` | visual scaffolding for Phase 21+ broker/API keys | stable (Phase 20.1) |
+| Provider Auth & Sessions | implemented (read-only) | `frontend/src/pages/Settings`, `src/providers/`, `src/data/provider_runtime.py` | shared readiness/session diagnostics and configuration helpers, execution disabled | stable |
 
 ## Phase 20 Notes — UI Command Center
 
@@ -71,7 +71,7 @@
 - Views include Scanner, Monitoring, Decision, Paper Trading, Diagnostics, Artifact Explorer, Profiles, Derivatives, AI Workspace, and Settings.
 - Graceful degradation: Handles missing artifacts and disconnected live feeds seamlessly (e.g., Derivatives shows CSV/offline modes).
 - **Phase 20.1 Polish**: Added global header clock (Local System Time + Timezone), Indian ecosystem currency (₹) harmonization, and explicit read-only badges/helper-text for Profiles and Settings.
-- **Phase 21+ Scaffolding**: Added inert Provider Authentication & Sessions management panels to Settings for future broker/API integration.
+- **Provider readiness/session management**: Settings and API now surface read-only runtime readiness and session validation paths backed by shared provider runtime logic.
 - AI Workspace is an advisory-only placeholder. Live execution and broker routing controls remain visually disabled placeholders.
 
 ## Phase 3 Notes — Derivatives Intelligence + DhanHQ

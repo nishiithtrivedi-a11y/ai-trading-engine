@@ -26,6 +26,10 @@ from src.data.provider_config import (
     ProviderEntry,
     load_provider_config,
 )
+from src.data.provider_runtime import (
+    get_provider_readiness_report,
+    resolve_provider_credentials,
+)
 from src.utils.logger import setup_logger
 
 logger = setup_logger("provider_factory")
@@ -93,12 +97,13 @@ class ProviderFactory:
                 f"Unknown provider '{name}'. "
                 f"Available: {list(self.config.providers.keys())}"
             )
-
-        if not entry.enabled:
-            raise ProviderError(
-                f"Provider '{name}' is disabled in config. "
-                f"Set enabled: true in config/data_providers.yaml to use it."
-            )
+        readiness = get_provider_readiness_report(
+            name,
+            config=self.config,
+            require_enabled=True,
+        )
+        if not readiness.can_instantiate:
+            raise ProviderError(readiness.reason)
 
         return self._build_source(name, entry, data_file, **kwargs)
 
@@ -160,8 +165,8 @@ class ProviderFactory:
         """
         from src.data.sources import ZerodhaDataSource
 
-        creds = entry.get_credentials()
-        if not creds.is_configured:
+        resolved = resolve_provider_credentials("zerodha", config=self.config)
+        if not resolved.is_fully_configured:
             raise ProviderError(
                 "Zerodha credentials not configured. "
                 "Set ZERODHA_API_KEY, ZERODHA_API_SECRET, ZERODHA_ACCESS_TOKEN "
@@ -169,9 +174,9 @@ class ProviderFactory:
             )
 
         return ZerodhaDataSource(
-            api_key=creds.api_key,
-            api_secret=creds.api_secret,
-            access_token=creds.access_token,
+            api_key=resolved.values.get("API_KEY", ""),
+            api_secret=resolved.values.get("API_SECRET", ""),
+            access_token=resolved.values.get("ACCESS_TOKEN", ""),
             **kwargs,
         )
 
@@ -179,17 +184,17 @@ class ProviderFactory:
         """Build an Upstox data source with credential + safe fallback support."""
         from src.data.sources import UpstoxDataSource
 
-        creds = entry.get_credentials()
-        if not creds.is_configured:
+        resolved = resolve_provider_credentials("upstox", config=self.config)
+        if not resolved.is_fully_configured:
             logger.warning(
                 "Upstox credentials are not configured. "
                 "Provider will run in degraded CSV-fallback mode when data files are available."
             )
 
         return UpstoxDataSource(
-            api_key=creds.api_key,
-            api_secret=creds.api_secret,
-            access_token=creds.access_token,
+            api_key=resolved.values.get("API_KEY", ""),
+            api_secret=resolved.values.get("API_SECRET", ""),
+            access_token=resolved.values.get("ACCESS_TOKEN", ""),
             data_dir=kwargs.get("data_dir", entry.data_dir),
         )
 
@@ -197,10 +202,10 @@ class ProviderFactory:
         """Build a DhanHQ data source. Degrades gracefully if SDK unavailable."""
         from src.data.dhan_source import DhanHQDataSource
 
-        creds = entry.get_credentials()
+        resolved = resolve_provider_credentials("dhan", config=self.config)
         return DhanHQDataSource(
-            client_id=creds.api_key,   # DhanHQ uses client_id in api_key field
-            access_token=creds.access_token,
+            client_id=resolved.values.get("CLIENT_ID", ""),
+            access_token=resolved.values.get("ACCESS_TOKEN", ""),
             **kwargs,
         )
 

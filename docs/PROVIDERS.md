@@ -7,6 +7,20 @@
 Provider behavior is controlled through the provider factory and provider-specific settings.
 The code-level source of truth is `src/data/provider_capabilities.py`.
 
+Unified runtime readiness source of truth:
+
+- `src/data/provider_runtime.py`
+
+Use this shared layer for UI status, runner checks, scanner/paper/live-safe validation,
+and provider factory readiness decisions.
+
+Quick diagnostics:
+
+```bash
+python scripts/check_provider_readiness.py --provider zerodha
+python scripts/check_provider_readiness.py --all
+```
+
 ---
 
 ## Phase 4 Analysis-Family Provider Selection
@@ -181,13 +195,16 @@ router.select_for_segment("NSE")  # -> "zerodha"
 
 ### Config
 
-In `config/data_providers.yaml`:
+Do not place real credentials in tracked YAML.
 
-```yaml
-dhan:
-  api_key: "<client_id>"
-  access_token: "<access_token>"
-```
+Use local environment variables instead:
+
+- `DHAN_CLIENT_ID`
+- `DHAN_ACCESS_TOKEN`
+- compatibility alias: `DHAN_API_KEY` is accepted as `DHAN_CLIENT_ID`
+
+`config/data_providers.yaml` should only control non-secret provider settings
+such as `enabled`, routing preference, and default provider.
 
 ### What is NOT implemented for DhanHQ
 

@@ -1,57 +1,111 @@
-# Provider Session Management - Phase 21.x
+# Provider Sessions and Runtime Readiness
 
-## Overview
+## Purpose
 
-Provider session management validates broker/data connectivity for read-only data access.
+Provider session APIs validate read-only connectivity only.
+They do not enable live execution.
 
-Connecting a provider does **not** enable live trading. Execution remains structurally disabled.
+The platform now uses one shared readiness source for:
 
-## Provider IDs and Required Credentials
+- UI provider health and platform status
+- runner/provider validation
+- provider factory instantiation checks
+- diagnostics tooling
 
-| Provider ID | Display Name | Required Credentials |
-|---|---|---|
-| `zerodha` | Zerodha Kite | `ZERODHA_API_KEY`, `ZERODHA_API_SECRET`, `ZERODHA_ACCESS_TOKEN` |
-| `upstox` | Upstox | `UPSTOX_API_KEY`, `UPSTOX_API_SECRET`, `UPSTOX_ACCESS_TOKEN` |
-| `dhan` | DhanHQ | `DHAN_CLIENT_ID`, `DHAN_ACCESS_TOKEN` |
+Shared runtime module:
 
-Credentials are stored in local environment settings (`.env` / process env).
-Tracked YAML config must not store secret values.
+- `src/data/provider_runtime.py`
 
-## Session States
+## State Layers
 
-| State | Meaning |
-|---|---|
-| `not_configured` | Provider has credentials but not validated in current process |
-| `credentials_missing` | Required credentials missing |
-| `active` | Session validated successfully |
-| `expired` | Token/session expired |
-| `invalid` | Credential/session validation failed |
-| `error` | Unexpected validation error |
+Provider state is evaluated in three layers:
+
+1. Static config (`config/data_providers.yaml`)
+- `default_provider`
+- per-provider `enabled`
+- non-secret settings only
+
+2. Credential resolution
+- environment variables / local `.env`
+- compatibility aliases where needed (for example Dhan `CLIENT_ID` and `API_KEY`)
+- optional config fallback for backward compatibility
+
+3. Runtime session state
+- `active`, `not_configured`, `credentials_missing`, `invalid`, etc.
+- used for session-required providers
+
+## Provider Credentials
+
+Preferred credential source is environment variables or local `.env`.
+Do not commit real secrets to tracked config files.
+
+### Zerodha
+
+- `ZERODHA_API_KEY`
+- `ZERODHA_API_SECRET`
+- `ZERODHA_ACCESS_TOKEN`
+
+### Upstox
+
+- `UPSTOX_API_KEY`
+- `UPSTOX_API_SECRET`
+- `UPSTOX_ACCESS_TOKEN`
+
+### DhanHQ
+
+- `DHAN_CLIENT_ID`
+- `DHAN_ACCESS_TOKEN`
+
+Compatibility note:
+
+- `DHAN_API_KEY` is accepted as an alias for `DHAN_CLIENT_ID`.
+
+## Runtime Readiness States
+
+Main provider runtime states:
+
+- `ready`
+- `partial`
+- `missing_secrets`
+- `session_invalid`
+- `disabled`
+- `misconfigured`
+- `unsupported`
+
+`enabled` in YAML means "allowed by config", not "ready right now".
 
 ## API Endpoints
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/v1/providers/sessions` | All provider session states |
-| GET | `/api/v1/providers/sessions/{type}` | Single provider status |
-| POST | `/api/v1/providers/sessions/{type}/validate` | Validate/reconnect read-only session |
-| POST | `/api/v1/providers/sessions/{type}/configure` | Store a single credential |
-| POST | `/api/v1/providers/sessions/{type}/credentials` | Store multiple credentials |
-| GET | `/api/v1/providers/sessions/zerodha/login` | Zerodha login URL |
-| GET | `/api/v1/providers/sessions/zerodha/callback` | Zerodha callback handler |
-| GET | `/api/v1/providers/sessions/upstox/login` | Upstox login URL |
-| GET | `/api/v1/providers/sessions/upstox/callback` | Upstox callback handler |
+Session management:
+
+- `GET /api/v1/providers/sessions`
+- `GET /api/v1/providers/sessions/{provider}`
+- `POST /api/v1/providers/sessions/{provider}/validate`
+- `POST /api/v1/providers/sessions/{provider}/configure`
+- `POST /api/v1/providers/sessions/{provider}/credentials`
+
+Unified health/readiness views:
+
+- `GET /api/v1/providers/health`
+- `GET /api/v1/platform/status`
+
+## Diagnostics CLI
+
+Use the shared diagnostics script:
+
+```bash
+python scripts/check_provider_readiness.py --provider zerodha
+python scripts/check_provider_readiness.py --all
+python scripts/check_provider_readiness.py --all --mode research --timeframe 5m
+```
+
+The script reports missing credentials by name only and never prints secret values.
 
 ## Runtime Source Selection
 
-Runtime source can be promoted from Settings only when the provider session is `active`.
+`/api/v1/platform/runtime-source` can set primary runtime source only when
+the target provider satisfies readiness/session requirements for safe use.
 
-- Primary runtime source is persisted to `config/data_providers.yaml`.
-- Secret fields are scrubbed during persistence.
-- If a primary broker session is inactive, platform status reports fallback behavior.
+Promoting a provider to primary does not change execution safety boundaries.
+Execution remains disabled.
 
-## Safety Notes
-
-- Provider validation calls are read-only session checks.
-- No order placement is enabled by session connectivity.
-- Credential values are masked in API responses.

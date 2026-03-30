@@ -540,18 +540,27 @@ def get_realtime_config_status() -> Dict[str, Any]:
 def get_provider_status() -> Dict[str, Any]:
     """Return current provider configuration status."""
     try:
-        from src.data.provider_config import DataProvidersConfig
+        from src.data.provider_config import load_provider_config
+        from src.data.provider_runtime import list_all_provider_reports
 
-        config = DataProvidersConfig()
-        default = config.default_provider
-        providers = {}
+        config = load_provider_config()
+        reports = {
+            report.provider_name: report
+            for report in list_all_provider_reports(config=config, require_enabled=False)
+        }
+        providers: Dict[str, Any] = {}
         for name, entry in config.providers.items():
+            report = reports.get(name)
             providers[name] = {
-                "enabled": entry.enabled,
+                "enabled": bool(entry.enabled),
                 "data_dir": entry.data_dir,
+                "state": report.state.value if report else "unknown",
+                "session_status": report.session_status if report else None,
+                "can_instantiate": bool(report.can_instantiate) if report else False,
+                "reason": report.reason if report else "No runtime report available.",
             }
         return {
-            "default_provider": default,
+            "default_provider": config.default_provider,
             "providers": providers,
         }
     except Exception:

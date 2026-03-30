@@ -53,6 +53,8 @@ npm run dev
 4. Runtime source is persisted to `config/data_providers.yaml`.
 
 If selected broker session is inactive, the system reports fallback/offline modes truthfully.
+Some runner CLIs still accept explicit `--provider` arguments; explicit CLI values
+override the default runtime source for that run.
 
 ## Provider Credentials
 
@@ -61,6 +63,15 @@ Store credentials in `.env` (or process env), not in tracked YAML files.
 - Zerodha: `ZERODHA_API_KEY`, `ZERODHA_API_SECRET`, `ZERODHA_ACCESS_TOKEN`
 - Upstox: `UPSTOX_API_KEY`, `UPSTOX_API_SECRET`, `UPSTOX_ACCESS_TOKEN`
 - DhanHQ: `DHAN_CLIENT_ID`, `DHAN_ACCESS_TOKEN`
+
+Compatibility alias: `DHAN_API_KEY` is accepted as `DHAN_CLIENT_ID`.
+
+## Provider Readiness Diagnostics
+
+```bash
+python scripts/check_provider_readiness.py --provider zerodha
+python scripts/check_provider_readiness.py --all
+```
 
 ## Automation Triggers
 

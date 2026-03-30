@@ -1,5 +1,7 @@
 """Tests for provider factory."""
 
+import os
+
 import pytest
 
 from src.data.provider_config import (
@@ -40,6 +42,8 @@ class TestProviderFactory:
             zerodha={"enabled": True, "api_key": "", "api_secret": "", "access_token": ""}
         )
         factory = ProviderFactory(config)
+        for key in ("ZERODHA_API_KEY", "ZERODHA_API_SECRET", "ZERODHA_ACCESS_TOKEN"):
+            os.environ.pop(key, None)
         with pytest.raises(ProviderError, match="credentials"):
             factory.create("zerodha")
 
@@ -48,6 +52,8 @@ class TestProviderFactory:
             upstox={"enabled": True, "api_key": "", "api_secret": "", "access_token": ""}
         )
         factory = ProviderFactory(config)
+        for key in ("UPSTOX_API_KEY", "UPSTOX_API_SECRET", "UPSTOX_ACCESS_TOKEN"):
+            os.environ.pop(key, None)
         source = factory.create("upstox")
         from src.data.sources import UpstoxDataSource
         assert isinstance(source, UpstoxDataSource)
