@@ -18,8 +18,6 @@ from typing import Any
 
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.breakout import BreakoutStrategy
-from src.strategies.intraday.bearish_intraday_regime_strategy import BearishIntradayRegimeStrategy
-from src.strategies.intraday.bullish_intraday_regime_strategy import BullishIntradayRegimeStrategy
 from src.strategies.intraday.codex_intraday_range_reversion import CodexIntradayRangeReversionStrategy
 from src.strategies.intraday.codex_intraday_regime_breakout import CodexIntradayRegimeBreakoutStrategy
 from src.strategies.intraday.codex_intraday_trend_reentry import CodexIntradayTrendReentryStrategy
