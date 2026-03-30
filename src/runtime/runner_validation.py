@@ -14,6 +14,7 @@ from src.data.provider_capabilities import (
     ProviderFeatureSet,
     validate_provider_workflow,
 )
+from src.data.provider_runtime import get_provider_readiness_report
 from src.runtime.run_profiles import RunMode, RunProfile, get_run_profile
 
 
@@ -144,6 +145,18 @@ def validate_provider_for_mode(
         if require_live_quotes is not None
         else bool(profile.requires_live_quotes)
     )
+    readiness = get_provider_readiness_report(
+        provider_name,
+        require_enabled=True,
+        require_historical_data=bool(profile.requires_historical_data),
+        require_live_quotes=live_quotes_required,
+        timeframe=timeframe,
+        instrument_type=instrument_type,
+        mode=profile.mode.value,
+    )
+    if not readiness.can_instantiate:
+        raise RunnerValidationError(readiness.reason)
+
     try:
         return validate_provider_workflow(
             provider_name,

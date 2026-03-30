@@ -161,6 +161,18 @@ Provider details: [`docs/PROVIDERS.md`](docs/PROVIDERS.md)
 
 Code-level provider capability registry: `src/data/provider_capabilities.py`
 
+Shared provider runtime readiness source of truth: `src/data/provider_runtime.py`
+
+Readiness diagnostics:
+
+```bash
+python scripts/check_provider_readiness.py --provider zerodha
+python scripts/check_provider_readiness.py --all
+```
+
+`enabled` in YAML means statically allowed. Actual runtime readiness also depends on
+credentials and session/auth state.
+
 ## Instrument Support Matrix
 
 | Instrument | Status | Notes |
@@ -297,7 +309,8 @@ Run one command per mode:
 - Features real-time state viewing for Scanner, Monitoring, Decision, Paper Trading, Provider Diagnostics, Artifact Explorer, and Profiles.
 - Includes Derivatives Intelligence (with graceful fallback for offline modes) and AI Workspace / Automation panels (advisory/placeholder only).
 - **Phase 20.1 UI Polish**: Enhanced UI trust with a global system clock, standardized disabled action semantics, Indian ecosystem currency (₹) consistency, and explicit read-only helper messaging in Profiles and Settings.
-- **Phase 21+ Planning**: Integrated inert Provider Authentication & Sessions scaffolds in Settings for future broker/API key management.
+- **Phase 21+**: Provider Authentication and Sessions are implemented as read-only
+  readiness/session management flows, with execution still disabled.
 - **Execution Rule:** All broker execution, strategy deployment, and live-routing UI controls are strictly disabled or marked as future visual placeholders, reinforcing the read-only and simulation-first architecture.
 
 ## What Changed in Phase 18

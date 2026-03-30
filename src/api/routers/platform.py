@@ -15,6 +15,7 @@ from src.api.services.platform_status_service import get_platform_status
 from src.providers.session_manager import ProviderSessionManager
 from src.providers.models import SessionStatus
 from src.data.provider_config import load_provider_config
+from src.data.provider_runtime import get_provider_readiness_report
 
 router = APIRouter(prefix="/api/v1/platform", tags=["platform"])
 
@@ -46,9 +47,22 @@ def update_runtime_source(update: RuntimeSourceUpdate) -> dict[str, Any]:
     provider = update.provider_type.lower()
     
     # 1. Validation
+    config = load_provider_config()
+
+    report = get_provider_readiness_report(
+        provider,
+        config=config,
+        session_manager=_session_manager,
+        require_enabled=True,
+    )
+    if provider not in ("csv", "indian_csv") and not report.can_instantiate:
+        raise HTTPException(
+            status_code=400,
+            detail=report.reason,
+        )
+
     if provider not in ("csv", "indian_csv"):
-        status = _session_manager.get_status(provider)
-        if not status or status.session_status != SessionStatus.ACTIVE.value:
+        if str(report.session_status or "").strip().lower() != SessionStatus.ACTIVE.value:
             raise HTTPException(
                 status_code=400, 
                 detail=f"Provider '{provider}' does not have an active session and cannot be set as primary."
@@ -56,7 +70,6 @@ def update_runtime_source(update: RuntimeSourceUpdate) -> dict[str, Any]:
 
     # 2. Persist to config
     try:
-        config = load_provider_config()
         config.default_provider = provider
         if not config.save_config():
             raise HTTPException(status_code=500, detail="Failed to persist configuration change.")

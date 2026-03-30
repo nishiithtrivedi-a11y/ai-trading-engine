@@ -23,6 +23,7 @@ from src.data.provider_capabilities import (
     validate_provider_workflow,
 )
 from src.data.provider_factory import ProviderError, ProviderFactory
+from src.data.provider_runtime import get_provider_readiness_report
 from src.data.symbol_mapping import SymbolMapper
 from src.scanners.config import normalize_timeframe
 
@@ -116,6 +117,18 @@ class DataGateway:
         start: Optional[datetime],
         end: Optional[datetime],
     ) -> DataHandler:
+        readiness = get_provider_readiness_report(
+            self.provider_name,
+            config=self._factory.config,
+            require_enabled=True,
+            require_historical_data=True,
+            timeframe=timeframe,
+            instrument_type=InstrumentType.EQUITY,
+            mode="research",
+        )
+        if not readiness.can_instantiate:
+            raise ScannerDataGatewayError(readiness.reason)
+
         try:
             validate_provider_workflow(
                 self.provider_name,

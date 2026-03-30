@@ -145,6 +145,6 @@ def test_provider_status_roles(tmp_path: Path) -> None:
     status = get_platform_status(session_manager=mgr)
 
     roles = {p.provider_type: p.runtime_role for p in status.provider_statuses}
-    # Without credentials, all should be "offline" or "primary_misconfigured"
+    # Without credentials, providers should be offline-ish and not marked active.
     for role in roles.values():
-        assert role in ("offline", "primary_misconfigured")
+        assert role in ("offline", "primary_misconfigured", "primary_unavailable", "configured")

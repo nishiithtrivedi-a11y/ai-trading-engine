@@ -21,7 +21,9 @@ from src.api.services.market_session_service import (
     MarketSessionState,
     get_market_session_state,
 )
-from src.providers.models import PROVIDER_REGISTRY, SessionStatus
+from src.data.provider_config import load_provider_config
+from src.data.provider_runtime import list_all_provider_reports
+from src.providers.models import SessionStatus
 from src.providers.session_manager import ProviderSessionManager
 
 
@@ -47,18 +49,9 @@ _FEATURE_LABELS: dict[FeatureAvailability, str] = {
 
 
 def _load_runtime_data_source() -> str:
-    """Read the active runtime data source from config/data_providers.yaml."""
-    from pathlib import Path
-
-    import yaml
-
-    config_path = Path("config/data_providers.yaml")
-    if not config_path.exists():
-        return "csv"
+    """Read the active runtime data source from shared provider config."""
     try:
-        with open(config_path) as f:
-            raw = yaml.safe_load(f) or {}
-        return raw.get("default_provider", "csv")
+        return str(load_provider_config().default_provider).strip().lower() or "csv"
     except Exception:
         return "csv"
 
@@ -127,67 +120,65 @@ def get_platform_status(
     # 1. Runtime data source from config
     runtime_source = _load_runtime_data_source()
 
-    # 2. Provider sessions
-    sessions = session_manager.get_all_statuses()
-    connected = sum(
-        1 for s in sessions if s.session_status == SessionStatus.ACTIVE.value
+    provider_config = load_provider_config()
+    reports = list_all_provider_reports(
+        config=provider_config,
+        session_manager=session_manager,
+        require_enabled=False,
     )
-    total = len(sessions)
 
-    # 3. Config-enabled providers (from YAML)
-    from pathlib import Path
-    import yaml
+    session_reports = [report for report in reports if report.requires_session]
+    connected = sum(
+        1
+        for report in session_reports
+        if str(report.session_status or "").strip().lower() == SessionStatus.ACTIVE.value
+    )
+    total = len(session_reports)
 
-    config_path = Path("config/data_providers.yaml")
-    enabled_providers: set[str] = set()
-    if config_path.exists():
-        try:
-            with open(config_path) as f:
-                raw = yaml.safe_load(f) or {}
-            for pname, pdetails in raw.get("providers", {}).items():
-                if isinstance(pdetails, dict) and pdetails.get("enabled"):
-                    enabled_providers.add(pname)
-        except Exception:
-            pass
-
-    # 4. Build per-provider diagnostic entries
+    # Build per-provider diagnostic entries
     provider_statuses: list[ProviderDiagnosticEntry] = []
-    for s in sessions:
-        is_primary = s.provider_type == runtime_source
-        config_enabled = s.provider_type in enabled_providers
-        is_active = s.session_status == SessionStatus.ACTIVE.value
+    for report in session_reports:
+        is_primary = report.provider_name == runtime_source
+        config_enabled = bool(provider_config.is_provider_enabled(report.provider_name))
+        session_status = str(report.session_status or SessionStatus.NOT_CONFIGURED.value)
+        is_active = session_status == SessionStatus.ACTIVE.value
 
         # Richer role and summary
         if is_primary:
             if is_active:
                 role = "primary"
-                summary = f"Selected as primary runtime source. Session ACTIVE. {s.diagnostics_summary}"
+                summary = "Selected as primary runtime source. Session ACTIVE."
             elif config_enabled:
                 role = "primary_unavailable"
-                summary = f"Selected as primary but session is {s.session_status}. Falling back to CSV. {s.diagnostics_summary}"
+                summary = (
+                    "Selected as primary but session is "
+                    f"{session_status}. Falling back to CSV. {report.reason}"
+                )
             else:
                 role = "primary_misconfigured"
-                summary = f"Selected as primary but not enabled in config. Falling back to CSV."
+                summary = "Selected as primary but not enabled in config. Falling back to CSV."
         elif is_active:
             role = "eligible"
-            summary = f"Session active and ready. Not currently selected as primary source. {s.diagnostics_summary}"
+            summary = "Session active and ready. Not currently selected as primary source."
         elif config_enabled:
             role = "configured"
-            summary = f"Configured but session {s.session_status}. {s.diagnostics_summary}"
+            summary = f"Configured but session {session_status}. {report.reason}"
         else:
             role = "offline"
-            summary = s.diagnostics_summary
+            summary = report.reason
 
-        provider_statuses.append(ProviderDiagnosticEntry(
-            provider_type=s.provider_type,
-            display_name=s.display_name,
-            session_status=s.session_status,
-            is_runtime_primary=is_primary,
-            config_enabled=config_enabled,
-            last_validated=s.last_validated,
-            diagnostics_summary=summary,
-            runtime_role=role,
-        ))
+        provider_statuses.append(
+            ProviderDiagnosticEntry(
+                provider_type=report.provider_name,
+                display_name=report.display_name,
+                session_status=session_status,
+                is_runtime_primary=is_primary,
+                config_enabled=config_enabled,
+                last_validated=None,
+                diagnostics_summary=summary,
+                runtime_role=role,
+            )
+        )
 
     # 5. Market session
     market = get_market_session_state()
