@@ -704,7 +704,8 @@ def _cleanup_checkpoint_files(output_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 def _process_symbol(
     symbol: str,
-    df_or_path: Any,  # pd.DataFrame or str/Path to parquet file
+    df_or_path: Any = None,  # pd.DataFrame or str/Path to parquet file
+    *,
     selected: dict[str, dict[str, Any]],
     base_config,
     optimize: bool,
@@ -714,6 +715,7 @@ def _process_symbol(
     composite_value: str,
     regime_filter_active: bool,
     portfolio_backtest_active: bool = False,
+    df: Any = None,
 ) -> tuple[str, list[dict]]:
     """Process all strategies for one symbol.
 
@@ -726,14 +728,20 @@ def _process_symbol(
 
     Returns (symbol, list_of_result_rows).
     """
+    # Backward-compatible alias for older callsites/tests that pass `df=...`.
+    if df_or_path is None and df is not None:
+        df_or_path = df
+    if df_or_path is None:
+        raise ValueError("_process_symbol requires either df_or_path or df")
+
     if isinstance(df_or_path, (str, Path)):
-        df = pd.read_parquet(df_or_path)
+        data_df = pd.read_parquet(df_or_path)
     else:
-        df = df_or_path
+        data_df = df_or_path
 
     sym_regime_label = "unknown"
     if regime_analysis_active:
-        sym_snap = detect_market_regime(df, symbol=symbol)
+        sym_snap = detect_market_regime(data_df, symbol=symbol)
         if sym_snap is not None:
             sym_regime_label = sym_snap.composite_regime.value
     elif regime_snap_value is not None:
@@ -749,7 +757,7 @@ def _process_symbol(
             if optimize:
                 row = run_optimized(
                     symbol=symbol,
-                    df=df,
+                    df=data_df,
                     strategy_name=strat_name,
                     strategy_class=strat_def["class"],
                     param_grid=strat_def["param_grid"],
@@ -760,7 +768,7 @@ def _process_symbol(
                 # B1: capture engine results when portfolio reuse is needed
                 row = run_single(
                     symbol=symbol,
-                    df=df,
+                    df=data_df,
                     strategy_name=strat_name,
                     strategy_class=strat_def["class"],
                     params=strat_def["params"],

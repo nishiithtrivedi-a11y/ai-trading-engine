@@ -22,7 +22,7 @@ Timestamp should be parseable by pandas.
 """
 
 from dataclasses import asdict, dataclass
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -156,6 +156,90 @@ class IntradayTrendFollowingStrategy(BaseStrategy):
             tags=("intraday", "trend_following"),
             metadata={
                 "is_in_session": in_session_now,
+                "close": float(latest["close"]),
+                "vwap": float(latest["vwap"]),
+                "ema": float(latest["ema"]),
+                "direction": int(latest["direction"]),
+                "long_signal": long_signal,
+                "short_signal": short_signal,
+            },
+        )
+
+    def generate_signal(
+        self,
+        data: pd.DataFrame,
+        current_bar: pd.Series,
+        bar_index: int,
+        *,
+        symbol: Optional[str] = None,
+        timeframe: Optional[str] = None,
+    ) -> StrategySignal:
+        """
+        Backward-compatible contract path.
+
+        Legacy tests and callers invoke generate_signal directly without the
+        C1 precompute context. Build a temporary prepared frame from `data`
+        and evaluate the latest row deterministically.
+        """
+        if not getattr(self, "_is_initialized", False):
+            self.initialize()
+
+        prepared = prepare_strategy_dataframe(data, self.config)
+        if len(prepared) == 0 or bar_index >= len(prepared):
+            return self.build_signal(
+                action=Signal.HOLD,
+                current_bar=current_bar,
+                symbol=symbol,
+                timeframe=timeframe,
+                rationale="insufficient_bars",
+            )
+
+        latest = prepared.iloc[bar_index]
+        if not bool(latest.get("is_in_session", False)):
+            return self.build_signal(
+                action=Signal.HOLD,
+                current_bar=current_bar,
+                symbol=symbol,
+                timeframe=timeframe,
+                rationale="outside_session",
+            )
+
+        indicator_values = (
+            latest.get("vwap"),
+            latest.get("ema"),
+            latest.get("direction"),
+        )
+        if any(pd.isna(v) for v in indicator_values):
+            return self.build_signal(
+                action=Signal.HOLD,
+                current_bar=current_bar,
+                symbol=symbol,
+                timeframe=timeframe,
+                rationale="indicator_warmup",
+            )
+
+        long_signal = bool(latest.get("long_signal", False))
+        short_signal = bool(latest.get("short_signal", False))
+
+        action = Signal.HOLD
+        rationale = "no_intraday_setup"
+        if long_signal and not short_signal:
+            action = Signal.BUY
+            rationale = "long_trend_setup"
+        elif short_signal and not long_signal:
+            action = Signal.SELL
+            rationale = "short_trend_setup"
+
+        return self.build_signal(
+            action=action,
+            current_bar=current_bar,
+            symbol=symbol,
+            timeframe=timeframe,
+            confidence=0.75 if action != Signal.HOLD else 0.0,
+            rationale=rationale,
+            tags=("intraday", "trend_following"),
+            metadata={
+                "is_in_session": bool(latest.get("is_in_session", False)),
                 "close": float(latest["close"]),
                 "vwap": float(latest["vwap"]),
                 "ema": float(latest["ema"]),

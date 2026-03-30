@@ -46,6 +46,9 @@ def test_registry_alias_defaults_and_categories() -> None:
     assert "sma_crossover" in keys
     assert "opening_range_breakout" in keys
     assert "pairs_zscore_limited" in keys
+    assert "codex_intraday_regime_breakout" in keys
+    assert "codex_intraday_trend_reentry" in keys
+    assert "codex_intraday_range_reversion" in keys
 
     by_category = get_strategies_by_category()
     assert "intraday" in by_category

@@ -18,6 +18,9 @@ from typing import Any
 
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.breakout import BreakoutStrategy
+from src.strategies.intraday.codex_intraday_range_reversion import CodexIntradayRangeReversionStrategy
+from src.strategies.intraday.codex_intraday_regime_breakout import CodexIntradayRegimeBreakoutStrategy
+from src.strategies.intraday.codex_intraday_trend_reentry import CodexIntradayTrendReentryStrategy
 from src.strategies.intraday.day_high_low_breakout import DayHighLowBreakoutStrategy
 from src.strategies.intraday.gap_strategies import GapFadeStrategy, GapMomentumStrategy
 from src.strategies.intraday.opening_range_breakout import OpeningRangeBreakoutStrategy
@@ -202,6 +205,45 @@ _SPECS: tuple[StrategySpec, ...] = (
         mode="full",
         spreadsheet_ids=("S033",),
         description="Reversal around prior-session pivot levels.",
+    ),
+    StrategySpec(
+        key="codex_intraday_regime_breakout",
+        strategy_class=CodexIntradayRegimeBreakoutStrategy,
+        category="intraday",
+        mode="full",
+        params={
+            "compression_lookback": 12,
+            "volume_multiplier": 1.25,
+            "min_trend_strength": 0.35,
+        },
+        spreadsheet_ids=(),
+        description="Codex regime-gated compression breakout for intraday NIFTY equities.",
+    ),
+    StrategySpec(
+        key="codex_intraday_trend_reentry",
+        strategy_class=CodexIntradayTrendReentryStrategy,
+        category="intraday",
+        mode="full",
+        params={
+            "pullback_lookback": 6,
+            "rsi_floor": 45.0,
+            "min_volume_ratio": 0.9,
+        },
+        spreadsheet_ids=(),
+        description="Codex trend pullback-and-reentry continuation model.",
+    ),
+    StrategySpec(
+        key="codex_intraday_range_reversion",
+        strategy_class=CodexIntradayRangeReversionStrategy,
+        category="intraday",
+        mode="full",
+        params={
+            "vwap_deviation_pct": 0.0055,
+            "oversold_rsi": 30.0,
+            "min_vwap_crosses": 3,
+        },
+        spreadsheet_ids=(),
+        description="Codex range-regime VWAP mean-reversion model with cross-frequency filters.",
     ),
     StrategySpec(
         key="moving_average_pullback",

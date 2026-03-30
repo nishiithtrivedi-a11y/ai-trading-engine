@@ -1,3 +1,6 @@
+from .codex_intraday_range_reversion import CodexIntradayRangeReversionStrategy
+from .codex_intraday_regime_breakout import CodexIntradayRegimeBreakoutStrategy
+from .codex_intraday_trend_reentry import CodexIntradayTrendReentryStrategy
 from .day_high_low_breakout import DayHighLowBreakoutStrategy
 from .gap_strategies import GapFadeStrategy, GapMomentumStrategy
 from .opening_range_breakout import OpeningRangeBreakoutStrategy
@@ -7,6 +10,9 @@ from .vwap_mean_reversion import VWAPMeanReversionStrategy
 from .vwap_pullback_trend import VWAPPullbackTrendStrategy
 
 __all__ = [
+    "CodexIntradayRangeReversionStrategy",
+    "CodexIntradayRegimeBreakoutStrategy",
+    "CodexIntradayTrendReentryStrategy",
     "DayHighLowBreakoutStrategy",
     "GapFadeStrategy",
     "GapMomentumStrategy",
