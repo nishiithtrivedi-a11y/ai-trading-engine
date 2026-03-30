@@ -1,3 +1,4 @@
+from .antigravity_intraday_compression_burst import AntigravityIntradayCompressionBurst
 from .codex_intraday_range_reversion import CodexIntradayRangeReversionStrategy
 from .codex_intraday_regime_breakout import CodexIntradayRegimeBreakoutStrategy
 from .codex_intraday_trend_reentry import CodexIntradayTrendReentryStrategy
@@ -10,6 +11,7 @@ from .vwap_mean_reversion import VWAPMeanReversionStrategy
 from .vwap_pullback_trend import VWAPPullbackTrendStrategy
 
 __all__ = [
+    "AntigravityIntradayCompressionBurst",
     "CodexIntradayRangeReversionStrategy",
     "CodexIntradayRegimeBreakoutStrategy",
     "CodexIntradayTrendReentryStrategy",
