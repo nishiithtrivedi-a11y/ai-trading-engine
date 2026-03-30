@@ -28,6 +28,13 @@ from .portfolio_backtester import (
     PortfolioBacktester,
     generate_portfolio_report,
 )
+from .regime_strategy_matrix import (
+    build_regime_strategy_matrix,
+    build_regime_strategy_summary,
+    infer_strategy_archetype,
+    select_top_candidates_by_regime,
+    write_research_markdown,
+)
 
 __all__ = [
     "OptimizationResult",
@@ -60,4 +67,9 @@ __all__ = [
     "PortfolioBacktestResult",
     "PortfolioBacktester",
     "generate_portfolio_report",
+    "build_regime_strategy_matrix",
+    "build_regime_strategy_summary",
+    "infer_strategy_archetype",
+    "select_top_candidates_by_regime",
+    "write_research_markdown",
 ]

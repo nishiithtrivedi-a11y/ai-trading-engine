@@ -36,6 +36,14 @@ from .regime_engine import (
     MarketRegimeEngineConfig,
     MarketRegimeEngineError,
 )
+from .professional_regime import (
+    PROFESSIONAL_REGIME_ORDER,
+    ProfessionalRegime,
+    ProfessionalRegimeClassifier,
+    ProfessionalRegimeConfig,
+    ProfessionalRegimeSnapshot,
+    legacy_to_professional_regime,
+)
 from .sector_rotation import SectorRotationAnalyzer, SectorRotationError
 from .volatility_regime import VolatilityRegimeAnalyzer, VolatilityRegimeError
 from .volume_intelligence import VolumeIntelligenceAnalyzer, VolumeIntelligenceError
@@ -71,6 +79,11 @@ __all__ = [
     "MarketStateConfig",
     "MarketStateEngine",
     "MarketStateEngineError",
+    "PROFESSIONAL_REGIME_ORDER",
+    "ProfessionalRegime",
+    "ProfessionalRegimeClassifier",
+    "ProfessionalRegimeConfig",
+    "ProfessionalRegimeSnapshot",
     "RiskEnvironment",
     "SectorRotationAnalyzer",
     "SectorRotationConfig",
@@ -89,6 +102,7 @@ __all__ = [
     "VolumeIntelligenceError",
     "VolumeSignal",
     "VolumeSignalType",
+    "legacy_to_professional_regime",
     "RelativeStrengthRecord",
     "compute_relative_strength",
     "rank_symbols_by_strength",
