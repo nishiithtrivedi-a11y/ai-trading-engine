@@ -18,6 +18,8 @@ from typing import Any
 
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.breakout import BreakoutStrategy
+from src.strategies.intraday.bearish_intraday_regime_strategy import BearishIntradayRegimeStrategy
+from src.strategies.intraday.bullish_intraday_regime_strategy import BullishIntradayRegimeStrategy
 from src.strategies.intraday.codex_intraday_range_reversion import CodexIntradayRangeReversionStrategy
 from src.strategies.intraday.codex_intraday_regime_breakout import CodexIntradayRegimeBreakoutStrategy
 from src.strategies.intraday.codex_intraday_trend_reentry import CodexIntradayTrendReentryStrategy
@@ -112,6 +114,24 @@ _SPECS: tuple[StrategySpec, ...] = (
         mode="full",
         spreadsheet_ids=(),
         description="Supertrend/EMA intraday trend-following strategy.",
+    ),
+    StrategySpec(
+        key="bullish_intraday_regime",
+        strategy_class=BullishIntradayRegimeStrategy,
+        category="intraday",
+        mode="full",
+        aliases=("bullish_regime_intraday",),
+        spreadsheet_ids=(),
+        description="Regime-aware bullish intraday momentum strategy with VWAP/EMA pullback entry.",
+    ),
+    StrategySpec(
+        key="bearish_intraday_regime",
+        strategy_class=BearishIntradayRegimeStrategy,
+        category="intraday",
+        mode="full",
+        aliases=("bearish_regime_intraday",),
+        spreadsheet_ids=(),
+        description="Regime-aware bearish intraday bounce/mean-reversion strategy.",
     ),
     StrategySpec(
         key="opening_range_breakout",

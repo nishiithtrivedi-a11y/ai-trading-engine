@@ -1,3 +1,5 @@
+from .bearish_intraday_regime_strategy import BearishIntradayRegimeStrategy
+from .bullish_intraday_regime_strategy import BullishIntradayRegimeStrategy
 from .codex_intraday_range_reversion import CodexIntradayRangeReversionStrategy
 from .codex_intraday_regime_breakout import CodexIntradayRegimeBreakoutStrategy
 from .codex_intraday_trend_reentry import CodexIntradayTrendReentryStrategy
@@ -10,6 +12,8 @@ from .vwap_mean_reversion import VWAPMeanReversionStrategy
 from .vwap_pullback_trend import VWAPPullbackTrendStrategy
 
 __all__ = [
+    "BearishIntradayRegimeStrategy",
+    "BullishIntradayRegimeStrategy",
     "CodexIntradayRangeReversionStrategy",
     "CodexIntradayRegimeBreakoutStrategy",
     "CodexIntradayTrendReentryStrategy",
