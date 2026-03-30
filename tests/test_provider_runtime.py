@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from src.data.provider_config import DataProvidersConfig, ProviderEntry
 from src.data.provider_runtime import (
     ProviderRuntimeState,
@@ -85,4 +87,46 @@ def test_list_all_provider_reports_includes_configured_entries() -> None:
     names = {report.provider_name for report in reports}
     assert "csv" in names
     assert "zerodha" in names
+
+
+@dataclass
+class _FakeState:
+    session_status: str
+
+
+class _FakeSessionManager:
+    def __init__(self) -> None:
+        self.validated = False
+
+    def get_status(self, _provider: str) -> _FakeState:
+        return _FakeState("not_configured")
+
+    def validate_session(self, _provider: str) -> _FakeState:
+        self.validated = True
+        return _FakeState("active")
+
+
+def test_runtime_readiness_validates_not_configured_sessions(monkeypatch) -> None:
+    _clear_zerodha_env(monkeypatch)
+    config = DataProvidersConfig(
+        default_provider="zerodha",
+        providers={
+            "zerodha": ProviderEntry(
+                enabled=True,
+                api_key="k",
+                api_secret="s",
+                access_token="t",
+            )
+        },
+    )
+    manager = _FakeSessionManager()
+    report = get_provider_readiness_report(
+        "zerodha",
+        config=config,
+        session_manager=manager,
+        require_enabled=True,
+    )
+    assert manager.validated is True
+    assert report.session_status == "active"
+    assert report.state == ProviderRuntimeState.READY
 

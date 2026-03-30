@@ -404,6 +404,7 @@ def get_provider_readiness_report(
         workflow_error = str(exc)
 
     session_status: Optional[str] = None
+    manager: ProviderSessionManager | None = None
     if profile.requires_session:
         manager = session_manager or ProviderSessionManager()
         state_obj = manager.get_status(name)
@@ -486,6 +487,18 @@ def get_provider_readiness_report(
             workflow_requirements=workflow_requirements,
         )
 
+    # Sync runtime readiness with provider session validation logic when
+    # credentials are present but status has not yet been validated in this process.
+    if (
+        profile.requires_session
+        and session_status == SessionStatus.NOT_CONFIGURED.value
+        and profile.required_credentials
+        and resolved.is_fully_configured
+        and manager is not None
+    ):
+        validated_state = manager.validate_session(name)
+        session_status = str(validated_state.session_status)
+
     invalid_session_statuses = {
         SessionStatus.INVALID.value,
         SessionStatus.EXPIRED.value,
@@ -539,19 +552,16 @@ def get_provider_readiness_report(
             workflow_requirements=workflow_requirements,
         )
 
-    implementation_status = str(capability_summary.get("implementation_status", "")).strip().lower()
-    state = (
-        ProviderRuntimeState.PARTIAL
-        if implementation_status == "partial"
-        else ProviderRuntimeState.READY
-    )
-    reason = (
-        f"Provider '{name}' is ready."
-        if state == ProviderRuntimeState.READY
-        else (
-            f"Provider '{name}' is usable but marked as partial capability status."
+    implementation_status = str(
+        capability_summary.get("implementation_status", "")
+    ).strip().lower()
+    state = ProviderRuntimeState.READY
+    reason = f"Provider '{name}' is ready."
+    if implementation_status == "partial":
+        reason = (
+            f"Provider '{name}' is ready for the requested workflow "
+            "(provider capability status: partial)."
         )
-    )
     return ProviderReadinessReport(
         provider_name=name,
         display_name=profile.display_name,
