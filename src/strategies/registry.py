@@ -18,6 +18,7 @@ from typing import Any
 
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.breakout import BreakoutStrategy
+from src.strategies.intraday.antigravity_intraday_compression_burst import AntigravityIntradayCompressionBurst
 from src.strategies.intraday.bearish_intraday_regime_strategy import BearishIntradayRegimeStrategy
 from src.strategies.intraday.bullish_intraday_regime_strategy import BullishIntradayRegimeStrategy
 from src.strategies.intraday.codex_intraday_range_reversion import CodexIntradayRangeReversionStrategy
@@ -264,6 +265,21 @@ _SPECS: tuple[StrategySpec, ...] = (
         },
         spreadsheet_ids=(),
         description="Codex range-regime VWAP mean-reversion model with cross-frequency filters.",
+    ),
+    StrategySpec(
+        key="antigravity_compression_burst",
+        strategy_class=AntigravityIntradayCompressionBurst,
+        category="intraday",
+        mode="full",
+        params={
+            "bb_period": 20,
+            "bb_std": 2.0,
+            "kc_period": 20,
+            "kc_mult": 1.5,
+            "vol_multiplier": 1.5,
+        },
+        spreadsheet_ids=(),
+        description="Antigravity volatility compression (squeeze) to expansion breakout model.",
     ),
     StrategySpec(
         key="moving_average_pullback",
