@@ -20,31 +20,6 @@ logger = setup_logger("provider_config")
 # Default config file location (relative to project root)
 DEFAULT_CONFIG_PATH = "config/data_providers.yaml"
 _SECRET_FIELDS = ("api_key", "api_secret", "access_token")
-_DOTENV_LOADED = False
-
-
-def _maybe_load_dotenv() -> None:
-    """Load local .env once so all provider consumers see the same credentials."""
-    global _DOTENV_LOADED
-    if _DOTENV_LOADED:
-        return
-
-    disable = str(os.environ.get("PROVIDER_DISABLE_DOTENV_AUTOLOAD", "")).strip().lower()
-    if disable in {"1", "true", "yes", "on"}:
-        _DOTENV_LOADED = True
-        return
-
-    try:
-        from dotenv import load_dotenv
-
-        env_path = Path(".env")
-        if env_path.exists():
-            load_dotenv(env_path, override=False)
-    except Exception:
-        # Keep provider config robust even when python-dotenv is unavailable.
-        pass
-    finally:
-        _DOTENV_LOADED = True
 
 
 class ProviderCredentials(BaseModel):
@@ -244,7 +219,6 @@ def load_provider_config(
     Returns:
         Validated DataProvidersConfig instance.
     """
-    _maybe_load_dotenv()
     path = Path(config_path or DEFAULT_CONFIG_PATH)
 
     if not path.exists():
