@@ -9,6 +9,7 @@ from src.strategies.intraday.codex_intraday_range_reversion import CodexIntraday
 from src.strategies.intraday.codex_intraday_regime_breakout import CodexIntradayRegimeBreakoutStrategy
 from src.strategies.intraday.codex_intraday_trend_reentry import CodexIntradayTrendReentryStrategy
 from src.strategies.intraday.day_high_low_breakout import DayHighLowBreakoutStrategy
+from src.strategies.intraday.gap_strategies import GapMomentumStrategy
 from src.strategies.intraday.opening_range_breakout import OpeningRangeBreakoutStrategy
 from src.strategies.intraday.vwap_pullback_trend import VWAPPullbackTrendStrategy
 
@@ -188,6 +189,64 @@ def test_codex_intraday_range_reversion_emits_buy_in_range_regime_pullback() -> 
     strategy.initialize()
     signal = strategy.generate_signal(data, data.iloc[-1], len(data) - 1)
     assert signal.action == Signal.BUY
+
+
+def test_codex_intraday_range_reversion_exits_when_pullback_is_beyond_stop_zone() -> None:
+    start = _ist_to_utc("2026-03-09", "09:15")
+    idx = pd.date_range(start=start, periods=50, freq="5min")
+
+    close = []
+    for i in range(45):
+        close.append(100.0 + (0.18 if i % 2 == 0 else -0.18))
+    close.extend([100.10, 99.20, 98.80, 98.55, 98.75])
+
+    rows = []
+    for i, c in enumerate(close):
+        rows.append(
+            {
+                "open": c + 0.02 if i % 2 == 0 else c - 0.02,
+                "high": c + 0.14,
+                "low": c - 0.14,
+                "close": c,
+                "volume": 10_500.0 if i == 49 else 10_000.0,
+            }
+        )
+    data = pd.DataFrame(rows, index=idx)
+
+    strategy = CodexIntradayRangeReversionStrategy(oversold_rsi=45.0)
+    strategy.initialize()
+    signal = strategy.generate_signal(data, data.iloc[-1], len(data) - 1)
+    assert signal.action == Signal.EXIT
+
+
+def test_gap_momentum_buys_inside_entry_window_and_holds_outside_window() -> None:
+    idx = pd.DatetimeIndex(
+        [
+            _ist_to_utc("2026-03-11", "15:25"),  # prev day close
+            _ist_to_utc("2026-03-12", "09:20"),  # current day open
+            _ist_to_utc("2026-03-12", "10:00"),  # inside entry window
+            _ist_to_utc("2026-03-12", "12:30"),  # outside entry window
+        ]
+    )
+
+    rows = [
+        {"open": 99.9, "high": 100.2, "low": 99.8, "close": 100.0, "volume": 9_000.0},
+        {"open": 101.8, "high": 102.2, "low": 101.7, "close": 102.0, "volume": 12_000.0},
+        {"open": 102.0, "high": 102.7, "low": 101.9, "close": 102.5, "volume": 13_000.0},
+        {"open": 102.5, "high": 103.1, "low": 102.4, "close": 102.8, "volume": 10_500.0},
+    ]
+    data = pd.DataFrame(rows, index=idx)
+
+    strategy = GapMomentumStrategy(min_gap_pct=0.015, entry_start="09:20", entry_end="11:30")
+    strategy.initialize()
+
+    inside = data.iloc[:3].copy()
+    buy_signal = strategy.generate_signal(inside, inside.iloc[-1], len(inside) - 1)
+    assert buy_signal.action == Signal.BUY
+
+    outside_signal = strategy.generate_signal(data, data.iloc[-1], len(data) - 1)
+    assert outside_signal.action == Signal.HOLD
+    assert outside_signal.rationale == "outside_entry_window"
 
 
 # ---------------------------------------------------------------------------

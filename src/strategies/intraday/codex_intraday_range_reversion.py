@@ -227,7 +227,8 @@ class CodexIntradayRangeReversionStrategy(BaseStrategy):
 
         deviation = (float(vwap_now) - close_now) / float(vwap_now) if float(vwap_now) != 0 else 0.0
         oversold_entry = (
-            close_now < float(vwap_now) * (1.0 - self.config.vwap_deviation_pct)
+            deviation >= self.config.vwap_deviation_pct
+            and deviation < self.config.stop_deviation_pct
             and float(rsi_now) <= self.config.oversold_rsi
             and close_now > close_prev
             and volume_ratio <= self.config.max_volume_ratio
